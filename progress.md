@@ -1,12 +1,12 @@
 # App Lifecycle & Window Management
 
 - [x] Create a new SwiftUI macOS app project (FlowMate)
-- [ ] Add a menu bar item (NSStatusBar/SwiftUI wrapper) with an icon
-- [ ] Implement logic so that clicking/double-clicking the menu bar icon toggles a main app window:
-  - [ ] If open → bring window to front
-  - [ ] If closed → hide window but keep app running in background
-- [ ] Ensure that closing the window does not quit the app, only hides it
-- [ ] Add launch at startup support (using SMAppService)
+- [x] Add a menu bar item (NSStatusBar/SwiftUI wrapper) with an icon
+- [x] Implement logic so that clicking/double-clicking the menu bar icon toggles a main app window:
+  - [x] If open → bring window to front
+  - [x] If closed → hide window but keep app running in background
+- [x] Ensure that closing the window does not quit the app, only hides it
+- [x] Add launch at startup support (using SMAppService)
 
 # Keyboard Shortcuts (Global Hotkeys)
 
