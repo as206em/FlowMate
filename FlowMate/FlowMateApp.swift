@@ -9,6 +9,8 @@ import SwiftUI
 
 @main
 struct FlowMateApp: App {
+    @StateObject private var menuBarViewModel = MenuBarViewModel()
+    
     var body: some Scene {
         WindowGroup {
             SettingsContentView()
