@@ -12,15 +12,15 @@
 # Keyboard Shortcuts (Global Hotkeys)
 
 - [ ] Research & select the best framework for global hotkeys on macOS (MASShortcut, KeyboardShortcuts, or custom NSEvent monitor)
-- [ ] Create a Shortcut Manager (centralized component to register/unregister shortcuts)
+- [x] Create a Shortcut Manager (centralized component to register/unregister shortcuts)
 - [ ] Implement support for configurable shortcuts (map key combinations → actions)
-- [ ] Define storage model for shortcuts (array of shortcut objects: {id, keyCombo, actionIdentifier})
-- [ ] Add ability to persist shortcuts locally:
+- [x] Define storage model for shortcuts (array of shortcut objects: {id, keyCombo, actionIdentifier})
+- [x] Add ability to persist shortcuts locally:
   - [ ] UserDefaults (simple)
   - [x] JSON file in Application Support folder (flexible & cloud-syncable later)
   - [ ] CoreData (overkill for now)
-- [ ] Pick JSON file config for scalability
-- [ ] Implement a default shortcut (⌘ + ⇧ + R) and action handler
+- [x] Pick JSON file config for scalability
+- [x] Implement a default shortcut (⌘ + ⇧ + R) and action handler
 
 # Settings & Configurations
 
