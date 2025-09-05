@@ -22,7 +22,6 @@ struct SettingsContentView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 600, minHeight: 400)
-        .toolbar(removing: .sidebarToggle)
     }
     
     @ViewBuilder
