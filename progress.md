@@ -7,7 +7,7 @@
   - [x] If closed → hide window but keep app running in background
 - [x] Ensure that closing the window does not quit the app, only hides it
 - [x] Show main window on app startup for consistent dock icon behavior
-- [ ] Add launch at startup support (using SMAppService)
+- [ ] IGNORE: Add launch at startup support (using SMAppService)
 
 # Keyboard Shortcuts (Global Hotkeys)
 
