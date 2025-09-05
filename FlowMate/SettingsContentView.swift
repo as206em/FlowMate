@@ -12,6 +12,7 @@ struct SettingsContentView: View {
             }
             .navigationTitle("FlowMate")
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 250)
+             //.toolbar(removing: .sidebarToggle)
         } detail: {
             if let selectedSection = selectedSection {
                 sectionView(for: selectedSection)
