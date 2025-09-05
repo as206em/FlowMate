@@ -23,8 +23,10 @@ final class MenuBarViewModel: NSObject, ObservableObject, NSWindowDelegate {
         super.init()
         setupMenuBar()
         
-        // Set initial activation policy to accessory (no dock icon)
-        NSApp.setActivationPolicy(.accessory)
+        // Show main window on startup
+        DispatchQueue.main.async {
+            self.showMainWindow()
+        }
     }
 
     // MARK: - Public

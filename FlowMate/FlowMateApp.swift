@@ -34,6 +34,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
     
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Set activation policy to accessory (no dock icon) before app finishes launching
+        NSApp.setActivationPolicy(.accessory)
+    }
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
         // App is already configured in MenuBarViewModel
     }
