@@ -58,38 +58,10 @@ class PredefinedShortcutsService {
     private func setupPredefinedShortcuts() {
         shortcuts = [
             PredefinedShortcut(
-                id: "showMainWindow",
-                title: "Show FlowMate",
-                icon: "eye",
-                defaultKeyCombination: "Cmd+Shift+R"
-            ),
-            
-            PredefinedShortcut(
-                id: "toggleRecording",
-                title: "Toggle Recording",
-                icon: "record.circle",
-                defaultKeyCombination: "Cmd+Shift+T"
-            ),
-            
-            PredefinedShortcut(
-                id: "pauseRecording",
-                title: "Pause Recording",
-                icon: "pause.circle",
+                id: "generalProofreading",
+                title: "General Proofreading",
+                icon: "text.book.closed",
                 defaultKeyCombination: "Cmd+Shift+P"
-            ),
-            
-            PredefinedShortcut(
-                id: "stopRecording",
-                title: "Stop Recording",
-                icon: "stop.circle",
-                defaultKeyCombination: "Cmd+Shift+S"
-            ),
-            
-            PredefinedShortcut(
-                id: "showSettings",
-                title: "Show Settings",
-                icon: "gear",
-                defaultKeyCombination: "Cmd+Shift+,"
             )
         ]
     }
