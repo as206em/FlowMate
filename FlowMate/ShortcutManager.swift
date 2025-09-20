@@ -61,33 +61,17 @@ final class ShortcutManager: ObservableObject {
     
     // MARK: - Public Methods
     
-    /// Adds a new shortcut
-    /// - Parameter shortcut: The shortcut to add
-    func addShortcut(_ shortcut: Shortcut) {
-        shortcuts.append(shortcut)
-        saveShortcuts()
-    }
-    
-    /// Updates an existing shortcut
-    /// - Parameter shortcut: The shortcut with updated values
-    func updateShortcut(_ shortcut: Shortcut) {
+    /// Updates an existing shortcut's key combination
+    /// - Parameter shortcut: The shortcut with updated key combination
+    func updateShortcutKeyCombination(_ shortcut: Shortcut) {
         guard let index = shortcuts.firstIndex(where: { $0.id == shortcut.id }) else { return }
         shortcuts[index] = shortcut
         saveShortcuts()
     }
     
-    /// Removes a shortcut
-    /// - Parameter shortcut: The shortcut to remove
-    func removeShortcut(_ shortcut: Shortcut) {
-        shortcuts.removeAll { $0.id == shortcut.id }
-        saveShortcuts()
-    }
-    
-    /// Removes a shortcut by ID
-    /// - Parameter id: The ID of the shortcut to remove
-    func removeShortcut(id: UUID) {
-        shortcuts.removeAll { $0.id == id }
-        saveShortcuts()
+    /// Gets the predefined shortcut service
+    private var predefinedShortcutsService: PredefinedShortcutsService {
+        return PredefinedShortcutsService.shared
     }
     
     // MARK: - Private Methods
@@ -102,12 +86,47 @@ final class ShortcutManager: ObservableObject {
         
         do {
             let data = try Data(contentsOf: shortcutsFileURL)
-            shortcuts = try jsonDecoder.decode([Shortcut].self, from: data)
+            let savedShortcuts = try jsonDecoder.decode([Shortcut].self, from: data)
+            
+            // Merge with predefined shortcuts to ensure all predefined shortcuts exist
+            mergeWithPredefinedShortcuts(savedShortcuts: savedShortcuts)
         } catch {
             print("Error loading shortcuts: \(error)")
             // Fallback to defaults if loading fails
             createDefaultShortcuts()
         }
+    }
+    
+    /// Merges saved shortcuts with predefined shortcuts
+    /// - Parameter savedShortcuts: The shortcuts loaded from file
+    private func mergeWithPredefinedShortcuts(savedShortcuts: [Shortcut]) {
+        var mergedShortcuts: [Shortcut] = []
+        
+        // Add all predefined shortcuts, using saved key combinations if they exist
+        for predefined in predefinedShortcutsService.shortcuts {
+            if let saved = savedShortcuts.first(where: { $0.id == predefined.id }) {
+                // Use saved key combination if it exists
+                mergedShortcuts.append(Shortcut(
+                    id: predefined.id,
+                    title: predefined.title,
+                    icon: predefined.icon,
+                    keyCombination: saved.keyCombination,
+                    action: predefined.id
+                ))
+            } else {
+                // Use default key combination
+                mergedShortcuts.append(Shortcut(
+                    id: predefined.id,
+                    title: predefined.title,
+                    icon: predefined.icon,
+                    keyCombination: predefined.defaultKeyCombination,
+                    action: predefined.id
+                ))
+            }
+        }
+        
+        shortcuts = mergedShortcuts
+        saveShortcuts() // Save the merged result
     }
     
     /// Saves shortcuts to the JSON file
@@ -122,14 +141,19 @@ final class ShortcutManager: ObservableObject {
     
     /// Creates default shortcuts for first run
     private func createDefaultShortcuts() {
-        let defaultShortcut = Shortcut(
-            title: "Show FlowMate",
-            icon: "eye",
-            keyCombination: "Cmd+Shift+R",
-            action: "showMainWindow"
-        )
+        var defaultShortcuts: [Shortcut] = []
         
-        shortcuts = [defaultShortcut]
+        for predefined in predefinedShortcutsService.shortcuts {
+            defaultShortcuts.append(Shortcut(
+                id: predefined.id,
+                title: predefined.title,
+                icon: predefined.icon,
+                keyCombination: predefined.defaultKeyCombination,
+                action: predefined.id
+            ))
+        }
+        
+        shortcuts = defaultShortcuts
         saveShortcuts()
     }
 }

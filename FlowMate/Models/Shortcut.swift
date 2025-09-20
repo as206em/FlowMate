@@ -10,8 +10,8 @@ import Foundation
 /// Represents a global keyboard shortcut that can be triggered system-wide
 struct Shortcut: Identifiable, Codable {
     
-    /// Unique identifier for the shortcut
-    let id: UUID
+    /// Unique identifier for the shortcut (matches predefined shortcut ID)
+    let id: String
     
     /// User-friendly name for the shortcut
     var title: String
@@ -27,13 +27,13 @@ struct Shortcut: Identifiable, Codable {
     
     /// Creates a new shortcut
     /// - Parameters:
-    ///   - id: Unique identifier (defaults to new UUID)
+    ///   - id: Unique identifier (matches predefined shortcut ID)
     ///   - title: User-friendly name
     ///   - icon: SF Symbol name or icon identifier
     ///   - keyCombination: Key combination string
     ///   - action: Action identifier
     init(
-        id: UUID = UUID(),
+        id: String,
         title: String,
         icon: String,
         keyCombination: String,
