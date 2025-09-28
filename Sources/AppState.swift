@@ -106,19 +106,110 @@ final class AppState: ObservableObject {
     }
     
     private func setupKeyboardShortcut() {
+        NSLog("AppState: 🛠️ Setting up keyboard shortcut monitoring - Current shortcut: '\(keyboardShortcut)'")
+        
+        // Validate the shortcut before setting up
+        let (keyCode, modifiers) = parseShortcut(keyboardShortcut)
+        if keyCode == 0 && modifiers.isEmpty {
+            NSLog("AppState: ⚠️ Invalid shortcut configuration - keyCode: \(keyCode), modifiers: \(modifiers)")
+            return
+        }
+        
+        NSLog("AppState: 🔧 Parsed shortcut - keyCode: \(keyCode), modifiers: \(modifiers), shortcut: \(keyboardShortcut)")
+        
         // Remove existing monitor
         if let monitor = eventMonitor {
+            NSLog("AppState: 🗑️ Removing existing keyboard shortcut monitor")
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
         }
         
-        // Parse shortcut string
-        let (keyCode, modifiers) = parseShortcut(keyboardShortcut)
+        // Check Input Monitoring permission before setting up
+        if !hasInputMonitoringPermission() {
+            NSLog("AppState: ⚠️ Input Monitoring permission not granted - Please enable in System Settings > Security & Privacy > Privacy > Input Monitoring")
+            return
+        }
         
-        // Set up new global event monitor
+        // Set up new global event monitor with additional safety
         eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == keyCode && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == modifiers {
-                self?.handleProofreadingShortcut()
+            guard let strongSelf = self else {
+                NSLog("AppState: ⚠️ Keyboard shortcut handler - self is nil, event ignored")
+                return
+            }
+            
+            let eventKeyCode = event.keyCode
+            let eventModifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            
+            // Log ALL keyboard events to debug if monitor is working
+            NSLog("AppState: ⌨️ Keyboard event received - keyCode: \(eventKeyCode), modifiers: \(eventModifiers), expected keyCode: \(keyCode), expected modifiers: \(modifiers)")
+            
+            if eventKeyCode == keyCode && eventModifiers == modifiers {
+                NSLog("AppState: ✅ Keyboard shortcut matched! \(strongSelf.keyboardShortcut) - Handling proofreading shortcut")
+                DispatchQueue.main.async {
+                    strongSelf.handleProofreadingShortcut()
+                }
+            } else {
+                NSLog("AppState: ❌ Keyboard shortcut did not match - Expected keyCode: \(keyCode), received: \(eventKeyCode)")
+            }
+        }
+        
+        if eventMonitor != nil {
+            NSLog("AppState: ✅ Successfully set up keyboard shortcut monitor for '\(keyboardShortcut)'")
+            NSLog("AppState: 💡 If shortcuts don't work, check Input Monitoring permissions in System Settings")
+        } else {
+            NSLog("AppState: ❌ Failed to set up keyboard shortcut monitor for '\(keyboardShortcut)'")
+        }
+    }
+    
+    private func hasInputMonitoringPermission() -> Bool {
+        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: false]
+        let accessEnabled = AXIsProcessTrustedWithOptions(options)
+        NSLog("AppState: Accessibility access enabled: \(accessEnabled)")
+        
+        // Check input monitoring permission specifically
+        let eventTap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: CGEventMask(1 << CGEventType.keyDown.rawValue),
+            callback: { _, _, _, _ in nil },
+            userInfo: nil
+        )
+        
+        let hasInputMonitoring = eventTap != nil
+        if let eventTap = eventTap {
+            CFMachPortInvalidate(eventTap)
+        }
+        
+        NSLog("AppState: Input monitoring permission granted: \(hasInputMonitoring)")
+        return accessEnabled && hasInputMonitoring
+    }
+    
+    private func preloadOllamaConnection() {
+        // Immediately check connection on startup
+        Task {
+            await checkConnection()
+        }
+        
+        // Preload the service if we have a valid URL
+        Task {
+            let connectionValue = selectedProvider == .ollama ? ollamaURL : openaiAPIKey
+            await llmService.updateBaseURL(connectionValue)
+            // Additional warmup - make a lightweight call to ensure service is ready
+            _ = try? await llmService.listModels()
+        }
+    }
+    
+    func updateOllamaURL(_ url: String) {
+        if selectedProvider == .ollama {
+            ollamaURL = url
+        } else {
+            openaiAPIKey = url
+        }
+        Task {
+            await llmService.updateBaseURL(url)
+            Task {
+                await checkConnection()
             }
         }
     }
@@ -139,47 +230,46 @@ final class AppState: ObservableObject {
         }
     }
     
-    private func preloadOllamaConnection() {
-        // Immediately check connection on startup
-        checkConnection()
-        
-        // Preload the service if we have a valid URL
-        Task {
-            let connectionValue = selectedProvider == .ollama ? ollamaURL : openaiAPIKey
-            await llmService.updateBaseURL(connectionValue)
-            // Additional warmup - make a lightweight call to ensure service is ready
-            _ = try? await llmService.listModels()
-        }
-    }
-    
-    func updateOllamaURL(_ url: String) {
-        if selectedProvider == .ollama {
-            ollamaURL = url
-        } else {
-            openaiAPIKey = url
-        }
-        Task {
-            await llmService.updateBaseURL(url)
-            checkConnection()
-        }
-    }
-    
     func updateKeyboardShortcut(_ shortcut: String) {
+        NSLog("AppState: 🔄 Updating keyboard shortcut from '\(keyboardShortcut)' to '\(shortcut)'")
+        
         keyboardShortcut = shortcut
+        
+        // Remove existing monitor before setting up new one
+        if let existingMonitor = eventMonitor {
+            NSLog("AppState: 🗑️ Removing existing monitor for old shortcut")
+            NSEvent.removeMonitor(existingMonitor)
+            eventMonitor = nil
+        }
+        
+        // Set up new monitor with updated shortcut
         setupKeyboardShortcut()
+        
+        NSLog("AppState: ✅ Keyboard shortcut updated successfully to '\(keyboardShortcut)'")
     }
     
     func handleProofreadingShortcut() {
-        guard let selectedText = getSelectedText() else { return }
+        NSLog("AppState: 🚀 handleProofreadingShortcut() called - Shortcut detected and executed!")
+        NSLog("AppState: 📋 Starting text selection process")
+        
+        guard let selectedText = getSelectedText() else {
+            NSLog("AppState: ❌ No selected text found, exiting proofreading shortcut")
+            return
+        }
+        
+        NSLog("AppState: ✅ Selected text found, length: \(selectedText.count) characters")
         
         // Store original text for comparison
         self.originalText = selectedText
+        NSLog("AppState: 💾 Stored original text, starting processing")
         
         // Show dialog immediately with loading state
         self.correctedText = ""
         self.isProcessing = true
+        NSLog("AppState: 📄 Showing proofreading dialog, setting isProcessing to true")
         self.showProofreadingDialog(nil)
         
+        NSLog("AppState: 🚀 Starting proofreading process with retry mechanism")
         performProofreadingWithRetry(text: selectedText)
     }
     
@@ -239,28 +329,47 @@ final class AppState: ObservableObject {
     }
     
     private func getSelectedText() -> String? {
+        NSLog("AppState: 📋 Attempting to get selected text from clipboard")
+        
         let pasteboard = NSPasteboard.general
         let previousContents = pasteboard.string(forType: .string)
+        NSLog("AppState: 📋 Previous clipboard contents length: \(previousContents?.count ?? 0)")
         
         // Use Command+C to copy instead of Command+X to cut
-        let source = CGEventSource(stateID: .hidSystemState)
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: true) // 0x08 = 'C' key
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: false)
+        guard let source = CGEventSource(stateID: .hidSystemState) else {
+            NSLog("AppState: ⚠️ Failed to create CGEventSource")
+            return nil
+        }
         
-        keyDown?.flags = .maskCommand
-        keyUp?.flags = .maskCommand
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: true) else { // 0x08 = 'C' key
+            NSLog("AppState: ⚠️ Failed to create keyDown event")
+            return nil
+        }
         
-        keyDown?.post(tap: .cgAnnotatedSessionEventTap)
-        keyUp?.post(tap: .cgAnnotatedSessionEventTap)
+        guard let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: false) else {
+            NSLog("AppState: ⚠️ Failed to create keyUp event")
+            return nil
+        }
         
-        usleep(100000)
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+        
+        NSLog("AppState: ⌨️ Posting Command+C events to copy selected text")
+        
+        keyDown.post(tap: .cgAnnotatedSessionEventTap)
+        keyUp.post(tap: .cgAnnotatedSessionEventTap)
+        
+        // Wait longer to ensure the copy operation completes
+        usleep(150000) // Increased from 1000 to 150ms
         
         let selectedText = pasteboard.string(forType: .string)
+        NSLog("AppState: 📋 Retrieved text from pasteboard, length: \(selectedText?.count ?? 0)")
         
         // Restore previous clipboard contents only if we actually copied something
         if let previousContents = previousContents, selectedText != previousContents {
             pasteboard.clearContents()
             pasteboard.setString(previousContents, forType: .string)
+            NSLog("AppState: 📋 Restored previous clipboard contents")
         }
         
         return selectedText
