@@ -1,14 +1,15 @@
 import Foundation
 import Alamofire
+import SwiftUI
 
-actor OllamaService {
+actor OllamaService: LLMService {
     private var baseURL: String
     
     init(baseURL: String = "http://127.0.0.1:11434") {
         self.baseURL = baseURL
     }
     
-    func updateBaseURL(_ url: String) {
+    func updateBaseURL(_ url: String) async {
         self.baseURL = url
     }
     

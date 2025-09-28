@@ -16,7 +16,22 @@ final class AppState: ObservableObject {
     @AppStorage("keyboardShortcut") var keyboardShortcut: String = "command+."
     @AppStorage("showDiffByDefault") var showDiffByDefault: Bool = true
     
-    private var ollamaService = OllamaService()
+    @Published var selectedProvider: LLMProvider = .ollama {
+        didSet { rebuildService() }
+    }
+    private var llmService: any LLMService = OllamaService()
+    
+    private func rebuildService() {
+        switch selectedProvider {
+        case .ollama:
+            llmService = OllamaService()
+        case .openai:
+            llmService = OpenAIService()
+        }
+        Task {
+            await llmService.updateBaseURL(ollamaURL)
+        }
+    }
     private var cancellables = Set<AnyCancellable>()
     private var eventMonitor: Any?
     
@@ -60,7 +75,7 @@ final class AppState: ObservableObject {
     func checkConnection() {
         Task {
             do {
-                let models = try await ollamaService.listModels()
+                let models = try await llmService.listModels()
                 await MainActor.run {
                     self.availableModels = models
                     self.connectionStatus = .connected
@@ -79,16 +94,16 @@ final class AppState: ObservableObject {
         
         // Preload the service if we have a valid URL
         Task {
-            await ollamaService.updateBaseURL(ollamaURL)
+            await llmService.updateBaseURL(ollamaURL)
             // Additional warmup - make a lightweight call to ensure service is ready
-            _ = try? await ollamaService.listModels()
+            _ = try? await llmService.listModels()
         }
     }
     
     func updateOllamaURL(_ url: String) {
         ollamaURL = url
         Task {
-            await ollamaService.updateBaseURL(url)
+            await llmService.updateBaseURL(url)
             checkConnection()
         }
     }
@@ -120,7 +135,7 @@ final class AppState: ObservableObject {
                 // Construct the final prompt with system rules
                 let finalPrompt = buildFinalPrompt(userPrompt: currentPrompt, inputText: text)
                 
-                let corrected = try await ollamaService.generate(
+                let corrected = try await llmService.generate(
                     model: currentModel,
                     prompt: finalPrompt
                 )
@@ -136,7 +151,7 @@ final class AppState: ObservableObject {
             } catch {
                 if retryCount < maxRetries {
                     // Wait briefly before retry
-                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                    try? await Task.sleep(nanoseconds: 1_000_000) // 1 second
                     performProofreadingWithRetry(text: text, retryCount: retryCount + 1)
                 } else {
                     await MainActor.run {

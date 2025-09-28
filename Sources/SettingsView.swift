@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
@@ -10,13 +11,41 @@ struct SettingsView: View {
         VStack(spacing: 16) {
             VStack(spacing: 16) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("URL:")
+                    Text("Provider:")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .frame(width: 60, alignment: .trailing)
-                    TextField("Ollama URL", text: $appState.ollamaURL)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .focused($isURLFieldFocused)
+                    Picker("", selection: $appState.selectedProvider) {
+                        ForEach(LLMProvider.allCases) { provider in
+                            Text(provider.displayName).tag(provider)
+                        }
+                    }
+                    .pickerStyle(MenuPickerStyle())
+                    .frame(maxWidth: .infinity)
+                }
+                
+                Group {
+                    if appState.selectedProvider == .ollama {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("URL:")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .frame(width: 60, alignment: .trailing)
+                            TextField("Ollama URL", text: $appState.ollamaURL)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .focused($isURLFieldFocused)
+                        }
+                    } else if appState.selectedProvider == .openai {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("API Key:")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .frame(width: 60, alignment: .trailing)
+                            SecureField("OpenAI API Key", text: $appState.ollamaURL)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .focused($isURLFieldFocused)
+                        }
+                    }
                 }
                 
                 HStack(alignment: .firstTextBaseline) {
