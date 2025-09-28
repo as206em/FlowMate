@@ -15,9 +15,14 @@ final class AppState: ObservableObject {
     @AppStorage("ollamaURL") var ollamaURL: String = "http://127.0.0.1:11434"
     @AppStorage("keyboardShortcut") var keyboardShortcut: String = "command+."
     @AppStorage("showDiffByDefault") var showDiffByDefault: Bool = true
+    @AppStorage("selectedProvider") var selectedProviderRaw: String = LLMProvider.ollama.rawValue
+    @AppStorage("openaiAPIKey") var openaiAPIKey: String = ""
     
     @Published var selectedProvider: LLMProvider = .ollama {
-        didSet { rebuildService() }
+        didSet { 
+            selectedProviderRaw = selectedProvider.rawValue
+            rebuildService() 
+        }
     }
     private var llmService: any LLMService = OllamaService()
     
@@ -29,7 +34,8 @@ final class AppState: ObservableObject {
             llmService = OpenAIService()
         }
         Task {
-            await llmService.updateBaseURL(ollamaURL)
+            let connectionValue = selectedProvider == .ollama ? ollamaURL : openaiAPIKey
+            await llmService.updateBaseURL(connectionValue)
             // Refresh models after switching providers
             await refreshModels()
         }
@@ -85,6 +91,10 @@ final class AppState: ObservableObject {
     }
     
     init() {
+        // Restore selected provider from saved value
+        if let savedProvider = LLMProvider(rawValue: selectedProviderRaw) {
+            selectedProvider = savedProvider
+        }
         setupKeyboardShortcut()
         preloadOllamaConnection()
     }
@@ -135,14 +145,19 @@ final class AppState: ObservableObject {
         
         // Preload the service if we have a valid URL
         Task {
-            await llmService.updateBaseURL(ollamaURL)
+            let connectionValue = selectedProvider == .ollama ? ollamaURL : openaiAPIKey
+            await llmService.updateBaseURL(connectionValue)
             // Additional warmup - make a lightweight call to ensure service is ready
             _ = try? await llmService.listModels()
         }
     }
     
     func updateOllamaURL(_ url: String) {
-        ollamaURL = url
+        if selectedProvider == .ollama {
+            ollamaURL = url
+        } else {
+            openaiAPIKey = url
+        }
         Task {
             await llmService.updateBaseURL(url)
             checkConnection()

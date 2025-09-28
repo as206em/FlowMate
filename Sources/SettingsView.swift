@@ -41,7 +41,7 @@ struct SettingsView: View {
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                                 .frame(width: 60, alignment: .trailing)
-                            SecureField("OpenAI API Key", text: $appState.ollamaURL)
+                            SecureField("OpenAI API Key", text: $appState.openaiAPIKey)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
                                 .focused($isURLFieldFocused)
                         }
@@ -75,7 +75,8 @@ struct SettingsView: View {
                 }
                 
                 Button("Test Connection") {
-                    appState.testConnection(with: appState.ollamaURL)
+                    let testValue = appState.selectedProvider == .ollama ? appState.ollamaURL : appState.openaiAPIKey
+                    appState.testConnection(with: testValue)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
