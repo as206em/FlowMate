@@ -30,6 +30,47 @@ final class AppState: ObservableObject {
         }
         Task {
             await llmService.updateBaseURL(ollamaURL)
+            // Refresh models after switching providers
+            await refreshModels()
+        }
+    }
+    
+    private func refreshModels() async {
+        do {
+            let models = try await llmService.listModels()
+            await MainActor.run {
+                self.availableModels = models
+                // If current model is not in the new list, select the first available model
+                if !models.contains(currentModel), let firstModel = models.first {
+                    currentModel = firstModel
+                }
+            }
+        } catch {
+            await MainActor.run {
+                self.availableModels = []
+                self.connectionStatus = .error
+            }
+        }
+    }
+    
+    func testConnection(with value: String) {
+        Task {
+            await llmService.updateBaseURL(value)
+            do {
+                let models = try await llmService.listModels()
+                await MainActor.run {
+                    self.availableModels = models
+                    self.connectionStatus = .connected
+                    // If current model is not in the new list, select the first available model
+                    if !models.contains(currentModel), let firstModel = models.first {
+                        currentModel = firstModel
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.connectionStatus = .error
+                }
+            }
         }
     }
     private var cancellables = Set<AnyCancellable>()

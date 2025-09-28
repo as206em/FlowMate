@@ -75,7 +75,7 @@ struct SettingsView: View {
                 }
                 
                 Button("Test Connection") {
-                    appState.checkConnection()
+                    appState.testConnection(with: appState.ollamaURL)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)

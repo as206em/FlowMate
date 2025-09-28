@@ -4,32 +4,86 @@ import SwiftUI
 
 actor OpenAIService: LLMService {
     private var apiKey: String
+    private let baseURL = "https://api.openai.com/v1"
     
     init(apiKey: String = "") {
         self.apiKey = apiKey
     }
     
     func updateBaseURL(_ url: String) async {
-        // For OpenAI, we'll store the API key in the URL field for now
-        // since we're reusing the ollamaURL storage
         self.apiKey = url
     }
     
     func listModels() async throws -> [String] {
-        // For now, return a placeholder list of OpenAI models
-        // In a real implementation, this would call the OpenAI API
-        return [
-            "gpt-4",
-            "gpt-4-turbo",
-            "gpt-3.5-turbo",
-            "gpt-4o",
-            "gpt-4o-mini"
+        guard !apiKey.isEmpty else {
+            throw NSError(domain: "OpenAIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "API key is required"])
+        }
+        
+        let headers: HTTPHeaders = [
+            "Authorization": "Bearer \(apiKey)",
+            "Content-Type": "application/json"
         ]
+        
+        let response = await AF.request("\(baseURL)/models", method: .get, headers: headers)
+            .serializingDecodable(OpenAIModelsResponse.self)
+            .response
+        
+        switch response.result {
+        case .success(let modelsResponse):
+            return modelsResponse.data.map { $0.id }.filter { $0.hasPrefix("gpt-") }
+        case .failure(let error):
+            throw error
+        }
     }
     
     func generate(model: String, prompt: String) async throws -> String {
-        // For now, return a placeholder response
-        // In a real implementation, this would call the OpenAI API
-        return "This is a placeholder response from OpenAI for model \(model) with prompt: \(prompt)"
+        guard !apiKey.isEmpty else {
+            throw NSError(domain: "OpenAIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "API key is required"])
+        }
+        
+        let headers: HTTPHeaders = [
+            "Authorization": "Bearer \(apiKey)",
+            "Content-Type": "application/json"
+        ]
+        
+        let parameters: [String: Any] = [
+            "model": model,
+            "messages": [
+                ["role": "user", "content": prompt]
+            ],
+            "temperature": 0.7,
+            "max_tokens": 2000
+        ]
+        
+        let response = await AF.request("\(baseURL)/chat/completions", method: .post, parameters: parameters, encoding: JSONEncoding.default, headers: headers)
+            .serializingDecodable(OpenAIChatResponse.self)
+            .response
+        
+        switch response.result {
+        case .success(let chatResponse):
+            return chatResponse.choices.first?.message.content ?? ""
+        case .failure(let error):
+            throw error
+        }
     }
+}
+
+struct OpenAIModelsResponse: Codable {
+    let data: [OpenAIModel]
+}
+
+struct OpenAIModel: Codable {
+    let id: String
+}
+
+struct OpenAIChatResponse: Codable {
+    let choices: [Choice]
+}
+
+struct Choice: Codable {
+    let message: Message
+}
+
+struct Message: Codable {
+    let content: String
 }
