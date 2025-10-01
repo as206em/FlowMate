@@ -91,7 +91,8 @@ struct SettingsView: View {
                 .keyboardShortcut(.escape)
                 
                 Button("OK") {
-                    appState.updateOllamaURL(appState.ollamaURL)
+                    let valueToSave = appState.selectedProvider == .ollama ? appState.ollamaURL : appState.openaiAPIKey
+                    appState.updateOllamaURL(valueToSave)
                     appState.updateKeyboardShortcut(appState.keyboardShortcut)
                     dismiss()
                 }
