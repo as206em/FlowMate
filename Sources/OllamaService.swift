@@ -1,15 +1,11 @@
 import Foundation
 import Alamofire
 
-actor OllamaService {
+actor OllamaService: AIService {
     private var baseURL: String
     
     init(baseURL: String = "http://127.0.0.1:11434") {
         self.baseURL = baseURL
-    }
-    
-    func updateBaseURL(_ url: String) {
-        self.baseURL = url
     }
     
     func listModels() async throws -> [String] {
