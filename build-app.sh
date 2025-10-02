@@ -3,6 +3,10 @@
 # Build the Proofreader app with icon
 set -e
 
+# Kill any running instances of the app before building
+echo "Stopping any running instances of Proofreader..."
+pkill -f "Proofreader" 2>/dev/null || true
+
 # Get version information
 VERSION="1.1.0"
 BUILD_NUMBER=$(date +"%Y%m%d%H%M")
@@ -64,4 +68,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
 EOF
 
 echo "App bundle created: $APP_BUNDLE"
-echo "To run: open $APP_BUNDLE"
+
+# Open the app after successful build
+echo "Starting Proofreader..."
+open "$APP_BUNDLE"
+
+echo "Build completed successfully!"
