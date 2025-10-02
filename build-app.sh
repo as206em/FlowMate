@@ -69,6 +69,29 @@ EOF
 
 echo "App bundle created: $APP_BUNDLE"
 
+# Create entitlements file for codesigning
+echo "Creating entitlements file..."
+cat > entitlements.plist << 'ENT_EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    <key>com.apple.security.device.input-monitoring</key>
+    <true/>
+</dict>
+</plist>
+ENT_EOF
+
+# Codesign the app with entitlements
+echo "Codesigning app with entitlements..."
+codesign --force --deep --sign "Proofreader Dev Certificate" --entitlements entitlements.plist "$APP_BUNDLE"
+
+# Verify the entitlements
+echo "Verifying entitlements..."
+codesign -dv --entitlements :- "$APP_BUNDLE"
+
 # Open the app after successful build
 echo "Starting Proofreader..."
 open "$APP_BUNDLE"
