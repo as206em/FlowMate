@@ -6,7 +6,11 @@ import AppKit
 final class AppState: ObservableObject {
     @AppStorage("currentModel") var currentModel: String = "gemma3:4b"
     @AppStorage("currentPrompt") var currentPrompt: String = "You are a text proofreader. Your task is to correct typos and grammar errors in the provided text while strictly preserving the original meaning, formatting, and style."
-    @AppStorage("currentProvider") var currentProvider: String = "Ollama"
+    @Published var currentProvider: AIProvider = .ollama {
+        didSet {
+            UserDefaults.standard.set(currentProvider.rawValue, forKey: "currentProvider")
+        }
+    }
     @Published var availableModels: [String] = []
     @Published var connectionStatus: ConnectionStatus = .disconnected
     @Published var isProcessing: Bool = false
@@ -14,10 +18,12 @@ final class AppState: ObservableObject {
     @Published var correctedText: String = ""
     @Published var originalText: String = ""
     @AppStorage("ollamaURL") var ollamaURL: String = "http://127.0.0.1:11434"
+    @AppStorage("openAIURL") var openAIURL: String = "https://api.openai.com"
+    @AppStorage("openAIAPIKey") var openAIAPIKey: String = ""
     @AppStorage("keyboardShortcut") var keyboardShortcut: String = "command+."
     @AppStorage("showDiffByDefault") var showDiffByDefault: Bool = true
     
-    private var ollamaService = OllamaService()
+    @Published var aiService: AIService!
     private var cancellables = Set<AnyCancellable>()
     private var eventMonitor: Any?
     
@@ -30,8 +36,41 @@ final class AppState: ObservableObject {
     }
     
     init() {
+        // Initialize provider from stored value
+        let storedProvider = UserDefaults.standard.string(forKey: "currentProvider") ?? "Ollama"
+        if let provider = AIProvider(rawValue: storedProvider) {
+            currentProvider = provider
+        }
+        
+        // Initialize the AI service
+        updateAIService()
+        
         setupKeyboardShortcut()
-        preloadOllamaConnection()
+        preloadConnection()
+    }
+    
+    private func updateAIService() {
+        let configuration = AIConfiguration(
+            ollamaURL: ollamaURL,
+            openAIURL: openAIURL,
+            openAIAPIKey: openAIAPIKey
+        )
+        
+        aiService = AIServiceFactory.createService(
+            for: currentProvider,
+            configuration: configuration
+        )
+    }
+    
+    func setProvider(_ provider: AIProvider) {
+        currentProvider = provider
+        updateAIService() // Recreate service with new provider
+        checkConnection() // Test new provider connection
+    }
+    
+    private func preloadConnection() {
+        // Immediately check connection on startup
+        checkConnection()
     }
     
     deinit {
@@ -60,38 +99,32 @@ final class AppState: ObservableObject {
     
     func checkConnection() {
         Task {
+            print("AppState: Checking connection for provider: \(currentProvider)")
             do {
-                let models = try await ollamaService.listModels()
+                let models = try await aiService.listModels()
                 await MainActor.run {
+                    print("AppState: Connection successful, got \(models.count) models")
                     self.availableModels = models
                     self.connectionStatus = .connected
                 }
             } catch {
                 await MainActor.run {
+                    print("AppState: Connection failed - \(error.localizedDescription)")
                     self.connectionStatus = .error
                 }
             }
         }
     }
     
-    private func preloadOllamaConnection() {
-        // Immediately check connection on startup
+    func updateProviderURL(_ url: String) {
+        switch currentProvider {
+        case .ollama:
+            ollamaURL = url
+        case .openai:
+            openAIURL = url
+        }
+        updateAIService() // Recreate service with new configuration
         checkConnection()
-        
-        // Preload the service if we have a valid URL
-        Task {
-            await ollamaService.updateBaseURL(ollamaURL)
-            // Additional warmup - make a lightweight call to ensure service is ready
-            _ = try? await ollamaService.listModels()
-        }
-    }
-    
-    func updateOllamaURL(_ url: String) {
-        ollamaURL = url
-        Task {
-            await ollamaService.updateBaseURL(url)
-            checkConnection()
-        }
     }
     
     func updateKeyboardShortcut(_ shortcut: String) {
@@ -121,7 +154,7 @@ final class AppState: ObservableObject {
                 // Construct the final prompt with system rules
                 let finalPrompt = buildFinalPrompt(userPrompt: currentPrompt, inputText: text)
                 
-                let corrected = try await ollamaService.generate(
+                let corrected = try await aiService.generate(
                     model: currentModel,
                     prompt: finalPrompt
                 )
@@ -137,7 +170,7 @@ final class AppState: ObservableObject {
             } catch {
                 if retryCount < maxRetries {
                     // Wait briefly before retry
-                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                    try? await Task.sleep(nanoseconds: 1_000_000) // 1 second
                     performProofreadingWithRetry(text: text, retryCount: retryCount + 1)
                 } else {
                     await MainActor.run {

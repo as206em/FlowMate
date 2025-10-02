@@ -15,11 +15,15 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                         .frame(width: 60, alignment: .trailing)
                     Picker("", selection: $appState.currentProvider) {
-                        Text("Ollama").tag("Ollama")
-                        Text("OpenAI").tag("OpenAI")
+                        ForEach(AIProvider.allCases, id: \.self) { provider in
+                            Text(provider.displayName).tag(provider)
+                        }
                     }
                     .pickerStyle(MenuPickerStyle())
                     .frame(maxWidth: .infinity)
+                    .onChange(of: appState.currentProvider) { provider in
+                        appState.setProvider(provider)
+                    }
                 }
                 
                 HStack(alignment: .firstTextBaseline) {
@@ -27,9 +31,26 @@ struct SettingsView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .frame(width: 60, alignment: .trailing)
-                    TextField("Ollama URL", text: $appState.ollamaURL)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .focused($isURLFieldFocused)
+                    if appState.currentProvider == .ollama {
+                        TextField("Ollama URL", text: $appState.ollamaURL)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .focused($isURLFieldFocused)
+                    } else {
+                        TextField("OpenAI URL", text: $appState.openAIURL)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .focused($isURLFieldFocused)
+                    }
+                }
+                
+                if appState.currentProvider == .openai {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("API Key:")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .frame(width: 60, alignment: .trailing)
+                        SecureField("OpenAI API Key", text: $appState.openAIAPIKey)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                    }
                 }
                 
                 HStack(alignment: .firstTextBaseline) {
@@ -74,7 +95,7 @@ struct SettingsView: View {
                 .keyboardShortcut(.escape)
                 
                 Button("OK") {
-                    appState.updateOllamaURL(appState.ollamaURL)
+                    appState.updateProviderURL(appState.currentProvider == .ollama ? appState.ollamaURL : appState.openAIURL)
                     appState.updateKeyboardShortcut(appState.keyboardShortcut)
                     dismiss()
                 }
