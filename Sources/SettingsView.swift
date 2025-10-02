@@ -10,6 +10,18 @@ struct SettingsView: View {
         VStack(spacing: 16) {
             VStack(spacing: 16) {
                 HStack(alignment: .firstTextBaseline) {
+                    Text("Provider:")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .frame(width: 60, alignment: .trailing)
+                    Picker("", selection: $appState.currentProvider) {
+                        Text("Ollama").tag("Ollama")
+                    }
+                    .pickerStyle(MenuPickerStyle())
+                    .frame(maxWidth: .infinity)
+                }
+                
+                HStack(alignment: .firstTextBaseline) {
                     Text("URL:")
                         .font(.subheadline)
                         .foregroundColor(.secondary)

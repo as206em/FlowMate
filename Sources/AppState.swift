@@ -6,6 +6,7 @@ import AppKit
 final class AppState: ObservableObject {
     @AppStorage("currentModel") var currentModel: String = "gemma3:4b"
     @AppStorage("currentPrompt") var currentPrompt: String = "You are a text proofreader. Your task is to correct typos and grammar errors in the provided text while strictly preserving the original meaning, formatting, and style."
+    @AppStorage("currentProvider") var currentProvider: String = "Ollama"
     @Published var availableModels: [String] = []
     @Published var connectionStatus: ConnectionStatus = .disconnected
     @Published var isProcessing: Bool = false
