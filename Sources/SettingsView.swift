@@ -16,6 +16,7 @@ struct SettingsView: View {
                         .frame(width: 60, alignment: .trailing)
                     Picker("", selection: $appState.currentProvider) {
                         Text("Ollama").tag("Ollama")
+                        Text("OpenAI").tag("OpenAI")
                     }
                     .pickerStyle(MenuPickerStyle())
                     .frame(maxWidth: .infinity)
