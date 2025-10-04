@@ -16,12 +16,10 @@ struct ProvidersConfig: Codable {
 
 struct ProviderConfig: Codable {
     var url: String
-    var model: String
     var apiKey: String?
     
-    init(url: String = "", model: String = "", apiKey: String? = nil) {
+    init(url: String = "", apiKey: String? = nil) {
         self.url = url
-        self.model = model
         self.apiKey = apiKey
     }
 }
@@ -31,12 +29,14 @@ struct ProofreadingConfig: Codable {
     var defaultPrompt: String
     var showDiffByDefault: Bool
     var keyboardShortcut: String
+    var model: String
     
-    init(selectedProvider: String, defaultPrompt: String, showDiffByDefault: Bool, keyboardShortcut: String) {
+    init(selectedProvider: String, defaultPrompt: String, showDiffByDefault: Bool, keyboardShortcut: String, model: String = "") {
         self.selectedProvider = selectedProvider
         self.defaultPrompt = defaultPrompt
         self.showDiffByDefault = showDiffByDefault
         self.keyboardShortcut = keyboardShortcut
+        self.model = model
     }
 }
 
@@ -91,14 +91,15 @@ class ConfigurationManager: ObservableObject {
     private static var defaultConfiguration: AppConfig {
         return AppConfig(
             providers: ProvidersConfig(
-                ollama: ProviderConfig(url: "http://127.0.0.1:11434", model: "gemma3:4b", apiKey: nil),
-                openai: ProviderConfig(url: "https://api.openai.com", model: "gpt-4", apiKey: "")
+                ollama: ProviderConfig(url: "http://127.0.0.1:11434", apiKey: nil),
+                openai: ProviderConfig(url: "https://api.openai.com", apiKey: "")
             ),
             proofreading: ProofreadingConfig(
                 selectedProvider: "ollama",
                 defaultPrompt: "You are a text proofreader. Your task is to correct typos and grammar errors in the provided text while strictly preserving the original meaning, formatting, and style.",
                 showDiffByDefault: true,
-                keyboardShortcut: "command+."
+                keyboardShortcut: "command+.",
+                model: "gemma3:4b"
             ),
             app: AppSettings()
         )
@@ -198,18 +199,18 @@ class ConfigurationManager: ObservableObject {
         let providerName = provider.rawValue.lowercased()
         switch providerName {
         case "ollama":
-            let config = config.providers.ollama
+            let providerConfig = config.providers.ollama
             return ProviderSetting(
-                url: config.url,
-                model: config.model,
-                apiKey: config.apiKey
+                url: providerConfig.url,
+                model: config.proofreading.model,
+                apiKey: providerConfig.apiKey
             )
         case "openai":
-            let config = config.providers.openai
+            let providerConfig = config.providers.openai
             return ProviderSetting(
-                url: config.url,
-                model: config.model,
-                apiKey: config.apiKey
+                url: providerConfig.url,
+                model: config.proofreading.model,
+                apiKey: providerConfig.apiKey
             )
         default:
             return nil

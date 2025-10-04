@@ -26,12 +26,15 @@ final class ConfigurationManagerTests: XCTestCase {
     func testInitialConfiguration() {
         let config = configManager.config
         
-        // Test providers - check that they exist and have expected properties
-        XCTAssertEqual(config.providers.ollama.model, "gemma3:4b")
-        XCTAssertEqual(config.providers.openai.model, "gpt-4")
+        // Test providers - check that they exist and have expected properties (no model anymore)
+        XCTAssertEqual(config.providers.ollama.url, "http://127.0.0.1:11434")
+        XCTAssertNil(config.providers.ollama.apiKey)
+        XCTAssertEqual(config.providers.openai.url, "https://api.openai.com")
+        XCTAssertEqual(config.providers.openai.apiKey, "")
         
-        // Test proofreading feature
+        // Test proofreading feature - model should now be here
         XCTAssertNotNil(config.proofreading)
+        XCTAssertEqual(config.proofreading.model, "gemma3:4b")
         
         // Test app settings
         XCTAssertNotNil(config.app)
@@ -44,21 +47,19 @@ final class ConfigurationManagerTests: XCTestCase {
         
         let openaiSetting = configManager.getProviderSetting(.openai)
         XCTAssertNotNil(openaiSetting)
-        XCTAssertEqual(openaiSetting?.model, "gpt-4")
+        XCTAssertEqual(openaiSetting?.model, "gemma3:4b") // Both providers now use the model from proofreading config
     }
     
     func testFeatureLevelProviderUpdate() {
         // Test the new feature-level API for providers
         configManager.updateProvidersConfig { providers in
             providers.ollama.url = "http://new-url:11434"
-            providers.ollama.model = "new-model"
             providers.ollama.apiKey = "new-api-key"
         }
         
         let retrievedSetting = configManager.getProviderSetting(.ollama)
         XCTAssertNotNil(retrievedSetting)
         XCTAssertEqual(retrievedSetting?.url, "http://new-url:11434")
-        XCTAssertEqual(retrievedSetting?.model, "new-model")
         XCTAssertEqual(retrievedSetting?.apiKey, "new-api-key")
     }
     
@@ -130,6 +131,19 @@ final class ConfigurationManagerTests: XCTestCase {
         XCTAssertEqual(updatedConfig.defaultPrompt, "Updated test prompt")
     }
     
+    func testUpdateProofreadingModel() {
+        configManager.updateProofreadingConfig { config in
+            config.model = "updated-model"
+        }
+        
+        let updatedConfig = configManager.getProofreadingConfig()
+        XCTAssertEqual(updatedConfig.model, "updated-model")
+        
+        // Verify that the provider setting now returns the updated model
+        let providerSetting = configManager.getProviderSetting(.ollama)
+        XCTAssertEqual(providerSetting?.model, "updated-model")
+    }
+    
     func testUpdateAppTheme() {
         configManager.updateAppSettings { settings in
             settings.theme = "dark"
@@ -161,13 +175,11 @@ final class ConfigurationManagerTests: XCTestCase {
         // Test updating a specific provider's configuration
         configManager.updateProvidersConfig { providers in
             providers.ollama.url = "http://updated-ollama:11434"
-            providers.ollama.model = "llama3:8b"
             providers.ollama.apiKey = "updated-api-key"
         }
         
         let updatedSetting = configManager.getProviderSetting(.ollama)
         XCTAssertEqual(updatedSetting?.url, "http://updated-ollama:11434")
-        XCTAssertEqual(updatedSetting?.model, "llama3:8b")
         XCTAssertEqual(updatedSetting?.apiKey, "updated-api-key")
     }
     
@@ -175,7 +187,6 @@ final class ConfigurationManagerTests: XCTestCase {
         // Test updating the entire providers configuration
         configManager.updateProvidersConfig { providers in
             providers.ollama.url = "http://bulk-update:11434"
-            providers.ollama.model = "bulk-model"
             providers.openai.apiKey = "bulk-api-key"
         }
         
@@ -183,7 +194,6 @@ final class ConfigurationManagerTests: XCTestCase {
         let openaiSetting = configManager.getProviderSetting(.openai)
         
         XCTAssertEqual(ollamaSetting?.url, "http://bulk-update:11434")
-        XCTAssertEqual(ollamaSetting?.model, "bulk-model")
         XCTAssertEqual(openaiSetting?.apiKey, "bulk-api-key")
     }
     
@@ -211,12 +221,13 @@ final class ConfigurationManagerTests: XCTestCase {
         // Test that convenience methods still work
         configManager.updateProofreadingConfig { config in
             config.defaultPrompt = "Convenience method test"
+            config.model = "convenience-model"
         }
         configManager.updateAppSettings { settings in
             settings.theme = "system"
         }
         configManager.updateProvidersConfig { providers in
-            providers.ollama.model = "convenience-model"
+            providers.ollama.url = "http://updated-url:11434"
         }
         
         let proofreadingConfig = configManager.getProofreadingConfig()
@@ -224,8 +235,9 @@ final class ConfigurationManagerTests: XCTestCase {
         let providerSetting = configManager.getProviderSetting(.ollama)
         
         XCTAssertEqual(proofreadingConfig.defaultPrompt, "Convenience method test")
+        XCTAssertEqual(proofreadingConfig.model, "convenience-model")
         XCTAssertEqual(appSettings.theme, "system")
-        XCTAssertEqual(providerSetting?.model, "convenience-model")
+        XCTAssertEqual(providerSetting?.url, "http://updated-url:11434")
     }
     
     func testConfigurationPersistsAcrossInstances() {
