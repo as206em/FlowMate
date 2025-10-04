@@ -287,6 +287,9 @@ struct ProofreadingSettingsView: View {
                             }
                             .pickerStyle(.menu)
                             .frame(maxWidth: .infinity)
+                            .onChange(of: appState.currentModel) { newValue in
+                                appState.updateCurrentModel(newValue)
+                            }
                         }
                         
                         HStack {

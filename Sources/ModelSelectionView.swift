@@ -24,6 +24,7 @@ struct ModelSelectionView: View {
                     set: { newValue in
                         if let newValue = newValue {
                             appState.currentModel = newValue
+                            appState.updateCurrentModel(newValue)
                         }
                     }
                 )) { model in
