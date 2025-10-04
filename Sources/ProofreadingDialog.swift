@@ -9,7 +9,7 @@ struct ProofreadingDialog: View {
     private var showDiff: Binding<Bool> {
         Binding(
             get: { appState.showDiffByDefault },
-            set: { appState.showDiffByDefault = $0 }
+            set: { appState.updateShowDiffByDefault($0) }
         )
     }
     

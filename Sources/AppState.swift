@@ -4,25 +4,22 @@ import AppKit
 
 @MainActor
 final class AppState: ObservableObject {
-    @AppStorage("currentModel") var currentModel: String = "gemma3:4b"
-    @AppStorage("currentPrompt") var currentPrompt: String = "You are a text proofreader. Your task is to correct typos and grammar errors in the provided text while strictly preserving the original meaning, formatting, and style."
-    @Published var currentProvider: AIProvider = .ollama {
-        didSet {
-            UserDefaults.standard.set(currentProvider.rawValue, forKey: "currentProvider")
-        }
-    }
+    @Published var currentModel: String = "gemma3:4b"
+    @Published var currentPrompt: String = "You are a text proofreader. Your task is to correct typos and grammar errors in the provided text while strictly preserving the original meaning, formatting, and style."
+    @Published var currentProvider: AIProvider = .ollama
     @Published var availableModels: [String] = []
     @Published var connectionStatus: ConnectionStatus = .disconnected
     @Published var isProcessing: Bool = false
     @Published var showProofreadingDialog: Bool = false
     @Published var correctedText: String = ""
     @Published var originalText: String = ""
-    @AppStorage("ollamaURL") var ollamaURL: String = "http://127.0.0.1:11434"
-    @AppStorage("openAIURL") var openAIURL: String = "https://api.openai.com"
-    @AppStorage("openAIAPIKey") var openAIAPIKey: String = ""
-    @AppStorage("keyboardShortcut") var keyboardShortcut: String = "command+."
-    @AppStorage("showDiffByDefault") var showDiffByDefault: Bool = true
+    @Published var ollamaURL: String = "http://127.0.0.1:11434"
+    @Published var openAIURL: String = "https://api.openai.com"
+    @Published var openAIAPIKey: String = ""
+    @Published var keyboardShortcut: String = "command+."
+    @Published var showDiffByDefault: Bool = true
     
+    private let configurationManager: ConfigurationManager
     @Published var aiService: AIService!
     private var cancellables = Set<AnyCancellable>()
     private var eventMonitor: Any?
@@ -35,11 +32,31 @@ final class AppState: ObservableObject {
         }
     }
     
-    init() {
-        // Initialize provider from stored value
-        let storedProvider = UserDefaults.standard.string(forKey: "currentProvider") ?? "Ollama"
-        if let provider = AIProvider(rawValue: storedProvider) {
-            currentProvider = provider
+    init(configurationManager: ConfigurationManager? = nil) {
+        if let configurationManager = configurationManager {
+            self.configurationManager = configurationManager
+        } else {
+            // Create configuration manager synchronously by using unsafeTransfer
+            let configManager = ConfigurationManager()
+            self.configurationManager = configManager
+        }
+        
+        // Load initial values from configuration manager
+        let config = self.configurationManager.config
+        currentProvider = AIProvider(rawValue: config.proofreading.selectedProvider) ?? .ollama
+        currentPrompt = config.proofreading.defaultPrompt
+        keyboardShortcut = config.proofreading.keyboardShortcut
+        currentModel = config.proofreading.model
+        showDiffByDefault = config.proofreading.showDiffByDefault
+        
+        // Load provider settings
+        if let providerSetting = self.configurationManager.getProviderSetting(currentProvider) {
+            if currentProvider == .ollama {
+                ollamaURL = providerSetting.url
+            } else {
+                openAIURL = providerSetting.url
+                openAIAPIKey = providerSetting.apiKey ?? ""
+            }
         }
         
         // Initialize the AI service
@@ -64,6 +81,12 @@ final class AppState: ObservableObject {
     
     func setProvider(_ provider: AIProvider) {
         currentProvider = provider
+        
+        // Update configuration manager
+        configurationManager.updateProofreadingConfig { config in
+            config.selectedProvider = provider.rawValue
+        }
+        
         updateAIService() // Recreate service with new provider
         checkConnection() // Test new provider connection
     }
@@ -120,8 +143,16 @@ final class AppState: ObservableObject {
         switch currentProvider {
         case .ollama:
             ollamaURL = url
+            // Update configuration manager
+            configurationManager.updateProvidersConfig { providers in
+                providers.ollama.url = url
+            }
         case .openai:
             openAIURL = url
+            // Update configuration manager
+            configurationManager.updateProvidersConfig { providers in
+                providers.openai.url = url
+            }
         }
         updateAIService() // Recreate service with new configuration
         checkConnection()
@@ -129,7 +160,43 @@ final class AppState: ObservableObject {
     
     func updateKeyboardShortcut(_ shortcut: String) {
         keyboardShortcut = shortcut
+        // Update configuration manager
+        configurationManager.updateProofreadingConfig { config in
+            config.keyboardShortcut = shortcut
+        }
         setupKeyboardShortcut()
+    }
+    
+    func updateCurrentPrompt(_ prompt: String) {
+        currentPrompt = prompt
+        // Update configuration manager
+        configurationManager.updateProofreadingConfig { config in
+            config.defaultPrompt = prompt
+        }
+    }
+    
+    func updateCurrentModel(_ model: String) {
+        currentModel = model
+        // Update configuration manager
+        configurationManager.updateProofreadingConfig { config in
+            config.model = model
+        }
+    }
+    
+    func updateShowDiffByDefault(_ showDiff: Bool) {
+        showDiffByDefault = showDiff
+        // Update configuration manager
+        configurationManager.updateProofreadingConfig { config in
+            config.showDiffByDefault = showDiff
+        }
+    }
+    
+    func updateOpenAIAPIKey(_ apiKey: String) {
+        openAIAPIKey = apiKey
+        // Update configuration manager
+        configurationManager.updateProvidersConfig { providers in
+            providers.openai.apiKey = apiKey
+        }
     }
     
     func handleProofreadingShortcut() {

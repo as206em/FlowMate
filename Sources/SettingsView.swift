@@ -333,7 +333,7 @@ struct ProofreadingSettingsView: View {
                 .keyboardShortcut(.escape)
                 
                 Button("OK") {
-                    appState.currentPrompt = editedPrompt
+                    appState.updateCurrentPrompt(editedPrompt)
                     appState.updateKeyboardShortcut(appState.keyboardShortcut)
                     dismiss()
                 }
@@ -407,6 +407,9 @@ struct AIProvidersSettingsView: View {
                 
                 Button("OK") {
                     appState.updateProviderURL(appState.currentProvider == .ollama ? appState.ollamaURL : appState.openAIURL)
+                    if appState.currentProvider == .openai {
+                        appState.updateOpenAIAPIKey(appState.openAIAPIKey)
+                    }
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)

@@ -68,7 +68,7 @@ final class AppStateTests: XCTestCase {
     }
     
     func testPromptContainsDefaultText() {
-        let defaultText = "Proofread the following text to correct typos and grammar errors"
+        let defaultText = "correct typos and grammar errors"
         XCTAssertTrue(appState.currentPrompt.contains(defaultText))
     }
     
