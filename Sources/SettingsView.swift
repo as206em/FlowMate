@@ -11,6 +11,7 @@ struct SettingsSidebarItem: Identifiable, Hashable {
 
 enum SettingsTab: Hashable {
     case proofreading
+    case aiProviders
 }
 
 // MARK: - Settings View with Sidebar
@@ -21,7 +22,8 @@ struct SettingsView: View {
     @State private var monitor: Any?
     
     private let sidebarItems = [
-        SettingsSidebarItem(title: "Proofreading", icon: "doc.text.magnifyingglass", tag: .proofreading)
+        SettingsSidebarItem(title: "Proofreading", icon: "doc.text.magnifyingglass", tag: .proofreading),
+        SettingsSidebarItem(title: "AI Providers", icon: "cpu", tag: .aiProviders)
     ]
     
     var body: some View {
@@ -33,6 +35,8 @@ struct SettingsView: View {
                     switch selectedTab {
                     case .proofreading:
                         ProofreadingSettingsView()
+                    case .aiProviders:
+                        AIProvidersSettingsView()
                     }
                 }
             },
@@ -343,6 +347,42 @@ struct ProofreadingSettingsView: View {
     }
 }
 
+// MARK: - AI Providers Settings Content
+struct AIProvidersSettingsView: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            // Content area
+            Form {
+                Text("AI Providers settings will be implemented here")
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(20)
+            
+            // Bottom bar with action buttons
+            Divider()
+            
+            HStack(spacing: 12) {
+                Spacer()
+                
+                Button("Cancel") {
+                    // Dismiss handled by parent
+                }
+                .keyboardShortcut(.escape)
+                
+                Button("OK") {
+                    // Save handled by parent
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+        }
+    }
+}
+
 // MARK: - Preview
 #Preview("Settings View") {
     SettingsView()
@@ -352,5 +392,10 @@ struct ProofreadingSettingsView: View {
 #Preview("Proofreading Settings Content") {
     ProofreadingSettingsView()
         .environmentObject(AppState())
+        .frame(width: 500, height: 400)
+}
+
+#Preview("AI Providers Settings Content") {
+    AIProvidersSettingsView()
         .frame(width: 500, height: 400)
 }
