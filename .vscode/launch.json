@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:codebase}",
+            "name": "Debug Proofreader",
+            "program": "${workspaceFolder:codebase}/.build/debug/Proofreader",
+            "preLaunchTask": "swift: Build Debug Proofreader"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:codebase}",
+            "name": "Release Proofreader",
+            "program": "${workspaceFolder:codebase}/.build/release/Proofreader",
+            "preLaunchTask": "swift: Build Release Proofreader"
+        }
+    ]
+}

@@ -5,14 +5,25 @@ import XCTest
 final class AppStateTests: XCTestCase {
     
     var appState: AppState!
+    private var configManager: ConfigurationManager!
+    private var tempConfigURL: URL!
     
     override func setUp() {
         super.setUp()
-        appState = AppState()
+        // Create a temporary config file for testing to avoid modifying actual user config
+        let tempDir = FileManager.default.temporaryDirectory
+        tempConfigURL = tempDir.appendingPathComponent("test_config_\(UUID().uuidString).json")
+        
+        // Create a fresh configuration manager with the temporary file
+        configManager = ConfigurationManager(configURL: tempConfigURL)
+        appState = AppState(configurationManager: configManager)
     }
     
     override func tearDown() {
         appState = nil
+        configManager = nil
+        // Clean up the temporary file
+        try? FileManager.default.removeItem(at: tempConfigURL)
         super.tearDown()
     }
     
