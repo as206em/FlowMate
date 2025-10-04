@@ -16,7 +16,5 @@
 
 
 # Progress:
-- move pormot to settings page
-- improve how data stored (drop all default values, save one obj, make it extendable to add new keys)
 - test connection is not working on the settings page
 - improve how connection is passed and provider factory

@@ -417,15 +417,6 @@ final class AppState: ObservableObject {
             size: NSSize(width: 400, height: 250)
         )
     }
-    
-    @objc func showAbout(_ sender: Any?) {
-        WindowManager.shared.showWindow(
-            id: "about",
-            title: "About Proofreader",
-            content: { AboutView().environmentObject(self) },
-            size: NSSize(width: 320, height: 300)
-        )
-    }
 }
 
 enum ConnectionStatus {
