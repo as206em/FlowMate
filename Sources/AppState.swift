@@ -332,14 +332,6 @@ final class AppState: ObservableObject {
         return (keyCode, modifiers)
     }
     
-    @objc func showPromptEditor(_ sender: Any?) {
-        WindowManager.shared.showWindow(
-            id: "prompt-editor",
-            title: "Change Prompt",
-            content: { PromptEditorView().environmentObject(self) },
-            size: NSSize(width: 400, height: 300)
-        )
-    }
     
     @objc func showProofreadingDialog(_ sender: Any?) {
         WindowManager.shared.showWindow(

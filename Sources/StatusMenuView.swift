@@ -49,15 +49,6 @@ struct StatusMenuView: View {
             }
             .buttonStyle(.plain)
             
-            Button(action: { appState.showPromptEditor(nil) }) {
-                Label("Change Prompt", systemImage: "text.quote")
-                    .symbolVariant(.none)
-                    .symbolRenderingMode(.monochrome)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .foregroundColor(.primary)
-            }
-            .buttonStyle(.plain)
-            
             Button(action: { appState.showAbout(nil) }) {
                 Label("About Proofreader", systemImage: "info.circle")
                     .symbolVariant(.none)
