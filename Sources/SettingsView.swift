@@ -273,28 +273,6 @@ struct ProofreadingSettingsView: View {
         VStack(spacing: 0) {
             // Content area
             Form {
-                Picker("Provider:", selection: $appState.currentProvider) {
-                    ForEach(AIProvider.allCases, id: \.self) { provider in
-                        Text(provider.displayName).tag(provider)
-                    }
-                }
-                .pickerStyle(.menu)
-                .onChange(of: appState.currentProvider) { provider in
-                    appState.setProvider(provider)
-                }
-                
-                if appState.currentProvider == .ollama {
-                    TextField("URL:", text: $appState.ollamaURL)
-                        .focused($isURLFieldFocused)
-                } else {
-                    TextField("URL:", text: $appState.openAIURL)
-                        .focused($isURLFieldFocused)
-                }
-                
-                if appState.currentProvider == .openai {
-                    SecureField("API Key:", text: $appState.openAIAPIKey)
-                }
-                
                 Picker("Model:", selection: $appState.currentModel) {
                     ForEach(appState.availableModels, id: \.self) { model in
                         Text(model).tag(model)
@@ -331,7 +309,6 @@ struct ProofreadingSettingsView: View {
                 .keyboardShortcut(.escape)
                 
                 Button("OK") {
-                    appState.updateProviderURL(appState.currentProvider == .ollama ? appState.ollamaURL : appState.openAIURL)
                     appState.updateKeyboardShortcut(appState.keyboardShortcut)
                     dismiss()
                 }
@@ -349,13 +326,44 @@ struct ProofreadingSettingsView: View {
 
 // MARK: - AI Providers Settings Content
 struct AIProvidersSettingsView: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var isURLFieldFocused: Bool
+    
     var body: some View {
         VStack(spacing: 0) {
             // Content area
             Form {
-                Text("AI Providers settings will be implemented here")
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                Picker("Provider:", selection: $appState.currentProvider) {
+                    ForEach(AIProvider.allCases, id: \.self) { provider in
+                        Text(provider.displayName).tag(provider)
+                    }
+                }
+                .pickerStyle(.menu)
+                .onChange(of: appState.currentProvider) { provider in
+                    appState.setProvider(provider)
+                }
+                
+                if appState.currentProvider == .ollama {
+                    TextField("URL:", text: $appState.ollamaURL)
+                        .focused($isURLFieldFocused)
+                } else {
+                    TextField("URL:", text: $appState.openAIURL)
+                        .focused($isURLFieldFocused)
+                }
+                
+                if appState.currentProvider == .openai {
+                    SecureField("API Key:", text: $appState.openAIAPIKey)
+                }
+                
+                HStack {
+                    Spacer()
+                    Button("Test Connection") {
+                        appState.checkConnection()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(20)
@@ -367,18 +375,22 @@ struct AIProvidersSettingsView: View {
                 Spacer()
                 
                 Button("Cancel") {
-                    // Dismiss handled by parent
+                    dismiss()
                 }
                 .keyboardShortcut(.escape)
                 
                 Button("OK") {
-                    // Save handled by parent
+                    appState.updateProviderURL(appState.currentProvider == .ollama ? appState.ollamaURL : appState.openAIURL)
+                    dismiss()
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.return)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
+        }
+        .onAppear {
+            isURLFieldFocused = true
         }
     }
 }
