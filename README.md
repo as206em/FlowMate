@@ -16,5 +16,13 @@
 
 
 # Progress:
-- test connection is not working on the settings page
-- improve how connection is passed and provider factory
+- refactor:
+    - move config classes into sperate files
+    - improve project strcture 
+    - move views into seprate folder
+    - move services into folders and helper
+- check if i can delete copy-icon
+- rename app into flow mate
+- update dropdown menu and remove sleected model
+- think about the test connection work
+
