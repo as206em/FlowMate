@@ -20,21 +20,6 @@ struct StatusMenuView: View {
             Text("FlowMate")
                 .font(.headline)
                 .foregroundColor(.primary)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Model: \(appState.currentModel)")
-                    .font(.system(size: 12))
-                    .foregroundColor(.primary)
-                
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 8, height: 8)
-                    Text("Status: \(statusText)")
-                        .font(.system(size: 12))
-                        .foregroundColor(statusColor)
-                }
-            }
         }
     }
     
