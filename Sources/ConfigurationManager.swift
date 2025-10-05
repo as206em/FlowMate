@@ -18,7 +18,7 @@ class ConfigurationManager: ObservableObject {
     public static var configDirectory: URL {
         let urls = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
         let appSupport = urls[0]
-        return appSupport.appendingPathComponent("Proofreader")
+        return appSupport.appendingPathComponent("FlowMate")
     }
     
     private static var defaultConfiguration: AppConfig {

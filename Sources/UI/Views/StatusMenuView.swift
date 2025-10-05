@@ -17,7 +17,7 @@ struct StatusMenuView: View {
     
     private var statusSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Proofreader")
+            Text("FlowMate")
                 .font(.headline)
                 .foregroundColor(.primary)
             

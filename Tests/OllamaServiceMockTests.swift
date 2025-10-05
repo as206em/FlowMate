@@ -1,5 +1,5 @@
 import XCTest
-@testable import Proofreader
+@testable import FlowMate
 
 // Mock URLSession for testing
 class MockURLSession: URLSessionProtocol {

@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.gequ.Proofreader</string>
+    <string>com.asem-mkl.FlowMate</string>
     <key>CFBundleName</key>
-    <string>Proofreader</string>
+    <string>FlowMate</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>CFBundleVersion</key>
@@ -13,6 +13,6 @@
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2025 gequ. All rights reserved.</string>
+    <string>Copyright © 2025 asem-mkl. All rights reserved.</string>
 </dict>
 </plist>

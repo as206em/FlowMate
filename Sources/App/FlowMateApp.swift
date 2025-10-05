@@ -3,12 +3,12 @@ import AppKit
 
 @available(macOS 13.0, *)
 @main
-struct ProofreaderApp: App {
+struct FlowMateApp: App {
     @StateObject private var appState = AppState(configurationManager: nil)
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
-        MenuBarExtra("Proofreader", systemImage: appState.statusIcon) {
+        MenuBarExtra("FlowMate", systemImage: appState.statusIcon) {
             StatusMenuView()
                 .environmentObject(appState)
         }

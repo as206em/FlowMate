@@ -1,5 +1,5 @@
 import XCTest
-@testable import Proofreader
+@testable import FlowMate
 
 final class OllamaServiceTests: XCTestCase {
     

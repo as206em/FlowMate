@@ -5,18 +5,18 @@
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:codebase}",
-            "name": "Debug Proofreader",
-            "program": "${workspaceFolder:codebase}/.build/debug/Proofreader",
-            "preLaunchTask": "swift: Build Debug Proofreader"
+            "name": "Debug FlowMate",
+            "program": "${workspaceFolder:codebase}/.build/debug/FlowMate",
+            "preLaunchTask": "swift: Build Debug FlowMate"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:codebase}",
-            "name": "Release Proofreader",
-            "program": "${workspaceFolder:codebase}/.build/release/Proofreader",
-            "preLaunchTask": "swift: Build Release Proofreader"
+            "name": "Release FlowMate",
+            "program": "${workspaceFolder:codebase}/.build/release/FlowMate",
+            "preLaunchTask": "swift: Build Release FlowMate"
         }
     ]
 }
