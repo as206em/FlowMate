@@ -24,15 +24,15 @@ class ConfigurationManager: ObservableObject {
     private static var defaultConfiguration: AppConfig {
         return AppConfig(
             providers: ProvidersConfig(
-                ollama: ProviderConfig(url: "http://127.0.0.1:11434", apiKey: nil),
+                ollama: ProviderConfig(url: "http://127.0.1:11434", apiKey: nil),
                 openai: ProviderConfig(url: "https://api.openai.com", apiKey: "")
             ),
             proofreading: ProofreadingConfig(
                 selectedProvider: "ollama",
+                selectedModel: "gemma3:4b",
                 defaultPrompt: "You are a text proofreader. Your task is to correct typos and grammar errors in the provided text while strictly preserving the original meaning, formatting, and style.",
                 showDiffByDefault: true,
-                keyboardShortcut: "command+.",
-                model: "gemma3:4b"
+                keyboardShortcut: "command+."
             ),
             app: AppSettings()
         )
@@ -135,14 +135,14 @@ class ConfigurationManager: ObservableObject {
             let providerConfig = config.providers.ollama
             return ProviderSetting(
                 url: providerConfig.url,
-                model: config.proofreading.model,
+                model: config.proofreading.selectedModel,
                 apiKey: providerConfig.apiKey
             )
         case "openai":
             let providerConfig = config.providers.openai
             return ProviderSetting(
                 url: providerConfig.url,
-                model: config.proofreading.model,
+                model: config.proofreading.selectedModel,
                 apiKey: providerConfig.apiKey
             )
         default:

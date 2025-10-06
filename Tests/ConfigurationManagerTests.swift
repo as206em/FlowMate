@@ -27,14 +27,14 @@ final class ConfigurationManagerTests: XCTestCase {
         let config = configManager.config
         
         // Test providers - check that they exist and have expected properties (no model anymore)
-        XCTAssertEqual(config.providers.ollama.url, "http://127.0.0.1:11434")
+        XCTAssertEqual(config.providers.ollama.url, "http://127.0.1:11434")
         XCTAssertNil(config.providers.ollama.apiKey)
         XCTAssertEqual(config.providers.openai.url, "https://api.openai.com")
         XCTAssertEqual(config.providers.openai.apiKey, "")
         
         // Test proofreading feature - model should now be here
         XCTAssertNotNil(config.proofreading)
-        XCTAssertEqual(config.proofreading.model, "gemma3:4b")
+        XCTAssertEqual(config.proofreading.selectedModel, "gemma3:4b")
         
         // Test app settings
         XCTAssertNotNil(config.app)
@@ -133,11 +133,11 @@ final class ConfigurationManagerTests: XCTestCase {
     
     func testUpdateProofreadingModel() {
         configManager.updateProofreadingConfig { config in
-            config.model = "updated-model"
+            config.selectedModel = "updated-model"
         }
         
         let updatedConfig = configManager.getProofreadingConfig()
-        XCTAssertEqual(updatedConfig.model, "updated-model")
+        XCTAssertEqual(updatedConfig.selectedModel, "updated-model")
         
         // Verify that the provider setting now returns the updated model
         let providerSetting = configManager.getProviderSetting(.ollama)
@@ -221,7 +221,7 @@ final class ConfigurationManagerTests: XCTestCase {
         // Test that convenience methods still work
         configManager.updateProofreadingConfig { config in
             config.defaultPrompt = "Convenience method test"
-            config.model = "convenience-model"
+            config.selectedModel = "convenience-model"
         }
         configManager.updateAppSettings { settings in
             settings.theme = "system"
@@ -235,7 +235,7 @@ final class ConfigurationManagerTests: XCTestCase {
         let providerSetting = configManager.getProviderSetting(.ollama)
         
         XCTAssertEqual(proofreadingConfig.defaultPrompt, "Convenience method test")
-        XCTAssertEqual(proofreadingConfig.model, "convenience-model")
+        XCTAssertEqual(proofreadingConfig.selectedModel, "convenience-model")
         XCTAssertEqual(appSettings.theme, "system")
         XCTAssertEqual(providerSetting?.url, "http://updated-url:11434")
     }

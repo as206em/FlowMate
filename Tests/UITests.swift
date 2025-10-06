@@ -233,7 +233,7 @@ final class UITests: XCTestCase {
         let expectedProviderRawValue = appState.currentProvider == .ollama ? "ollama" : "openai"
         XCTAssertEqual(expectedProviderRawValue, initialConfig.proofreading.selectedProvider)
         XCTAssertEqual(appState.currentPrompt, initialConfig.proofreading.defaultPrompt)
-        XCTAssertEqual(appState.currentModel, initialConfig.proofreading.model)
+        XCTAssertEqual(appState.currentModel, initialConfig.proofreading.selectedModel)
         XCTAssertEqual(appState.showDiffByDefault, initialConfig.proofreading.showDiffByDefault)
         XCTAssertEqual(appState.keyboardShortcut, initialConfig.proofreading.keyboardShortcut)
     }

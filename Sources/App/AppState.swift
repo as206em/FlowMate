@@ -4,9 +4,7 @@ import AppKit
 
 @MainActor
 final class AppState: ObservableObject {
-    @Published var currentModel: String = "gemma3:4b"
     @Published var currentPrompt: String = "You are a text proofreader. Your task is to correct typos and grammar errors in the provided text while strictly preserving the original meaning, formatting, and style."
-    @Published var currentProvider: AIProvider = .ollama
     @Published var availableModels: [String] = []
     @Published var connectionStatus: ConnectionStatus = .disconnected
     @Published var isProcessing: Bool = false
@@ -18,6 +16,19 @@ final class AppState: ObservableObject {
     @Published var openAIAPIKey: String = ""
     @Published var keyboardShortcut: String = "command+."
     @Published var showDiffByDefault: Bool = true
+    @Published var proofreadingProvider: AIProvider = .ollama
+    @Published var proofreadingModel: String = "gemma3:4b"
+    
+    // Computed properties for backward compatibility
+    var currentModel: String {
+        get { proofreadingModel }
+        set { proofreadingModel = newValue }
+    }
+    
+    var currentProvider: AIProvider {
+        get { proofreadingProvider }
+        set { proofreadingProvider = newValue }
+    }
     
     private let configurationManager: ConfigurationManager
     @Published var aiService: AIService!
@@ -46,17 +57,22 @@ final class AppState: ObservableObject {
         currentProvider = AIProvider(rawValue: config.proofreading.selectedProvider) ?? .ollama
         currentPrompt = config.proofreading.defaultPrompt
         keyboardShortcut = config.proofreading.keyboardShortcut
-        currentModel = config.proofreading.model
+        currentModel = config.proofreading.selectedModel
         showDiffByDefault = config.proofreading.showDiffByDefault
         
-        // Load provider settings
-        if let providerSetting = self.configurationManager.getProviderSetting(currentProvider) {
-            if currentProvider == .ollama {
-                ollamaURL = providerSetting.url
-            } else {
-                openAIURL = providerSetting.url
-                openAIAPIKey = providerSetting.apiKey ?? ""
-            }
+        // Load provider settings from the configuration
+        // Load Ollama settings
+        ollamaURL = config.providers.ollama.url
+        
+        // Load OpenAI settings
+        openAIURL = config.providers.openai.url
+        openAIAPIKey = config.providers.openai.apiKey ?? ""
+        
+        // Set the current provider's URL and API key to the AppState properties
+        if currentProvider == .ollama {
+            // ollamaURL is already set above
+        } else {
+            // openAIURL and openAIAPIKey are already set above
         }
         
         // Initialize the AI service
@@ -179,7 +195,7 @@ final class AppState: ObservableObject {
         currentModel = model
         // Update configuration manager
         configurationManager.updateProofreadingConfig { config in
-            config.model = model
+            config.selectedModel = model
         }
     }
     

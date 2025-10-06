@@ -278,16 +278,31 @@ struct ProofreadingSettingsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Group {
                         HStack {
+                            Text("Provider:")
+                                .frame(width: 80, alignment: .leading)
+                            Picker("", selection: $appState.proofreadingProvider) {
+                                ForEach(AIProvider.allCases, id: \.self) { provider in
+                                    Text(provider.displayName).tag(provider)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: .infinity)
+                            .onChange(of: appState.proofreadingProvider) { provider in
+                                appState.setProvider(provider)
+                            }
+                        }
+                        
+                        HStack {
                             Text("Model:")
                                 .frame(width: 80, alignment: .leading)
-                            Picker("", selection: $appState.currentModel) {
+                            Picker("", selection: $appState.proofreadingModel) {
                                 ForEach(appState.availableModels, id: \.self) { model in
                                     Text(model).tag(model)
                                 }
                             }
                             .pickerStyle(.menu)
                             .frame(maxWidth: .infinity)
-                            .onChange(of: appState.currentModel) { newValue in
+                            .onChange(of: appState.proofreadingModel) { newValue in
                                 appState.updateCurrentModel(newValue)
                             }
                         }
@@ -358,40 +373,44 @@ struct AIProvidersSettingsView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isURLFieldFocused: Bool
+    @State private var selectedProviderForConfig: AIProvider = .ollama
     
     var body: some View {
         VStack(spacing: 0) {
             // Content area
             Form {
-                Picker("Provider:", selection: $appState.currentProvider) {
+                Picker("Configure Provider:", selection: $selectedProviderForConfig) {
                     ForEach(AIProvider.allCases, id: \.self) { provider in
                         Text(provider.displayName).tag(provider)
                     }
                 }
                 .pickerStyle(.menu)
-                .onChange(of: appState.currentProvider) { provider in
-                    appState.setProvider(provider)
-                }
                 
-                if appState.currentProvider == .ollama {
+                if selectedProviderForConfig == .ollama {
                     TextField("URL:", text: $appState.ollamaURL)
                         .focused($isURLFieldFocused)
+                    HStack {
+                        Spacer()
+                        Button("Test Connection") {
+                            appState.currentProvider = .ollama
+                            appState.checkConnection()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                    }
                 } else {
                     TextField("URL:", text: $appState.openAIURL)
                         .focused($isURLFieldFocused)
-                }
-                
-                if appState.currentProvider == .openai {
                     SecureField("API Key:", text: $appState.openAIAPIKey)
-                }
-                
-                HStack {
-                    Spacer()
-                    Button("Test Connection") {
-                        appState.checkConnection()
+                    HStack {
+                        Spacer()
+                        Button("Test Connection") {
+                            appState.currentProvider = .openai
+                            appState.checkConnection()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -409,8 +428,8 @@ struct AIProvidersSettingsView: View {
                 .keyboardShortcut(.escape)
                 
                 Button("OK") {
-                    appState.updateProviderURL(appState.currentProvider == .ollama ? appState.ollamaURL : appState.openAIURL)
-                    if appState.currentProvider == .openai {
+                    appState.updateProviderURL(selectedProviderForConfig == .ollama ? appState.ollamaURL : appState.openAIURL)
+                    if selectedProviderForConfig == .openai {
                         appState.updateOpenAIAPIKey(appState.openAIAPIKey)
                     }
                     dismiss()

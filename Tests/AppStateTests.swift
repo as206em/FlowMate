@@ -35,7 +35,7 @@ final class AppStateTests: XCTestCase {
         XCTAssertFalse(appState.isProcessing)
         XCTAssertFalse(appState.showProofreadingDialog)
         XCTAssertTrue(appState.correctedText.isEmpty)
-        XCTAssertEqual(appState.ollamaURL, "http://127.0.0.1:11434")
+        XCTAssertEqual(appState.ollamaURL, "http://127.0.1:11434")
     }
     
     func testStatusIcon() {
