@@ -31,32 +31,12 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(appState.currentModel, "gemma3:4b")
         XCTAssertFalse(appState.currentPrompt.isEmpty)
         XCTAssertTrue(appState.availableModels.isEmpty)
-        XCTAssertEqual(appState.connectionStatus, .disconnected)
         XCTAssertFalse(appState.isProcessing)
         XCTAssertFalse(appState.showProofreadingDialog)
         XCTAssertTrue(appState.correctedText.isEmpty)
         XCTAssertEqual(appState.ollamaURL, "http://127.0.1:11434")
     }
     
-    func testStatusIcon() {
-        // Test connected state
-        appState.connectionStatus = .connected
-        appState.isProcessing = false
-        XCTAssertEqual(appState.statusIcon, "checkmark.circle")
-        
-        // Test processing state
-        appState.isProcessing = true
-        XCTAssertEqual(appState.statusIcon, "hourglass")
-        
-        // Test disconnected state
-        appState.connectionStatus = .disconnected
-        appState.isProcessing = false
-        XCTAssertEqual(appState.statusIcon, "xmark.circle")
-        
-        // Test error state
-        appState.connectionStatus = .error
-        XCTAssertEqual(appState.statusIcon, "exclamationmark.triangle")
-    }
     
     func testCheckConnection() {
         // This will attempt to connect to Ollama

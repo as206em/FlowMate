@@ -16,11 +16,13 @@ struct StatusMenuView: View {
     }
     
     private var statusSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("FlowMate")
-                .font(.headline)
-                .foregroundColor(.primary)
-        }
+            HStack {
+                Circle()
+                    .frame(width: 12, height: 12)
+                Text("FlowMate")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+            }
     }
     
     private var actionButtons: some View {
@@ -47,19 +49,4 @@ struct StatusMenuView: View {
         .buttonStyle(.plain)
     }
     
-    private var statusText: String {
-        switch appState.connectionStatus {
-        case .connected: return "Connected"
-        case .disconnected: return "Disconnected"
-        case .error: return "Error"
-        }
-    }
-    
-    private var statusColor: Color {
-        switch appState.connectionStatus {
-        case .connected: return Color(.systemGreen)
-        case .disconnected: return Color(.systemOrange) 
-        case .error: return Color(.systemRed)
-        }
-    }
 }

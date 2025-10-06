@@ -137,14 +137,6 @@ final class EdgeCaseTests: XCTestCase {
             appState.setProvider(provider)
             XCTAssertEqual(appState.currentProvider, provider)
         }
-        
-        // Test rapid connection status changes
-        let statuses: [ConnectionStatus] = [.connected, .disconnected, .error, .connected]
-        
-        for status in statuses {
-            appState.connectionStatus = status
-            XCTAssertEqual(appState.connectionStatus, status)
-        }
     }
     
     func testConcurrentTextUpdates() {
@@ -191,31 +183,21 @@ final class EdgeCaseTests: XCTestCase {
     
     // MARK: - Edge Case: Error Recovery
     func testConnectionErrorRecovery() {
-        // Simulate error state
-        appState.connectionStatus = .error
-        XCTAssertEqual(appState.connectionStatus, .error)
-        
         // Test that error state can be recovered from
-        appState.connectionStatus = .disconnected
-        XCTAssertEqual(appState.connectionStatus, .disconnected)
+        appState.isProcessing = true
+        XCTAssertTrue(appState.isProcessing)
         
-        appState.connectionStatus = .connected
-        XCTAssertEqual(appState.connectionStatus, .connected)
+        appState.isProcessing = false
+        XCTAssertFalse(appState.isProcessing)
     }
     
     func testProcessingStateDuringErrors() {
         // Test processing state during error conditions
-        appState.connectionStatus = .error
         appState.isProcessing = true
-        
-        XCTAssertEqual(appState.connectionStatus, .error)
         XCTAssertTrue(appState.isProcessing)
         
-        // Ensure status icon reflects error state even when processing
-        XCTAssertEqual(appState.statusIcon, "exclamationmark.triangle")
-        
         appState.isProcessing = false
-        XCTAssertEqual(appState.statusIcon, "exclamationmark.triangle") // Still error
+        XCTAssertFalse(appState.isProcessing)
     }
     
     // MARK: - Edge Case: Configuration Edge Cases

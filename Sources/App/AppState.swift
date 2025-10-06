@@ -6,7 +6,6 @@ import AppKit
 final class AppState: ObservableObject {
     @Published var currentPrompt: String = "You are a text proofreader. Your task is to correct typos and grammar errors in the provided text while strictly preserving the original meaning, formatting, and style."
     @Published var availableModels: [String] = []
-    @Published var connectionStatus: ConnectionStatus = .disconnected
     @Published var isProcessing: Bool = false
     @Published var showProofreadingDialog: Bool = false
     @Published var correctedText: String = ""
@@ -35,13 +34,6 @@ final class AppState: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var eventMonitor: Any?
     
-    var statusIcon: String {
-        switch connectionStatus {
-        case .connected: return isProcessing ? "hourglass" : "checkmark.circle"
-        case .disconnected: return "xmark.circle"
-        case .error: return "exclamationmark.triangle"
-        }
-    }
     
     init(configurationManager: ConfigurationManager? = nil) {
         if let configurationManager = configurationManager {
@@ -144,12 +136,10 @@ final class AppState: ObservableObject {
                 await MainActor.run {
                     print("AppState: Connection successful, got \(models.count) models")
                     self.availableModels = models
-                    self.connectionStatus = .connected
                 }
             } catch {
                 await MainActor.run {
                     print("AppState: Connection failed - \(error.localizedDescription)")
-                    self.connectionStatus = .error
                 }
             }
         }
@@ -245,10 +235,6 @@ final class AppState: ObservableObject {
                 await MainActor.run {
                     self.correctedText = corrected
                     self.isProcessing = false
-                    // Update connection status on success
-                    if self.connectionStatus == .error {
-                        self.connectionStatus = .connected
-                    }
                 }
             } catch {
                 if retryCount < maxRetries {
@@ -262,7 +248,6 @@ final class AppState: ObservableObject {
                             "Failed after \(retryCount + 1) attempts: \(error.localizedDescription)" :
                             "Error: \(error.localizedDescription)"
                         self.correctedText = errorMessage
-                        self.connectionStatus = .error
                     }
                 }
             }
@@ -433,8 +418,4 @@ final class AppState: ObservableObject {
             size: NSSize(width: 400, height: 250)
         )
     }
-}
-
-enum ConnectionStatus {
-    case connected, disconnected, error
 }

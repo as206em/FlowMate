@@ -39,31 +39,6 @@ final class UITests: XCTestCase {
         // Test status section data
         XCTAssertFalse(appState.currentModel.isEmpty)
         XCTAssertFalse(appState.currentPrompt.isEmpty)
-        
-        // Test connection status
-        XCTAssertEqual(appState.connectionStatus, .disconnected)
-    }
-    
-    func testStatusMenuViewStatusText() {
-        // Test different status states
-        appState.connectionStatus = .connected
-        XCTAssertEqual(appState.connectionStatus, .connected)
-        
-        appState.connectionStatus = .disconnected
-        XCTAssertEqual(appState.connectionStatus, .disconnected)
-        
-        appState.connectionStatus = .error
-        XCTAssertEqual(appState.connectionStatus, .error)
-    }
-    
-    func testStatusMenuViewStatusColor() {
-        // Test status colors based on connection status
-        appState.connectionStatus = .connected
-        // The color would be determined by the view, but we can test the status logic
-        XCTAssertTrue(appState.connectionStatus == .connected)
-        
-        appState.connectionStatus = .error
-        XCTAssertTrue(appState.connectionStatus == .error)
     }
     
     // MARK: - SettingsView Tests (indirect)
@@ -164,26 +139,12 @@ final class UITests: XCTestCase {
     
     // MARK: - Connection Tests
     func testConnectionFunctionality() {
-        // Test connection status changes
-        appState.connectionStatus = .connected
-        XCTAssertEqual(appState.connectionStatus, .connected)
+        // Test provider URL updates
+        appState.updateProviderURL("http://test-ollama:11434")
+        XCTAssertEqual(appState.ollamaURL, "http://test-ollama:11434")
         
-        appState.connectionStatus = .disconnected
-        XCTAssertEqual(appState.connectionStatus, .disconnected)
-        
-        appState.connectionStatus = .error
-        XCTAssertEqual(appState.connectionStatus, .error)
-        
-        // Test status icon changes based on connection status
-        appState.connectionStatus = .connected
-        appState.isProcessing = false
-        XCTAssertEqual(appState.statusIcon, "checkmark.circle")
-        
-        appState.isProcessing = true
-        XCTAssertEqual(appState.statusIcon, "hourglass")
-        
-        appState.connectionStatus = .error
-        XCTAssertEqual(appState.statusIcon, "exclamationmark.triangle")
+        appState.updateProviderURL("https://test-openai.com")
+        XCTAssertEqual(appState.openAIURL, "https://test-openai.com")
     }
     
     // MARK: - Keyboard Shortcut Tests

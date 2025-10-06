@@ -8,7 +8,7 @@ struct FlowMateApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
-        MenuBarExtra("FlowMate", systemImage: appState.statusIcon) {
+        MenuBarExtra("FlowMate", systemImage: "checkmark.circle") {
             StatusMenuView()
                 .environmentObject(appState)
         }
