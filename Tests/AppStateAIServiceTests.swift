@@ -6,6 +6,7 @@ final class AppStateAIServiceTests: XCTestCase {
     
     var appState: AppState!
     var configManager: ConfigurationManager!
+    var statusManager: StatusManager!
     private var tempConfigURL: URL!
     
     override func setUp() {
@@ -16,12 +17,14 @@ final class AppStateAIServiceTests: XCTestCase {
         
         // Create a fresh configuration manager with the temporary file
         configManager = ConfigurationManager(configURL: tempConfigURL)
-        appState = AppState(configurationManager: configManager)
+        statusManager = StatusManager()
+        appState = AppState(configurationManager: configManager, statusManager: statusManager)
     }
     
     override func tearDown() {
         appState = nil
         configManager = nil
+        statusManager = nil
         // Clean up the temporary file
         try? FileManager.default.removeItem(at: tempConfigURL)
         super.tearDown()

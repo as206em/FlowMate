@@ -507,12 +507,12 @@ struct AIProvidersSettingsView: View {
 // MARK: - Preview
 #Preview("Settings View") {
     SettingsView()
-        .environmentObject(AppState())
+        .environmentObject(AppState(statusManager: StatusManager()))
 }
 
 #Preview("Proofreading Settings Content") {
     ProofreadingSettingsView()
-        .environmentObject(AppState())
+        .environmentObject(AppState(statusManager: StatusManager()))
         .frame(width: 500, height: 400)
 }
 

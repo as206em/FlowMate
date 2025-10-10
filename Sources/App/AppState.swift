@@ -33,9 +33,13 @@ final class AppState: ObservableObject {
     @Published var aiService: AIService!
     private var cancellables = Set<AnyCancellable>()
     private var eventMonitor: Any?
+    private let statusManager: StatusManager
     
     
-    init(configurationManager: ConfigurationManager? = nil) {
+    init(configurationManager: ConfigurationManager? = nil, statusManager: StatusManager) {
+        // Initialize statusManager first (required before using self)
+        self.statusManager = statusManager
+        
         if let configurationManager = configurationManager {
             self.configurationManager = configurationManager
         } else {
@@ -211,6 +215,12 @@ final class AppState: ObservableObject {
         // Store original text for comparison
         self.originalText = selectedText
         
+        // Update status to processing
+        statusManager.updateStatus(
+            state: .processing,
+            priority: .proofreading
+        )
+        
         // Show dialog immediately with loading state
         self.correctedText = ""
         self.isProcessing = true
@@ -235,6 +245,13 @@ final class AppState: ObservableObject {
                 await MainActor.run {
                     self.correctedText = corrected
                     self.isProcessing = false
+                    
+                    // Update status to success with 3 second timeout
+                    self.statusManager.updateStatus(
+                        state: .success,
+                        priority: .proofreading,
+                        timeout: 3.0
+                    )
                 }
             } catch {
                 if retryCount < maxRetries {
@@ -248,6 +265,13 @@ final class AppState: ObservableObject {
                             "Failed after \(retryCount + 1) attempts: \(error.localizedDescription)" :
                             "Error: \(error.localizedDescription)"
                         self.correctedText = errorMessage
+                        
+                        // Update status to failure with 5 second timeout
+                        self.statusManager.updateStatus(
+                            state: .failure,
+                            priority: .proofreading,
+                            timeout: 3.0
+                        )
                     }
                 }
             }

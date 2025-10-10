@@ -6,6 +6,7 @@ final class UITests: XCTestCase {
     
     var appState: AppState!
     private var configManager: ConfigurationManager!
+    private var statusManager: StatusManager!
     private var tempConfigURL: URL!
     
     override func setUp() {
@@ -16,12 +17,14 @@ final class UITests: XCTestCase {
         
         // Create a fresh configuration manager with the temporary file
         configManager = ConfigurationManager(configURL: tempConfigURL)
-        appState = AppState(configurationManager: configManager)
+        statusManager = StatusManager()
+        appState = AppState(configurationManager: configManager, statusManager: statusManager)
     }
     
     override func tearDown() {
         appState = nil
         configManager = nil
+        statusManager = nil
         // Clean up the temporary file
         try? FileManager.default.removeItem(at: tempConfigURL)
         super.tearDown()
@@ -139,10 +142,13 @@ final class UITests: XCTestCase {
     
     // MARK: - Connection Tests
     func testConnectionFunctionality() {
-        // Test provider URL updates
+        // Test Ollama provider URL update
+        appState.setProvider(.ollama)
         appState.updateProviderURL("http://test-ollama:11434")
         XCTAssertEqual(appState.ollamaURL, "http://test-ollama:11434")
         
+        // Test OpenAI provider URL update
+        appState.setProvider(.openai)
         appState.updateProviderURL("https://test-openai.com")
         XCTAssertEqual(appState.openAIURL, "https://test-openai.com")
     }
