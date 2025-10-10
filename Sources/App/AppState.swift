@@ -48,6 +48,8 @@ final class AppState: ObservableObject {
             self.configurationManager = configManager
         }
         
+        Logger.shared.info("AppState: Initializing AppState")
+        
         // Load initial values from configuration manager
         let config = self.configurationManager.config
         currentProvider = AIProvider(rawValue: config.proofreading.selectedProvider) ?? .ollama
@@ -76,6 +78,8 @@ final class AppState: ObservableObject {
         
         setupKeyboardShortcut()
         preloadConnection()
+        
+        Logger.shared.info("AppState: Initialization complete - Provider: \(currentProvider.rawValue), Model: \(currentModel)")
     }
     
     private func updateAIService() {
@@ -92,6 +96,7 @@ final class AppState: ObservableObject {
     }
     
     func setProvider(_ provider: AIProvider) {
+        Logger.shared.info("AppState: Switching provider to \(provider.rawValue)")
         currentProvider = provider
         
         // Update configuration manager
@@ -210,7 +215,12 @@ final class AppState: ObservableObject {
     }
     
     func handleProofreadingShortcut() {
-        guard let selectedText = getSelectedText() else { return }
+        guard let selectedText = getSelectedText() else {
+            Logger.shared.warning("AppState: No text selected for proofreading")
+            return
+        }
+        
+        Logger.shared.info("AppState: Starting proofreading - Text length: \(selectedText.count) characters")
         
         // Store original text for comparison
         self.originalText = selectedText
@@ -234,6 +244,8 @@ final class AppState: ObservableObject {
         
         Task {
             do {
+                Logger.shared.debug("AppState: Performing proofreading (attempt \(retryCount + 1)/\(maxRetries + 1))")
+                
                 // Construct the final prompt with system rules
                 let finalPrompt = buildFinalPrompt(userPrompt: currentPrompt, inputText: text)
                 
@@ -241,6 +253,8 @@ final class AppState: ObservableObject {
                     model: currentModel,
                     prompt: finalPrompt
                 )
+                
+                Logger.shared.info("AppState: Proofreading completed successfully")
                 
                 await MainActor.run {
                     self.correctedText = corrected
@@ -254,11 +268,15 @@ final class AppState: ObservableObject {
                     )
                 }
             } catch {
+                Logger.shared.error("AppState: Proofreading failed (attempt \(retryCount + 1)/\(maxRetries + 1))", error: error)
+                
                 if retryCount < maxRetries {
                     // Wait briefly before retry
                     try? await Task.sleep(nanoseconds: 1_000_000) // 1 second
                     performProofreadingWithRetry(text: text, retryCount: retryCount + 1)
                 } else {
+                    Logger.shared.error("AppState: Proofreading failed after all retries")
+                    
                     await MainActor.run {
                         self.isProcessing = false
                         let errorMessage = retryCount > 0 ? 
@@ -270,7 +288,7 @@ final class AppState: ObservableObject {
                         self.statusManager.updateStatus(
                             state: .failure,
                             priority: .proofreading,
-                            timeout: 3.0
+                            timeout: 5.0
                         )
                     }
                 }

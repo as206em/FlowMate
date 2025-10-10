@@ -67,7 +67,7 @@ final class StatusManager: ObservableObject {
     ) {
         // Priority check: only allow equal or higher priority updates
         guard priority <= currentPriority else {
-            print("StatusManager: Ignoring update - priority \(priority) is lower than current \(currentPriority)")
+            Logger.shared.debug("StatusManager: Ignoring update - priority \(priority) is lower than current \(currentPriority)")
             return
         }
         
@@ -80,7 +80,7 @@ final class StatusManager: ObservableObject {
         currentPriority = priority
         currentIcon = state.iconName
         
-        print("StatusManager: Updated to \(state) with priority \(priority)")
+        Logger.shared.info("StatusManager: Updated to \(state) with priority \(priority)")
         
         // Set up timeout if provided
         if let timeout = timeout {
@@ -103,7 +103,7 @@ final class StatusManager: ObservableObject {
         currentIcon = StatusState.idle.iconName
         timeoutTask = nil
         
-        print("StatusManager: Returned to idle state")
+        Logger.shared.info("StatusManager: Returned to idle state")
     }
     
     /// Manually resets status to idle (useful for testing or manual control)

@@ -9,6 +9,7 @@ actor OllamaService: AIService {
     }
     
     func listModels() async throws -> [String] {
+        await Logger.shared.debug("OllamaService: Fetching models from \(baseURL)")
         let url = "\(baseURL)/api/tags"
         
         let response = await AF.request(url, method: .get)
@@ -24,6 +25,7 @@ actor OllamaService: AIService {
     }
     
     func generate(model: String, prompt: String) async throws -> String {
+        await Logger.shared.info("OllamaService: Generating with model '\(model)', prompt length: \(prompt.count) chars")
         let url = "\(baseURL)/api/generate"
         let parameters: [String: Any] = [
             "model": model,

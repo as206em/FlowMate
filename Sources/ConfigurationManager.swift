@@ -11,6 +11,7 @@ class ConfigurationManager: ObservableObject {
         let actualConfigURL = configURL ?? Self.configDirectory.appendingPathComponent("config.json")
         self.configURL = actualConfigURL
         self.config = Self.loadConfiguration(from: actualConfigURL) ?? Self.defaultConfiguration
+        Logger.shared.info("ConfigurationManager: Initialized with config at \(actualConfigURL.path)")
     }
     
     // MARK: - Private Methods
@@ -64,8 +65,9 @@ class ConfigurationManager: ObservableObject {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(config)
             try data.write(to: configURL, options: .atomic)
+            Logger.shared.debug("ConfigurationManager: Config saved successfully")
         } catch {
-            print("Failed to save configuration: \(error)")
+            Logger.shared.error("ConfigurationManager: Failed to save configuration", error: error)
         }
     }
     
