@@ -510,10 +510,12 @@ struct AIProvidersSettingsView: View {
 
 // MARK: - Maintenance Settings Content
 struct MaintenanceSettingsView: View {
+    @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var logFiles: [URL] = []
     @State private var totalLogSize: Int64 = 0
     @State private var showClearConfirmation = false
+    @State private var showDeleteConfigConfirmation = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -602,6 +604,29 @@ struct MaintenanceSettingsView: View {
                             } message: {
                                 Text("This will permanently delete all log files. This action cannot be undone.")
                             }
+                            
+                            Button(action: {
+                                showDeleteConfigConfirmation = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "trash.circle.fill")
+                                    Text("Delete Current Configuration")
+                                    Spacer()
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.large)
+                            .foregroundColor(.red)
+                            .alert("Delete Configuration?", isPresented: $showDeleteConfigConfirmation) {
+                                Button("Cancel", role: .cancel) { }
+                                Button("Delete & Restart", role: .destructive) {
+                                    deleteConfigAndRestart()
+                                }
+                            } message: {
+                                Text("This will delete all app settings and restart the application with default configuration. This action cannot be undone.")
+                            }
                         }
                     }
                     
@@ -645,6 +670,30 @@ struct MaintenanceSettingsView: View {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
+    }
+    
+    private func deleteConfigAndRestart() {
+        // Get configuration manager from app state
+        let configManager = appState.configurationManager
+        
+        // Delete configuration
+        configManager.deleteConfiguration()
+        
+        // Log the action
+        Logger.shared.warning("User deleted configuration - restarting app")
+        
+        // Restart app
+        restartApplication()
+    }
+    
+    private func restartApplication() {
+        let url = URL(fileURLWithPath: Bundle.main.resourcePath!)
+        let path = url.deletingLastPathComponent().deletingLastPathComponent().absoluteString
+        let task = Process()
+        task.launchPath = "/usr/bin/open"
+        task.arguments = [path]
+        task.launch()
+        exit(0)
     }
 }
 

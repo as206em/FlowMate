@@ -29,7 +29,7 @@ final class AppState: ObservableObject {
         set { proofreadingProvider = newValue }
     }
     
-    private let configurationManager: ConfigurationManager
+    let configurationManager: ConfigurationManager
     @Published var aiService: AIService!
     private var cancellables = Set<AnyCancellable>()
     private var eventMonitor: Any?

@@ -81,6 +81,19 @@ IMPORTANT SYSTEM RULES (ALWAYS FOLLOW):
         }
     }
     
+    /// Deletes the configuration file
+    func deleteConfiguration() {
+        Logger.shared.warning("ConfigurationManager: Deleting configuration file at \(configURL.path)")
+        do {
+            if fileManager.fileExists(atPath: configURL.path) {
+                try fileManager.removeItem(at: configURL)
+                Logger.shared.info("ConfigurationManager: Configuration file deleted successfully")
+            }
+        } catch {
+            Logger.shared.error("ConfigurationManager: Failed to delete configuration", error: error)
+        }
+    }
+    
     func updateConfigAndSave(updating: (inout AppConfig) -> Void) {
         var updatedConfig = config
         updating(&updatedConfig)
