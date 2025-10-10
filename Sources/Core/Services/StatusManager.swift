@@ -16,7 +16,7 @@ enum StatusState {
         case .processing:
             return "arrow.triangle.2.circlepath"
         case .success:
-            return "checkmark.circle.fill"
+            return "hand.thumbsup.fill"
         case .failure:
             return "exclamationmark.triangle.fill"
         }
