@@ -29,7 +29,7 @@ final class StatusManagerTests: XCTestCase {
     func testIconMapping() {
         XCTAssertEqual(StatusState.idle.iconName, "checkmark.circle")
         XCTAssertEqual(StatusState.processing.iconName, "arrow.triangle.2.circlepath")
-        XCTAssertEqual(StatusState.success.iconName, "checkmark.circle.fill")
+        XCTAssertEqual(StatusState.success.iconName, "hand.thumbsup.fill")
         XCTAssertEqual(StatusState.failure.iconName, "exclamationmark.triangle.fill")
     }
     
@@ -63,7 +63,7 @@ final class StatusManagerTests: XCTestCase {
             priority: .proofreading
         )
         
-        XCTAssertEqual(statusManager.currentIcon, "checkmark.circle.fill")
+        XCTAssertEqual(statusManager.currentIcon, "hand.thumbsup.fill")
         XCTAssertEqual(statusManager.state, .success)
     }
     
@@ -115,7 +115,7 @@ final class StatusManagerTests: XCTestCase {
         )
         
         XCTAssertEqual(statusManager.state, .success)
-        XCTAssertEqual(statusManager.currentIcon, "checkmark.circle.fill")
+        XCTAssertEqual(statusManager.currentIcon, "hand.thumbsup.fill")
     }
     
     func testHigherPriorityCanOverrideLowerPriority() {
