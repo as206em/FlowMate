@@ -32,13 +32,28 @@ final class AppState: ObservableObject {
     let configurationManager: ConfigurationManager
     @Published var aiService: AIService!
     private var cancellables = Set<AnyCancellable>()
-    private var eventMonitor: Any?
     private let statusManager: StatusManager
     
+    // Service dependencies
+    private let keyboardShortcutManager: KeyboardShortcutManagerProtocol
+    private let clipboardService: ClipboardServiceProtocol
+    private let promptBuilder: PromptBuilderProtocol
+    private let proofreadingService: ProofreadingServiceProtocol
     
-    init(configurationManager: ConfigurationManager? = nil, statusManager: StatusManager) {
-        // Initialize statusManager first (required before using self)
+    init(
+        configurationManager: ConfigurationManager? = nil,
+        statusManager: StatusManager,
+        keyboardShortcutManager: KeyboardShortcutManagerProtocol? = nil,
+        clipboardService: ClipboardServiceProtocol? = nil,
+        promptBuilder: PromptBuilderProtocol? = nil,
+        proofreadingService: ProofreadingServiceProtocol? = nil
+    ) {
+        // Initialize dependencies
         self.statusManager = statusManager
+        self.keyboardShortcutManager = keyboardShortcutManager ?? KeyboardShortcutManager()
+        self.clipboardService = clipboardService ?? ClipboardService()
+        self.promptBuilder = promptBuilder ?? PromptBuilder()
+        self.proofreadingService = proofreadingService ?? ProofreadingService()
         
         if let configurationManager = configurationManager {
             self.configurationManager = configurationManager
@@ -114,26 +129,12 @@ final class AppState: ObservableObject {
     }
     
     deinit {
-        if let monitor = eventMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
+        keyboardShortcutManager.removeShortcut()
     }
     
     private func setupKeyboardShortcut() {
-        // Remove existing monitor
-        if let monitor = eventMonitor {
-            NSEvent.removeMonitor(monitor)
-            eventMonitor = nil
-        }
-        
-        // Parse shortcut string
-        let (keyCode, modifiers) = parseShortcut(keyboardShortcut)
-        
-        // Set up new global event monitor
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == keyCode && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == modifiers {
-                self?.handleProofreadingShortcut()
-            }
+        keyboardShortcutManager.setupShortcut(keyboardShortcut) { [weak self] in
+            self?.handleProofreadingShortcut()
         }
     }
     
@@ -215,7 +216,7 @@ final class AppState: ObservableObject {
     }
     
     func handleProofreadingShortcut() {
-        guard let selectedText = getSelectedText() else {
+        guard let selectedText = clipboardService.getSelectedText() else {
             Logger.shared.warning("AppState: No text selected for proofreading")
             return
         }
@@ -236,29 +237,23 @@ final class AppState: ObservableObject {
         self.isProcessing = true
         self.showProofreadingDialog(nil)
         
-        performProofreadingWithRetry(text: selectedText)
-    }
-    
-    private func performProofreadingWithRetry(text: String, retryCount: Int = 0) {
-        let maxRetries = 3
-        
+        // Perform proofreading using the service
         Task {
-            do {
-                Logger.shared.debug("AppState: Performing proofreading (attempt \(retryCount + 1)/\(maxRetries + 1))")
+            let result = await proofreadingService.proofread(
+                text: selectedText,
+                model: currentModel,
+                prompt: currentPrompt,
+                aiService: aiService,
+                promptBuilder: promptBuilder,
+                maxRetries: 3
+            )
+            
+            await MainActor.run {
+                self.isProcessing = false
                 
-                // Construct the final prompt with system rules
-                let finalPrompt = buildFinalPrompt(userPrompt: currentPrompt, inputText: text)
-                
-                let corrected = try await aiService.generate(
-                    model: currentModel,
-                    prompt: finalPrompt
-                )
-                
-                Logger.shared.info("AppState: Proofreading completed successfully")
-                
-                await MainActor.run {
-                    self.correctedText = corrected
-                    self.isProcessing = false
+                switch result {
+                case .success(let correctedText):
+                    self.correctedText = correctedText
                     
                     // Update status to success with 3 second timeout
                     self.statusManager.updateStatus(
@@ -266,169 +261,19 @@ final class AppState: ObservableObject {
                         priority: .proofreading,
                         timeout: 3.0
                     )
-                }
-            } catch {
-                Logger.shared.error("AppState: Proofreading failed (attempt \(retryCount + 1)/\(maxRetries + 1))", error: error)
-                
-                if retryCount < maxRetries {
-                    // Wait briefly before retry
-                    try? await Task.sleep(nanoseconds: 1_000_000) // 1 second
-                    performProofreadingWithRetry(text: text, retryCount: retryCount + 1)
-                } else {
-                    Logger.shared.error("AppState: Proofreading failed after all retries")
                     
-                    await MainActor.run {
-                        self.isProcessing = false
-                        let errorMessage = retryCount > 0 ? 
-                            "Failed after \(retryCount + 1) attempts: \(error.localizedDescription)" :
-                            "Error: \(error.localizedDescription)"
-                        self.correctedText = errorMessage
-                        
-                        // Update status to failure with 5 second timeout
-                        self.statusManager.updateStatus(
-                            state: .failure,
-                            priority: .proofreading,
-                            timeout: 5.0
-                        )
-                    }
+                case .failure(let error):
+                    self.correctedText = "Error: \(error.localizedDescription)"
+                    
+                    // Update status to failure with 5 second timeout
+                    self.statusManager.updateStatus(
+                        state: .failure,
+                        priority: .proofreading,
+                        timeout: 5.0
+                    )
                 }
             }
         }
-    }
-    
-    private func buildFinalPrompt(userPrompt: String, inputText: String) -> String {
-        return userPrompt + "\n\nText to proofread:\n" + inputText
-    }
-    
-    private func getSelectedText() -> String? {
-        let pasteboard = NSPasteboard.general
-        let previousContents = pasteboard.string(forType: .string)
-        
-        // Use Command+C to copy instead of Command+X to cut
-        let source = CGEventSource(stateID: .hidSystemState)
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: true) // 0x08 = 'C' key
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: false)
-        
-        keyDown?.flags = .maskCommand
-        keyUp?.flags = .maskCommand
-        
-        keyDown?.post(tap: .cgAnnotatedSessionEventTap)
-        keyUp?.post(tap: .cgAnnotatedSessionEventTap)
-        
-        usleep(100000)
-        
-        let selectedText = pasteboard.string(forType: .string)
-        
-        // Restore previous clipboard contents only if we actually copied something
-        if let previousContents = previousContents, selectedText != previousContents {
-            pasteboard.clearContents()
-            pasteboard.setString(previousContents, forType: .string)
-        }
-        
-        return selectedText
-    }
-    
-    private func parseShortcut(_ shortcut: String) -> (UInt16, NSEvent.ModifierFlags) {
-        var keyCode: UInt16 = 0
-        var modifiers: NSEvent.ModifierFlags = []
-        
-        let components = shortcut.lowercased().components(separatedBy: "+")
-        
-        for component in components {
-            switch component.trimmingCharacters(in: .whitespaces) {
-            case "command", "cmd":
-                modifiers.insert(.command)
-            case "control", "ctrl":
-                modifiers.insert(.control)
-            case "option", "opt":
-                modifiers.insert(.option)
-            case "shift":
-                modifiers.insert(.shift)
-            case "/":
-                keyCode = 44 // Forward slash key code
-            case ".":
-                keyCode = 47 // Period key code
-            case ",":
-                keyCode = 43 // Comma key code
-            case ";":
-                keyCode = 41 // Semicolon key code
-            case "'":
-                keyCode = 39 // Apostrophe key code
-            case "[":
-                keyCode = 33 // Left bracket key code
-            case "]":
-                keyCode = 30 // Right bracket key code
-            case "\\":
-                keyCode = 42 // Backslash key code
-            case "`":
-                keyCode = 50 // Grave accent key code
-            case "=":
-                keyCode = 24 // Equal sign key code
-            case "-":
-                keyCode = 27 // Minus key code
-            case "a": keyCode = 0
-            case "b": keyCode = 11
-            case "c": keyCode = 8
-            case "d": keyCode = 2
-            case "e": keyCode = 14
-            case "f": keyCode = 3
-            case "g": keyCode = 5
-            case "h": keyCode = 4
-            case "i": keyCode = 34
-            case "j": keyCode = 38
-            case "k": keyCode = 40
-            case "l": keyCode = 37
-            case "m": keyCode = 46
-            case "n": keyCode = 45
-            case "o": keyCode = 31
-            case "p": keyCode = 35
-            case "q": keyCode = 12
-            case "r": keyCode = 15
-            case "s": keyCode = 1
-            case "t": keyCode = 17
-            case "u": keyCode = 32
-            case "v": keyCode = 9
-            case "w": keyCode = 13
-            case "x": keyCode = 7
-            case "y": keyCode = 16
-            case "z": keyCode = 6
-            case "0": keyCode = 29
-            case "1": keyCode = 18
-            case "2": keyCode = 19
-            case "3": keyCode = 20
-            case "4": keyCode = 21
-            case "5": keyCode = 23
-            case "6": keyCode = 22
-            case "7": keyCode = 26
-            case "8": keyCode = 28
-            case "9": keyCode = 25
-            case "f1": keyCode = 122
-            case "f2": keyCode = 120
-            case "f3": keyCode = 99
-            case "f4": keyCode = 118
-            case "f5": keyCode = 96
-            case "f6": keyCode = 97
-            case "f7": keyCode = 98
-            case "f8": keyCode = 100
-            case "f9": keyCode = 101
-            case "f10": keyCode = 109
-            case "f11": keyCode = 103
-            case "f12": keyCode = 111
-            case "space": keyCode = 49
-            case "return", "enter": keyCode = 36
-            case "tab": keyCode = 48
-            case "escape", "esc": keyCode = 53
-            case "delete": keyCode = 51
-            case "up": keyCode = 126
-            case "down": keyCode = 125
-            case "left": keyCode = 123
-            case "right": keyCode = 124
-            default:
-                break
-            }
-        }
-        
-        return (keyCode, modifiers)
     }
     
     
