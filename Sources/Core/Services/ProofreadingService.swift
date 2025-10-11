@@ -1,11 +1,5 @@
 import Foundation
 
-/// Result of a proofreading operation
-enum ProofreadingResult {
-    case success(correctedText: String)
-    case failure(error: Error)
-}
-
 /// Protocol for proofreading service to enable mocking in tests
 protocol ProofreadingServiceProtocol {
     func proofread(

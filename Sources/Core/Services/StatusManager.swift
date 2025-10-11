@@ -1,40 +1,6 @@
 import Foundation
 import SwiftUI
 
-/// Represents the current state of the app status icon
-enum StatusState {
-    case idle
-    case processing
-    case success
-    case failure
-    
-    /// Maps each state to its corresponding SF Symbol icon name
-    var iconName: String {
-        switch self {
-        case .idle:
-            return "checkmark.circle"
-        case .processing:
-            return "arrow.triangle.2.circlepath"
-        case .success:
-            return "hand.thumbsup.fill"
-        case .failure:
-            return "exclamationmark.triangle.fill"
-        }
-    }
-}
-
-/// Represents priority levels for status updates
-/// Lower raw value = higher priority
-enum StatusPriority: Int, Comparable {
-    case critical = 0      // Highest priority
-    case proofreading = 100
-    case app = 1000           // Lowest priority (default)
-    
-    static func < (lhs: StatusPriority, rhs: StatusPriority) -> Bool {
-        lhs.rawValue < rhs.rawValue
-    }
-}
-
 /// Manages the app's menu bar icon status with priority-based updates and automatic timeouts
 @MainActor
 final class StatusManager: ObservableObject {
