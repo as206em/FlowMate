@@ -4,6 +4,7 @@ struct ProofreadingDialog: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var monitor: Any?
+    private let keyMonitorService: KeyMonitorServiceProtocol = KeyMonitorService()
     
     // Use computed property to bind to AppState's persistent setting
     private var showDiff: Binding<Bool> {
@@ -78,20 +79,12 @@ struct ProofreadingDialog: View {
     }
     
     private func setupKeyMonitor() {
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == 53 { // ESC key
-                dismiss()
-                return nil // Consume the event
-            }
-            return event
-        }
+        monitor = keyMonitorService.setupEscapeKeyMonitor(dismissAction: { dismiss() })
     }
     
     private func removeKeyMonitor() {
-        if let monitor = monitor {
-            NSEvent.removeMonitor(monitor)
-            self.monitor = nil
-        }
+        keyMonitorService.removeKeyMonitor(monitor)
+        self.monitor = nil
     }
     
     private func copyToClipboard(_ text: String) {

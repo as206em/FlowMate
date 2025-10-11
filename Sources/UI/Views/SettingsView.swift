@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTab: SettingsTab = .proofreading
     @State private var monitor: Any?
+    private let keyMonitorService: KeyMonitorServiceProtocol = KeyMonitorService()
     
     private let sidebarItems = [
         SettingsSidebarItem(title: "Proofreading", icon: "doc.text.magnifyingglass", tag: .proofreading),
@@ -46,20 +47,12 @@ struct SettingsView: View {
     }
     
     private func setupKeyMonitor() {
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == 53 { // ESC key
-                dismiss()
-                return nil
-            }
-            return event
-        }
+        monitor = keyMonitorService.setupEscapeKeyMonitor(dismissAction: { dismiss() })
     }
     
     private func removeKeyMonitor() {
-        if let monitor = monitor {
-            NSEvent.removeMonitor(monitor)
-            self.monitor = nil
-        }
+        keyMonitorService.removeKeyMonitor(monitor)
+        self.monitor = nil
     }
 }
 
