@@ -13,6 +13,7 @@ final class AppState: ObservableObject {
     @Published var ollamaURL: String = ""
     @Published var openAIURL: String = ""
     @Published var openAIAPIKey: String = ""
+    @Published var qwenTokenFilePath: String = ""
     @Published var keyboardShortcut: String = ""
     @Published var showDiffByDefault: Bool = true
     @Published var proofreadingProvider: AIProvider = .ollama
@@ -83,15 +84,17 @@ final class AppState: ObservableObject {
         ollamaURL = config.providers.ollama.url
         openAIURL = config.providers.openai.url
         openAIAPIKey = config.providers.openai.apiKey ?? ""
+        qwenTokenFilePath = config.providers.qwen.apiKey ?? ""
     }
     
     private func updateAIService() {
         let configuration = AIConfiguration(
             ollamaURL: ollamaURL,
             openAIURL: openAIURL,
-            openAIAPIKey: openAIAPIKey
+            openAIAPIKey: openAIAPIKey,
+            qwenTokenFilePath: qwenTokenFilePath
         )
-        
+
         aiService = AIServiceFactory.createService(
             for: proofreadingProvider,
             configuration: configuration
@@ -149,6 +152,9 @@ final class AppState: ObservableObject {
         case .openai:
             openAIURL = url
             configurationManager.updateProvidersConfig { $0.openai.url = url }
+        case .qwen:
+            // For Qwen, URL is stored in the token file, not separately configured
+            break
         }
         updateAIService()
         checkConnection()
@@ -178,6 +184,11 @@ final class AppState: ObservableObject {
     func updateOpenAIAPIKey(_ apiKey: String) {
         openAIAPIKey = apiKey
         configurationManager.updateProvidersConfig { $0.openai.apiKey = apiKey }
+    }
+
+    func updateQwenTokenFilePath(_ filePath: String) {
+        qwenTokenFilePath = filePath
+        configurationManager.updateProvidersConfig { $0.qwen.apiKey = filePath }
     }
     
     // MARK: - Proofreading Workflow

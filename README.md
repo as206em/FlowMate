@@ -1,11 +1,14 @@
 # FlowMate
 
-A macOS menu bar application that provides AI-powered text proofreading capabilities. The app integrates with both Ollama and OpenAI services to offer flexible proofreading options.
+A macOS menu bar application that provides AI-powered text proofreading capabilities. The app integrates with Ollama, OpenAI, and Qwen (Alibaba Cloud) services to offer flexible proofreading options.
 
 ## Features
 
 - Menu bar application for quick access
-- Support for both Ollama and OpenAI services
+- Support for multiple AI providers:
+  - **Ollama** - Local AI models
+  - **OpenAI** - Cloud-based GPT models
+  - **Qwen** - Alibaba Cloud AI models
 - Customizable proofreading instructions
 - Keyboard shortcut support
 - Real-time connection status monitoring
@@ -36,9 +39,28 @@ The project uses Swift Package Manager for dependency management. Key dependenci
 ## Configuration
 
 The app stores configuration in `~/Application Support/FlowMate/config.json` and supports:
-- Provider settings (Ollama/OpenAI URLs and API keys)
+- Provider settings:
+  - **Ollama**: Base URL (default: `http://127.0.0.1:11434`)
+  - **OpenAI**: Base URL and API key
+  - **Qwen**: OAuth token file path
 - Proofreading preferences
 - App settings (theme, auto-check updates, etc.)
+
+### Setting up Qwen
+
+To use Qwen AI provider:
+
+1. Install the Qwen CLI tool (if not already installed)
+2. Authenticate with Qwen:
+   ```bash
+   qwen auth login
+   ```
+3. The CLI will save an OAuth token file (typically at `~/.qwen/token.json`)
+4. In FlowMate settings, select Qwen as your provider
+5. Enter the full path to your Qwen token file
+6. Test the connection to verify it works
+
+**Note:** Qwen tokens expire after a certain period. If you see authentication errors, re-run `qwen auth login` to refresh your token.
 
 ## Testing
 

@@ -21,23 +21,24 @@ struct AIProvidersSettingsView: View {
                 }
                 .pickerStyle(.menu)
                 
-                if selectedProviderForConfig == .ollama {
+                switch selectedProviderForConfig {
+                case .ollama:
                     TextField("URL:", text: $appState.ollamaURL)
                         .focused($isURLFieldFocused)
                     HStack {
                         Text(connectionStatus)
                             .font(.caption)
-                            .foregroundColor(connectionStatus.contains("Connected") ? .green : 
+                            .foregroundColor(connectionStatus.contains("Connected") ? .green :
                                            connectionStatus.contains("Connecting") ? .orange : .red)
-                            .frame(minWidth: 120) // Fixed width to prevent layout shifts
-                        
+                            .frame(minWidth: 120)
+
                         Spacer()
-                        
+
                         if isTestingConnection {
                             ProgressView()
                                 .scaleEffect(0.8)
                         }
-                        
+
                         Button("Test Connection") {
                             Task {
                                 await testConnection(provider: .ollama, url: appState.ollamaURL, apiKey: "")
@@ -47,27 +48,58 @@ struct AIProvidersSettingsView: View {
                         .controlSize(.regular)
                         .disabled(isTestingConnection)
                     }
-                } else {
+
+                case .openai:
                     TextField("URL:", text: $appState.openAIURL)
                         .focused($isURLFieldFocused)
                     SecureField("API Key:", text: $appState.openAIAPIKey)
                     HStack {
                         Text(connectionStatus)
                             .font(.caption)
-                            .foregroundColor(connectionStatus.contains("Connected") ? .green : 
+                            .foregroundColor(connectionStatus.contains("Connected") ? .green :
                                            connectionStatus.contains("Connecting") ? .orange : .red)
-                            .frame(minWidth: 120) // Fixed width to prevent layout shifts
-                        
+                            .frame(minWidth: 120)
+
                         Spacer()
-                        
+
                         if isTestingConnection {
                             ProgressView()
                                 .scaleEffect(0.8)
                         }
-                        
+
                         Button("Test Connection") {
                             Task {
                                 await testConnection(provider: .openai, url: appState.openAIURL, apiKey: appState.openAIAPIKey)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                        .disabled(isTestingConnection)
+                    }
+
+                case .qwen:
+                    TextField("Token File Path:", text: $appState.qwenTokenFilePath)
+                        .focused($isURLFieldFocused)
+                    Text("Enter the path to your Qwen OAuth token file (e.g., ~/.qwen/token.json)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    HStack {
+                        Text(connectionStatus)
+                            .font(.caption)
+                            .foregroundColor(connectionStatus.contains("Connected") ? .green :
+                                           connectionStatus.contains("Connecting") ? .orange : .red)
+                            .frame(minWidth: 120)
+
+                        Spacer()
+
+                        if isTestingConnection {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        }
+
+                        Button("Test Connection") {
+                            Task {
+                                await testConnection(provider: .qwen, url: "", apiKey: appState.qwenTokenFilePath)
                             }
                         }
                         .buttonStyle(.bordered)
@@ -91,9 +123,14 @@ struct AIProvidersSettingsView: View {
                 .keyboardShortcut(.escape)
                 
                 Button("OK") {
-                    appState.updateProviderURL(selectedProviderForConfig == .ollama ? appState.ollamaURL : appState.openAIURL)
-                    if selectedProviderForConfig == .openai {
+                    switch selectedProviderForConfig {
+                    case .ollama:
+                        appState.updateProviderURL(appState.ollamaURL)
+                    case .openai:
+                        appState.updateProviderURL(appState.openAIURL)
                         appState.updateOpenAIAPIKey(appState.openAIAPIKey)
+                    case .qwen:
+                        appState.updateQwenTokenFilePath(appState.qwenTokenFilePath)
                     }
                     dismiss()
                 }
@@ -113,17 +150,18 @@ struct AIProvidersSettingsView: View {
             connectionStatus = "Connecting..."
             isTestingConnection = true
         }
-        
+
         do {
             let configuration = AIConfiguration(
                 ollamaURL: provider == .ollama ? url : "http://127.0.0.1:11434",
                 openAIURL: provider == .openai ? url : "https://api.openai.com",
-                openAIAPIKey: apiKey
+                openAIAPIKey: provider == .openai ? apiKey : "",
+                qwenTokenFilePath: provider == .qwen ? apiKey : ""
             )
-            
+
             let service = AIServiceFactory.createService(for: provider, configuration: configuration)
             let models = try await service.listModels()
-            
+
             await MainActor.run {
                 connectionStatus = "Connected (\(models.count) models)"
                 isTestingConnection = false

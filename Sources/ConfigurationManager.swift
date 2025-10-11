@@ -26,7 +26,8 @@ class ConfigurationManager: ObservableObject {
         return AppConfig(
             providers: ProvidersConfig(
                 ollama: ProviderConfig(url: "http://127.0.1:11434", apiKey: nil),
-                openai: ProviderConfig(url: "https://api.openai.com", apiKey: "")
+                openai: ProviderConfig(url: "https://api.openai.com", apiKey: ""),
+                qwen: ProviderConfig(url: "portal.qwen.ai", apiKey: "")
             ),
             proofreading: ProofreadingConfig(
                 selectedProvider: "ollama",
@@ -165,6 +166,13 @@ IMPORTANT SYSTEM RULES (ALWAYS FOLLOW):
             )
         case "openai":
             let providerConfig = config.providers.openai
+            return ProviderSetting(
+                url: providerConfig.url,
+                model: config.proofreading.selectedModel,
+                apiKey: providerConfig.apiKey
+            )
+        case "qwen":
+            let providerConfig = config.providers.qwen
             return ProviderSetting(
                 url: providerConfig.url,
                 model: config.proofreading.selectedModel,
