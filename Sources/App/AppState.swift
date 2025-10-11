@@ -4,21 +4,22 @@ import AppKit
 
 @MainActor
 final class AppState: ObservableObject {
-    @Published var currentPrompt: String = "You are a text proofreader. Your task is to correct typos and grammar errors in the provided text while strictly preserving the original meaning, formatting, and style."
+    // MARK: - Published State
+    @Published var currentPrompt: String = ""
     @Published var availableModels: [String] = []
     @Published var isProcessing: Bool = false
-    @Published var showProofreadingDialog: Bool = false
     @Published var correctedText: String = ""
     @Published var originalText: String = ""
-    @Published var ollamaURL: String = "http://127.0.0.1:11434"
-    @Published var openAIURL: String = "https://api.openai.com"
+    @Published var ollamaURL: String = ""
+    @Published var openAIURL: String = ""
     @Published var openAIAPIKey: String = ""
-    @Published var keyboardShortcut: String = "command+."
+    @Published var keyboardShortcut: String = ""
     @Published var showDiffByDefault: Bool = true
     @Published var proofreadingProvider: AIProvider = .ollama
-    @Published var proofreadingModel: String = "gemma3:4b"
+    @Published var proofreadingModel: String = ""
+    @Published var aiService: AIService!
     
-    // Computed properties for backward compatibility
+    // Backward compatibility computed properties
     var currentModel: String {
         get { proofreadingModel }
         set { proofreadingModel = newValue }
@@ -29,9 +30,8 @@ final class AppState: ObservableObject {
         set { proofreadingProvider = newValue }
     }
     
+    // MARK: - Dependencies
     let configurationManager: ConfigurationManager
-    @Published var aiService: AIService!
-    private var cancellables = Set<AnyCancellable>()
     private let statusManager: StatusManager
     
     // Service dependencies
@@ -49,52 +49,40 @@ final class AppState: ObservableObject {
         proofreadingService: ProofreadingServiceProtocol? = nil
     ) {
         // Initialize dependencies
+        self.configurationManager = configurationManager ?? ConfigurationManager()
         self.statusManager = statusManager
         self.keyboardShortcutManager = keyboardShortcutManager ?? KeyboardShortcutManager()
         self.clipboardService = clipboardService ?? ClipboardService()
         self.promptBuilder = promptBuilder ?? PromptBuilder()
         self.proofreadingService = proofreadingService ?? ProofreadingService()
         
-        if let configurationManager = configurationManager {
-            self.configurationManager = configurationManager
-        } else {
-            // Create configuration manager synchronously by using unsafeTransfer
-            let configManager = ConfigurationManager()
-            self.configurationManager = configManager
-        }
+        Logger.shared.info("AppState: Initializing")
         
-        Logger.shared.info("AppState: Initializing AppState")
+        // Load configuration and initialize services
+        loadConfiguration()
+        updateAIService()
+        setupKeyboardShortcut()
+        checkConnection()
         
-        // Load initial values from configuration manager
-        let config = self.configurationManager.config
-        currentProvider = AIProvider(rawValue: config.proofreading.selectedProvider) ?? .ollama
+        Logger.shared.info("AppState: Initialized - Provider: \(proofreadingProvider.rawValue), Model: \(proofreadingModel)")
+    }
+    
+    // MARK: - Configuration Management
+    
+    private func loadConfiguration() {
+        let config = configurationManager.config
+        
+        // Proofreading settings
+        proofreadingProvider = AIProvider(rawValue: config.proofreading.selectedProvider) ?? .ollama
+        proofreadingModel = config.proofreading.selectedModel
         currentPrompt = config.proofreading.defaultPrompt
         keyboardShortcut = config.proofreading.keyboardShortcut
-        currentModel = config.proofreading.selectedModel
         showDiffByDefault = config.proofreading.showDiffByDefault
         
-        // Load provider settings from the configuration
-        // Load Ollama settings
+        // Provider settings
         ollamaURL = config.providers.ollama.url
-        
-        // Load OpenAI settings
         openAIURL = config.providers.openai.url
         openAIAPIKey = config.providers.openai.apiKey ?? ""
-        
-        // Set the current provider's URL and API key to the AppState properties
-        if currentProvider == .ollama {
-            // ollamaURL is already set above
-        } else {
-            // openAIURL and openAIAPIKey are already set above
-        }
-        
-        // Initialize the AI service
-        updateAIService()
-        
-        setupKeyboardShortcut()
-        preloadConnection()
-        
-        Logger.shared.info("AppState: Initialization complete - Provider: \(currentProvider.rawValue), Model: \(currentModel)")
     }
     
     private func updateAIService() {
@@ -105,26 +93,22 @@ final class AppState: ObservableObject {
         )
         
         aiService = AIServiceFactory.createService(
-            for: currentProvider,
+            for: proofreadingProvider,
             configuration: configuration
         )
     }
     
+    // MARK: - Provider Management
+    
     func setProvider(_ provider: AIProvider) {
         Logger.shared.info("AppState: Switching provider to \(provider.rawValue)")
-        currentProvider = provider
+        proofreadingProvider = provider
         
-        // Update configuration manager
         configurationManager.updateProofreadingConfig { config in
             config.selectedProvider = provider.rawValue
         }
         
-        updateAIService() // Recreate service with new provider
-        checkConnection() // Test new provider connection
-    }
-    
-    private func preloadConnection() {
-        // Immediately check connection on startup
+        updateAIService()
         checkConnection()
     }
     
@@ -140,7 +124,7 @@ final class AppState: ObservableObject {
     
     func checkConnection() {
         Task {
-            Logger.shared.info("AppState: Checking connection for provider: \(currentProvider)")
+            Logger.shared.info("AppState: Checking connection for provider: \(proofreadingProvider)")
             do {
                 let models = try await aiService.listModels()
                 await MainActor.run {
@@ -155,65 +139,48 @@ final class AppState: ObservableObject {
         }
     }
     
+    // MARK: - Settings Updates
+    
     func updateProviderURL(_ url: String) {
-        switch currentProvider {
+        switch proofreadingProvider {
         case .ollama:
             ollamaURL = url
-            // Update configuration manager
-            configurationManager.updateProvidersConfig { providers in
-                providers.ollama.url = url
-            }
+            configurationManager.updateProvidersConfig { $0.ollama.url = url }
         case .openai:
             openAIURL = url
-            // Update configuration manager
-            configurationManager.updateProvidersConfig { providers in
-                providers.openai.url = url
-            }
+            configurationManager.updateProvidersConfig { $0.openai.url = url }
         }
-        updateAIService() // Recreate service with new configuration
+        updateAIService()
         checkConnection()
     }
     
     func updateKeyboardShortcut(_ shortcut: String) {
         keyboardShortcut = shortcut
-        // Update configuration manager
-        configurationManager.updateProofreadingConfig { config in
-            config.keyboardShortcut = shortcut
-        }
+        configurationManager.updateProofreadingConfig { $0.keyboardShortcut = shortcut }
         setupKeyboardShortcut()
     }
     
     func updateCurrentPrompt(_ prompt: String) {
         currentPrompt = prompt
-        // Update configuration manager
-        configurationManager.updateProofreadingConfig { config in
-            config.defaultPrompt = prompt
-        }
+        configurationManager.updateProofreadingConfig { $0.defaultPrompt = prompt }
     }
     
     func updateCurrentModel(_ model: String) {
-        currentModel = model
-        // Update configuration manager
-        configurationManager.updateProofreadingConfig { config in
-            config.selectedModel = model
-        }
+        proofreadingModel = model
+        configurationManager.updateProofreadingConfig { $0.selectedModel = model }
     }
     
     func updateShowDiffByDefault(_ showDiff: Bool) {
         showDiffByDefault = showDiff
-        // Update configuration manager
-        configurationManager.updateProofreadingConfig { config in
-            config.showDiffByDefault = showDiff
-        }
+        configurationManager.updateProofreadingConfig { $0.showDiffByDefault = showDiff }
     }
     
     func updateOpenAIAPIKey(_ apiKey: String) {
         openAIAPIKey = apiKey
-        // Update configuration manager
-        configurationManager.updateProvidersConfig { providers in
-            providers.openai.apiKey = apiKey
-        }
+        configurationManager.updateProvidersConfig { $0.openai.apiKey = apiKey }
     }
+    
+    // MARK: - Proofreading Workflow
     
     func handleProofreadingShortcut() {
         guard let selectedText = clipboardService.getSelectedText() else {
@@ -241,7 +208,7 @@ final class AppState: ObservableObject {
         Task {
             let result = await proofreadingService.proofread(
                 text: selectedText,
-                model: currentModel,
+                model: proofreadingModel,
                 prompt: currentPrompt,
                 aiService: aiService,
                 promptBuilder: promptBuilder,
@@ -275,7 +242,7 @@ final class AppState: ObservableObject {
             }
         }
     }
-    
+    // MARK: - Window Management
     
     @objc func showProofreadingDialog(_ sender: Any?) {
         WindowManager.shared.showWindow(

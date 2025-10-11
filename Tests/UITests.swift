@@ -73,7 +73,7 @@ final class UITests: XCTestCase {
     // MARK: - ProofreadingDialog Tests (indirect)
     func testProofreadingDialogStateManagement() {
         // Test proofreading dialog state
-        XCTAssertFalse(appState.showProofreadingDialog)
+        // Note: showProofreadingDialog is now a method, not a property
         
         // Simulate showing proofreading dialog
         appState.showProofreadingDialog(nil)
