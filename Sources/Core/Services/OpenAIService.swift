@@ -11,8 +11,8 @@ actor OpenAIService: AIService {
     
     func listModels() async throws -> [String] {
         let url = "\(baseURL)/v1/models"
-        print("OpenAIService: Attempting to fetch models from URL: \(url)")
-        print("OpenAIService: Using API key: \(apiKey.isEmpty ? "EMPTY" : "SET")")
+        await Logger.shared.debug("OpenAIService: Attempting to fetch models from URL: \(url)")
+        await Logger.shared.debug("OpenAIService: Using API key: \(apiKey.isEmpty ? "EMPTY" : "SET")")
         
         var request = URLRequest(url: URL(string: url)!)
         request.httpMethod = "GET"
@@ -23,38 +23,38 @@ actor OpenAIService: AIService {
             let (data, response) = try await URLSession.shared.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("OpenAIService: Invalid response type: \(type(of: response))")
+                await Logger.shared.error("OpenAIService: Invalid response type: \(type(of: response))")
                 throw NSError(domain: "OpenAIService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response type"])
             }
             
-            print("OpenAIService: Response status code: \(httpResponse.statusCode)")
+            await Logger.shared.debug("OpenAIService: Response status code: \(httpResponse.statusCode)")
             
             if httpResponse.statusCode != 200 {
                 let statusCode = httpResponse.statusCode
                 let responseString = String(data: data, encoding: .utf8) ?? "Unable to decode response"
-                print("OpenAIService: Error response: \(responseString)")
+                await Logger.shared.error("OpenAIService: Error response: \(responseString)")
                 throw NSError(domain: "OpenAIService", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch models: \(responseString)"])
             }
             
             let decoder = JSONDecoder()
             let modelsResponse = try decoder.decode(OpenAIModelsResponse.self, from: data)
             let modelIds = modelsResponse.data.map { $0.id }
-            print("OpenAIService: Successfully fetched \(modelIds.count) models: \(modelIds)")
+            await Logger.shared.info("OpenAIService: Successfully fetched \(modelIds.count) models: \(modelIds)")
             return modelIds
             
         } catch {
-            print("OpenAIService: Error in listModels: \(error.localizedDescription)")
+            await Logger.shared.error("OpenAIService: Error in listModels: \(error.localizedDescription)")
             let nsError = error as NSError
-            print("OpenAIService: Error domain: \(nsError.domain), code: \(nsError.code)")
+            await Logger.shared.error("OpenAIService: Error domain: \(nsError.domain), code: \(nsError.code)")
             throw error
         }
     }
     
     func generate(model: String, prompt: String) async throws -> String {
         let url = "\(baseURL)/v1/chat/completions"
-        print("OpenAIService: Attempting to generate response from URL: \(url)")
-        print("OpenAIService: Using model: \(model)")
-        print("OpenAIService: Prompt length: \(prompt.count) characters")
+        await Logger.shared.info("OpenAIService: Attempting to generate response from URL: \(url)")
+        await Logger.shared.debug("OpenAIService: Using model: \(model)")
+        await Logger.shared.debug("OpenAIService: Prompt length: \(prompt.count) characters")
         
         var request = URLRequest(url: URL(string: url)!)
         request.httpMethod = "POST"
@@ -74,19 +74,19 @@ actor OpenAIService: AIService {
             let (data, response) = try await URLSession.shared.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("OpenAIService: Invalid response type in generate: \(type(of: response))")
+                await Logger.shared.error("OpenAIService: Invalid response type in generate: \(type(of: response))")
                 throw NSError(domain: "OpenAIService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response type"])
             }
             
-            print("OpenAIService: Generate response status code: \(httpResponse.statusCode)")
+            await Logger.shared.debug("OpenAIService: Generate response status code: \(httpResponse.statusCode)")
             
             if httpResponse.statusCode != 200 {
                 let statusCode = httpResponse.statusCode
                 let responseString = String(data: data, encoding: .utf8) ?? "Unable to decode response"
-                print("OpenAIService: Generate error response: \(responseString)")
+                await Logger.shared.error("OpenAIService: Generate error response: \(responseString)")
                 
                 if let errorResponse = try? JSONDecoder().decode(OpenAIErrorResponse.self, from: data) {
-                    print("OpenAIService: Generate API error: \(errorResponse.error.message)")
+                    await Logger.shared.error("OpenAIService: Generate API error: \(errorResponse.error.message)")
                     throw NSError(domain: "OpenAIService", code: statusCode, userInfo: [NSLocalizedDescriptionKey: errorResponse.error.message])
                 } else {
                     throw NSError(domain: "OpenAIService", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to generate response: \(responseString)"])
@@ -96,13 +96,13 @@ actor OpenAIService: AIService {
             let decoder = JSONDecoder()
             let completionResponse = try decoder.decode(OpenAIChatCompletionResponse.self, from: data)
             let content = completionResponse.choices.first?.message.content ?? ""
-            print("OpenAIService: Successfully generated response, length: \(content.count) characters")
+            await Logger.shared.info("OpenAIService: Successfully generated response, length: \(content.count) characters")
             return content
             
         } catch {
-            print("OpenAIService: Error in generate: \(error.localizedDescription)")
+            await Logger.shared.error("OpenAIService: Error in generate: \(error.localizedDescription)")
             let nsError = error as NSError
-            print("OpenAIService: Generate error domain: \(nsError.domain), code: \(nsError.code)")
+            await Logger.shared.error("OpenAIService: Generate error domain: \(nsError.domain), code: \(nsError.code)")
             throw error
         }
     }

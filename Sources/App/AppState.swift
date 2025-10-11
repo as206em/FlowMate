@@ -139,16 +139,16 @@ final class AppState: ObservableObject {
     
     func checkConnection() {
         Task {
-            print("AppState: Checking connection for provider: \(currentProvider)")
+            Logger.shared.info("AppState: Checking connection for provider: \(currentProvider)")
             do {
                 let models = try await aiService.listModels()
                 await MainActor.run {
-                    print("AppState: Connection successful, got \(models.count) models")
+                    Logger.shared.info("AppState: Connection successful, got \(models.count) models")
                     self.availableModels = models
                 }
             } catch {
                 await MainActor.run {
-                    print("AppState: Connection failed - \(error.localizedDescription)")
+                    Logger.shared.error("AppState: Connection failed - \(error.localizedDescription)")
                 }
             }
         }

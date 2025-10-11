@@ -60,7 +60,7 @@ IMPORTANT SYSTEM RULES (ALWAYS FOLLOW):
             let decoder = JSONDecoder()
             return try decoder.decode(AppConfig.self, from: data)
         } catch {
-            print("Failed to load configuration: \(error)")
+            Logger.shared.error("ConfigurationManager: Failed to load configuration", error: error)
             return nil
         }
     }
