@@ -5,6 +5,7 @@ import AppKit
 protocol ClipboardServiceProtocol {
     func getSelectedText() -> String?
     func copyToClipboard(_ text: String)
+    func pasteFromClipboard()
 }
 
 /// Service responsible for clipboard operations
@@ -45,5 +46,18 @@ final class ClipboardService: ClipboardServiceProtocol {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+    }
+    
+    /// Pastes content from clipboard by simulating Command+V
+    func pasteFromClipboard() {
+        let source = CGEventSource(stateID: .hidSystemState)
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true) // 0x09 = 'V' key
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
+        
+        keyDown?.flags = .maskCommand
+        keyUp?.flags = .maskCommand
+        
+        keyDown?.post(tap: .cgAnnotatedSessionEventTap)
+        keyUp?.post(tap: .cgAnnotatedSessionEventTap)
     }
 }

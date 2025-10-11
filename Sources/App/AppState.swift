@@ -15,6 +15,7 @@ final class AppState: ObservableObject {
     @Published var openAIAPIKey: String = ""
     @Published var keyboardShortcut: String = ""
     @Published var showDiffByDefault: Bool = true
+    @Published var showDialog: Bool = true
     @Published var proofreadingProvider: AIProvider = .ollama
     @Published var proofreadingModel: String = ""
     @Published var aiService: AIService!
@@ -78,6 +79,7 @@ final class AppState: ObservableObject {
         currentPrompt = config.proofreading.defaultPrompt
         keyboardShortcut = config.proofreading.keyboardShortcut
         showDiffByDefault = config.proofreading.showDiffByDefault
+        showDialog = config.proofreading.showDialog
         
         // Provider settings
         ollamaURL = config.providers.ollama.url
@@ -175,6 +177,11 @@ final class AppState: ObservableObject {
         configurationManager.updateProofreadingConfig { $0.showDiffByDefault = showDiff }
     }
     
+    func updateShowDialog(_ showDialog: Bool) {
+        self.showDialog = showDialog
+        configurationManager.updateProofreadingConfig { $0.showDialog = showDialog }
+    }
+    
     func updateOpenAIAPIKey(_ apiKey: String) {
         openAIAPIKey = apiKey
         configurationManager.updateProvidersConfig { $0.openai.apiKey = apiKey }
@@ -183,8 +190,14 @@ final class AppState: ObservableObject {
     // MARK: - Proofreading Workflow
     
     func handleProofreadingShortcut() {
+        // Get currently selected text
         guard let selectedText = clipboardService.getSelectedText() else {
             Logger.shared.warning("AppState: No text selected for proofreading")
+            statusManager.updateStatus(
+                state: .failure,
+                priority: .proofreading,
+                timeout: 3.0
+            )
             return
         }
         
@@ -199,45 +212,117 @@ final class AppState: ObservableObject {
             priority: .proofreading
         )
         
-        // Show dialog immediately with loading state
-        self.correctedText = ""
-        self.isProcessing = true
-        self.showProofreadingDialog(nil)
-        
-        // Perform proofreading using the service
-        Task {
-            let result = await proofreadingService.proofread(
-                text: selectedText,
-                model: proofreadingModel,
-                prompt: currentPrompt,
-                aiService: aiService,
-                promptBuilder: promptBuilder,
-                maxRetries: 3
-            )
+        // Check if dialog should be shown or inline replacement
+        if showDialog {
+            // Show dialog mode - display results with loading state
+            self.correctedText = ""
+            self.isProcessing = true
+            self.showProofreadingDialog(nil)
             
-            await MainActor.run {
-                self.isProcessing = false
+            // Perform proofreading using the service
+            Task {
+                let result = await proofreadingService.proofread(
+                    text: selectedText,
+                    model: proofreadingModel,
+                    prompt: currentPrompt,
+                    aiService: aiService,
+                    promptBuilder: promptBuilder,
+                    maxRetries: 3
+                )
                 
-                switch result {
-                case .success(let correctedText):
-                    self.correctedText = correctedText
+                await MainActor.run {
+                    self.isProcessing = false
                     
-                    // Update status to success with 3 second timeout
-                    self.statusManager.updateStatus(
-                        state: .success,
-                        priority: .proofreading,
-                        timeout: 3.0
-                    )
-                    
-                case .failure(let error):
-                    self.correctedText = "Error: \(error.localizedDescription)"
-                    
-                    // Update status to failure with 5 second timeout
-                    self.statusManager.updateStatus(
-                        state: .failure,
-                        priority: .proofreading,
-                        timeout: 5.0
-                    )
+                    switch result {
+                    case .success(let correctedText):
+                        self.correctedText = correctedText
+                        
+                        // Update status to success with 3 second timeout
+                        self.statusManager.updateStatus(
+                            state: .success,
+                            priority: .proofreading,
+                            timeout: 3.0
+                        )
+                        
+                    case .failure(let error):
+                        self.correctedText = "Error: \(error.localizedDescription)"
+                        
+                        // Update status to failure with 5 second timeout
+                        self.statusManager.updateStatus(
+                            state: .failure,
+                            priority: .proofreading,
+                            timeout: 5.0
+                        )
+                    }
+                }
+            }
+        } else {
+            // Inline replacement mode - no dialog
+            // Store previous clipboard contents to restore later
+            let pasteboard = NSPasteboard.general
+            let previousClipboard = pasteboard.string(forType: .string)
+            
+            // Perform proofreading using the service
+            Task {
+                let result = await proofreadingService.proofread(
+                    text: selectedText,
+                    model: proofreadingModel,
+                    prompt: currentPrompt,
+                    aiService: aiService,
+                    promptBuilder: promptBuilder,
+                    maxRetries: 3
+                )
+                
+                await MainActor.run {
+                    switch result {
+                    case .success(let correctedText):
+                        self.correctedText = correctedText
+                        
+                        // Copy corrected text to clipboard
+                        self.clipboardService.copyToClipboard(correctedText)
+                        
+                        // Small delay to ensure clipboard is updated
+                        usleep(50000) // 50ms
+                        
+                        // Paste to replace selected text
+                        self.clipboardService.pasteFromClipboard()
+                        
+                        // Wait for paste operation to complete
+                        usleep(150000) // 150ms
+                        
+                        // Restore previous clipboard if it was different
+                        if let previousClipboard = previousClipboard, 
+                           previousClipboard != selectedText,
+                           previousClipboard != correctedText {
+                            self.clipboardService.copyToClipboard(previousClipboard)
+                        }
+                        
+                        // Update status to success with 2 second timeout
+                        self.statusManager.updateStatus(
+                            state: .success,
+                            priority: .proofreading,
+                            timeout: 2.0
+                        )
+                        
+                        Logger.shared.info("AppState: Text replaced successfully")
+                        
+                    case .failure(let error):
+                        self.correctedText = "Error: \(error.localizedDescription)"
+                        
+                        // Restore previous clipboard on error
+                        if let previousClipboard = previousClipboard {
+                            self.clipboardService.copyToClipboard(previousClipboard)
+                        }
+                        
+                        // Update status to failure with 5 second timeout
+                        self.statusManager.updateStatus(
+                            state: .failure,
+                            priority: .proofreading,
+                            timeout: 5.0
+                        )
+                        
+                        Logger.shared.error("AppState: Proofreading failed - \(error.localizedDescription)")
+                    }
                 }
             }
         }

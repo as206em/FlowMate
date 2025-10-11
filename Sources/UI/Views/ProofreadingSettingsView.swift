@@ -53,6 +53,20 @@ struct ProofreadingSettingsView: View {
                                     appState.updateKeyboardShortcut(appState.keyboardShortcut)
                                 }
                         }
+                        
+                        HStack {
+                            Text("Show Dialog:")
+                                .frame(width: 80, alignment: .leading)
+                            Toggle("", isOn: $appState.showDialog)
+                                .labelsHidden()
+                                .onChange(of: appState.showDialog) { newValue in
+                                    appState.updateShowDialog(newValue)
+                                }
+                            Text("Display results in dialog before replacing")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
                     }
                     
                     VStack(alignment: .leading, spacing: 8) {
