@@ -27,6 +27,32 @@ The application follows modern Swift development practices with clear separation
 3. Run `swift build` to build the project
 4. Run `swift run` to start the application
 
+## Installing Ollama Locally
+
+To use FlowMate with Ollama, you need to install and run Ollama locally:
+
+1. Install Ollama using Homebrew:
+   ```bash
+   brew install ollama
+   ```
+
+2. Start the Ollama service:
+   ```bash
+   brew services start ollama
+   ```
+
+3. Pull a model (e.g., phi3):
+   ```bash
+   ollama pull phi3
+   ```
+
+4. Run the model to verify installation:
+   ```bash
+   ollama run phi3
+   ```
+
+Once Ollama is running, FlowMate will automatically connect to it at `http://localhost:11434`. You can select the phi3 model (or any other installed model) from the FlowMate settings.
+
 ## Development
 
 The project uses Swift Package Manager for dependency management. Key dependencies include:
