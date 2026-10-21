@@ -3,9 +3,9 @@
 # Build the FlowMate app with icon
 set -e
 
-# Kill any running instances of the app before building
+# Quit any running FlowMate (exact process name only, so other processes are never matched)
 echo "Stopping any running instances of FlowMate..."
-pkill -f "FlowMate" 2>/dev/null || true
+pkill -x FlowMate 2>/dev/null || true
 
 # Get version information
 VERSION="1.1.0"

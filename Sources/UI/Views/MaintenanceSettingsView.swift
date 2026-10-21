@@ -180,13 +180,29 @@ struct MaintenanceSettingsView: View {
     }
     
     private func restartApplication() {
-        let url = URL(fileURLWithPath: Bundle.main.resourcePath!)
-        let path = url.deletingLastPathComponent().deletingLastPathComponent().absoluteString
+        let bundleURL = Bundle.main.bundleURL
+        guard bundleURL.pathExtension == "app" else {
+            // Not running from an app bundle (e.g. `swift run`): just quit
+            NSApplication.shared.terminate(nil)
+            return
+        }
+
+        // Start a helper that waits until this process has exited, then reopens the app.
+        // Opening right away would only re-activate the instance that is about to quit.
+        let pid = ProcessInfo.processInfo.processIdentifier
         let task = Process()
-        task.launchPath = "/usr/bin/open"
-        task.arguments = [path]
-        task.launch()
-        exit(0)
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = [
+            "-c",
+            "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$2\"",
+            "flowmate-restart", String(pid), bundleURL.path
+        ]
+        do {
+            try task.run()
+        } catch {
+            Logger.shared.error("Couldn't start relaunch helper", error: error)
+        }
+        NSApplication.shared.terminate(nil)
     }
 }
 

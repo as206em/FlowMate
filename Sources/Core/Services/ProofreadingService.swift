@@ -60,7 +60,12 @@ final class ProofreadingService: ProofreadingServiceProtocol {
             let finalPrompt = promptBuilder.buildProofreadingPrompt(userPrompt: prompt, inputText: text)
             
             // Generate corrected text
-            let corrected = try await aiService.generate(model: model, prompt: finalPrompt)
+            let rawOutput = try await aiService.generate(model: model, prompt: finalPrompt)
+            // Strip reasoning blocks, preambles and wrapping the model may have added
+            let corrected = OutputSanitizer.clean(rawOutput, original: text)
+            if corrected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                throw NSError(domain: "ProofreadingService", code: -1, userInfo: [NSLocalizedDescriptionKey: "The model returned an empty result."])
+            }
             
             await Logger.shared.info("ProofreadingService: Proofreading completed successfully")
             return .success(correctedText: corrected)

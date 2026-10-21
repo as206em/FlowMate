@@ -16,6 +16,7 @@ Requires macOS 13 (Ventura) or later.
 - **Custom instructions**: edit the proofreading instructions, with a reset to the default.
 - **Launch at login** and **Light/Dark/System appearance** in Settings → General.
 - **API keys in the Keychain**: never written to the config file.
+- **Clean results**: reasoning blocks (`<think>…</think>`), "Here's the corrected text:" lines, and quotes or code fences the model wraps around the answer are removed.
 
 ## Using FlowMate
 
@@ -67,7 +68,7 @@ FlowMate connects to `http://127.0.0.1:11434`. Any other installed model can be 
 
 This creates `FlowMate.app`, signs it, and opens it. Move it to `/Applications` so **Launch at login** works.
 
-> `build-app.sh` quits any running FlowMate first. It uses `pkill -f FlowMate`, which also matches other processes whose command line contains "FlowMate" (for example an editor opened in this folder).
+`build-app.sh` quits any running FlowMate first.
 
 For development you can also use `swift build`, `swift run` and `swift test`. Launch at login only works from the app bundle.
 
@@ -107,6 +108,8 @@ Settings are stored in `~/Library/Application Support/FlowMate/config.json`:
 - Provider URLs (Ollama, OpenAI)
 - Proofreading settings (provider, model, instructions, shortcut, dialog preferences)
 - App settings (appearance, number of recent results)
+
+Settings missing from the file (for example after an update) get their default values. If the file can't be read at all, it is copied to `config.json.bak` before defaults are used.
 
 The OpenAI API key is stored in the login Keychain (service `com.asem-mkl.FlowMate`), not in the file. Keys found in older config files are moved to the Keychain automatically.
 

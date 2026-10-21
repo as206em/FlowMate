@@ -94,22 +94,64 @@ IMPORTANT SYSTEM RULES (ALWAYS FOLLOW):
         )
     }
     
+    /// Loads the config file. Settings missing from the file (e.g. added in a newer version)
+    /// get their default values instead of making the whole file unreadable.
+    /// A file that can't be read at all is backed up to `config.json.bak` before defaults are used,
+    /// so the next save doesn't silently destroy it.
     public static func loadConfiguration(from url: URL) -> AppConfig? {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: url.path) else {
             return nil
         }
-        
+
         do {
             let data = try Data(contentsOf: url)
-            let decoder = JSONDecoder()
-            return try decoder.decode(AppConfig.self, from: data)
+            let fileJSON = try JSONSerialization.jsonObject(with: data)
+            let defaultJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(defaultConfiguration))
+            let merged = mergeJSON(defaults: defaultJSON, overrides: fileJSON)
+            let mergedData = try JSONSerialization.data(withJSONObject: merged)
+            return try JSONDecoder().decode(AppConfig.self, from: mergedData)
         } catch {
-            Logger.shared.error("ConfigurationManager: Failed to load configuration", error: error)
+            Logger.shared.error("ConfigurationManager: Failed to load configuration - using defaults", error: error)
+            backUpUnreadableFile(at: url)
             return nil
         }
     }
-    
+
+    /// Deep-merges two JSON values: dictionaries are merged key by key, anything else takes the override.
+    /// Values of the wrong type in the file are ignored in favor of the default.
+    static func mergeJSON(defaults: Any, overrides: Any) -> Any {
+        if let defaultDict = defaults as? [String: Any] {
+            guard let overrideDict = overrides as? [String: Any] else { return defaults }
+            var result = defaultDict
+            for (key, overrideValue) in overrideDict {
+                if let defaultValue = defaultDict[key] {
+                    result[key] = mergeJSON(defaults: defaultValue, overrides: overrideValue)
+                } else {
+                    result[key] = overrideValue
+                }
+            }
+            return result
+        }
+        if overrides is NSNull { return defaults }
+        // Keep the default when the file has a different type (e.g. a string where a number belongs)
+        if (defaults is String) != (overrides is String) || (defaults is [Any]) != (overrides is [Any]) {
+            return defaults
+        }
+        return overrides
+    }
+
+    private static func backUpUnreadableFile(at url: URL) {
+        let backupURL = url.appendingPathExtension("bak")
+        try? FileManager.default.removeItem(at: backupURL)
+        do {
+            try FileManager.default.copyItem(at: url, to: backupURL)
+            Logger.shared.warning("ConfigurationManager: Saved unreadable config to \(backupURL.path)")
+        } catch {
+            Logger.shared.error("ConfigurationManager: Couldn't back up unreadable config", error: error)
+        }
+    }
+
     open func saveConfiguration() {
         do {
             // Ensure the directory exists
