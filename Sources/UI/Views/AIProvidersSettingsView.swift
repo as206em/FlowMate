@@ -28,55 +28,15 @@ struct AIProvidersSettingsView: View {
                 if selectedProviderForConfig == .ollama {
                     TextField("URL:", text: $ollamaURL)
                         .focused($isURLFieldFocused)
-                    HStack {
-                        Text(connectionStatus)
-                            .font(.caption)
-                            .foregroundColor(connectionStatus.contains("Connected") ? .green : 
-                                           connectionStatus.contains("Connecting") ? .orange : .red)
-                            .frame(minWidth: 120) // Fixed width to prevent layout shifts
-                        
-                        Spacer()
-                        
-                        if isTestingConnection {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                        }
-                        
-                        Button("Test Connection") {
-                            Task {
-                                await testConnection(provider: .ollama, url: ollamaURL, apiKey: "")
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.regular)
-                        .disabled(isTestingConnection)
+                    connectionRow {
+                        await testConnection(provider: .ollama, url: ollamaURL, apiKey: "")
                     }
                 } else {
                     TextField("URL:", text: $openAIURL)
                         .focused($isURLFieldFocused)
                     SecureField("API Key:", text: $openAIAPIKey)
-                    HStack {
-                        Text(connectionStatus)
-                            .font(.caption)
-                            .foregroundColor(connectionStatus.contains("Connected") ? .green : 
-                                           connectionStatus.contains("Connecting") ? .orange : .red)
-                            .frame(minWidth: 120) // Fixed width to prevent layout shifts
-                        
-                        Spacer()
-                        
-                        if isTestingConnection {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                        }
-                        
-                        Button("Test Connection") {
-                            Task {
-                                await testConnection(provider: .openai, url: openAIURL, apiKey: openAIAPIKey)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.regular)
-                        .disabled(isTestingConnection)
+                    connectionRow {
+                        await testConnection(provider: .openai, url: openAIURL, apiKey: openAIAPIKey)
                     }
                 }
             }
@@ -117,6 +77,31 @@ struct AIProvidersSettingsView: View {
         }
     }
     
+    /// Status text plus the Test Connection button. The text wraps instead of squeezing the button.
+    private func connectionRow(test: @escaping () async -> Void) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(connectionStatus)
+                .font(.caption)
+                .foregroundColor(connectionStatus.contains("Connected") ? .green :
+                                 connectionStatus.contains("Connecting") ? .orange : .red)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if isTestingConnection {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            Button("Test Connection") {
+                Task { await test() }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+            .fixedSize() // never truncate the label
+            .disabled(isTestingConnection)
+        }
+    }
+
     private func testConnection(provider: AIProvider, url: String, apiKey: String) async {
         await MainActor.run {
             connectionStatus = "Connecting..."
