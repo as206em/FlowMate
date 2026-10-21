@@ -91,10 +91,12 @@ struct AIProvidersSettingsView: View {
                 .keyboardShortcut(.escape)
                 
                 Button("OK") {
-                    appState.updateProviderURL(selectedProviderForConfig == .ollama ? appState.ollamaURL : appState.openAIURL)
-                    if selectedProviderForConfig == .openai {
-                        appState.updateOpenAIAPIKey(appState.openAIAPIKey)
-                    }
+                    // Save each provider's own fields; never write one provider's URL into the other
+                    appState.updateProviderSettings(
+                        ollamaURL: appState.ollamaURL,
+                        openAIURL: appState.openAIURL,
+                        openAIAPIKey: appState.openAIAPIKey
+                    )
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)

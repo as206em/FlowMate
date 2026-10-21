@@ -3,41 +3,52 @@ import AppKit
 
 /// Protocol for keyboard shortcut handling to enable mocking in tests
 protocol KeyboardShortcutManagerProtocol {
-    func setupShortcut(_ shortcut: String, handler: @escaping () -> Void)
+    /// Returns false when the shortcut string is invalid; the previous shortcut stays active.
+    @discardableResult
+    func setupShortcut(_ shortcut: String, handler: @escaping () -> Void) -> Bool
     func removeShortcut()
 }
 
 /// Service responsible for global keyboard shortcut monitoring and parsing
 final class KeyboardShortcutManager: KeyboardShortcutManagerProtocol {
     private var eventMonitor: Any?
-    
+
+    /// Only these modifiers are compared, so Caps Lock, Fn and the numeric-pad flag don't break matching.
+    private static let relevantModifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
+
     deinit {
         removeShortcut()
     }
-    
+
     /// Sets up a global keyboard shortcut with the provided handler
     /// - Parameters:
     ///   - shortcut: Shortcut string (e.g., "command+.", "ctrl+shift+p")
     ///   - handler: Closure to execute when shortcut is triggered
-    func setupShortcut(_ shortcut: String, handler: @escaping () -> Void) {
-        // Remove existing monitor if any
+    /// - Returns: false if the shortcut can't be parsed. The existing shortcut is left in place.
+    @discardableResult
+    func setupShortcut(_ shortcut: String, handler: @escaping () -> Void) -> Bool {
+        guard let (keyCode, modifiers) = Self.parseShortcut(shortcut) else {
+            Task { @MainActor in
+                Logger.shared.error("KeyboardShortcutManager: Invalid shortcut '\(shortcut)' - keeping previous shortcut")
+            }
+            return false
+        }
+
         removeShortcut()
-        
-        // Parse shortcut string
-        let (keyCode, modifiers) = parseShortcut(shortcut)
-        
-        // Set up new global event monitor
+
         eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == keyCode && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == modifiers {
+            let pressed = event.modifierFlags.intersection(Self.relevantModifiers)
+            if event.keyCode == keyCode && pressed == modifiers {
                 handler()
             }
         }
-        
+
         Task { @MainActor in
             Logger.shared.debug("KeyboardShortcutManager: Set up shortcut '\(shortcut)'")
         }
+        return true
     }
-    
+
     /// Removes the current keyboard shortcut monitor
     func removeShortcut() {
         if let monitor = eventMonitor {
@@ -48,34 +59,43 @@ final class KeyboardShortcutManager: KeyboardShortcutManagerProtocol {
             }
         }
     }
-    
+
+    /// Returns true if the shortcut string can be used as a global shortcut.
+    static func isValidShortcut(_ shortcut: String) -> Bool {
+        parseShortcut(shortcut) != nil
+    }
+
     /// Parses a shortcut string into key code and modifier flags
     /// - Parameter shortcut: Shortcut string (e.g., "command+.", "ctrl+shift+p")
-    /// - Returns: Tuple of (keyCode, modifierFlags)
-    private func parseShortcut(_ shortcut: String) -> (UInt16, NSEvent.ModifierFlags) {
-        var keyCode: UInt16 = 0
+    /// - Returns: Tuple of (keyCode, modifierFlags), or nil if the string has no key, an unknown part,
+    ///   or is a plain typing key without a modifier (which would fire on normal typing).
+    static func parseShortcut(_ shortcut: String) -> (UInt16, NSEvent.ModifierFlags)? {
+        var keyCode: UInt16?
         var modifiers: NSEvent.ModifierFlags = []
-        
+
         let components = shortcut.lowercased().components(separatedBy: "+")
-        
+
         for component in components {
-            switch component.trimmingCharacters(in: .whitespaces) {
+            let part = component.trimmingCharacters(in: .whitespaces)
+            // A key part must appear once, and only as the last part.
+            if keyCode != nil { return nil }
+            switch part {
             // Modifier keys
             case "command", "cmd":
                 modifiers.insert(.command)
             case "control", "ctrl":
                 modifiers.insert(.control)
-            case "option", "opt":
+            case "option", "opt", "alt":
                 modifiers.insert(.option)
             case "shift":
                 modifiers.insert(.shift)
             
             // Special characters
-            case "/":
+            case "/", "slash":
                 keyCode = 44
-            case ".":
+            case ".", "period":
                 keyCode = 47
-            case ",":
+            case ",", "comma":
                 keyCode = 43
             case ";":
                 keyCode = 41
@@ -160,10 +180,18 @@ final class KeyboardShortcutManager: KeyboardShortcutManagerProtocol {
             case "right": keyCode = 124
             
             default:
-                break
+                return nil
             }
         }
-        
+
+        guard let keyCode else { return nil }
+
+        // Without a modifier, only function keys are allowed; anything else would trigger while typing.
+        let functionKeyCodes: Set<UInt16> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111]
+        if modifiers.isEmpty && !functionKeyCodes.contains(keyCode) {
+            return nil
+        }
+
         return (keyCode, modifiers)
     }
 }

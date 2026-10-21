@@ -14,6 +14,8 @@ final class AppState: ObservableObject {
     @Published var openAIURL: String = ""
     @Published var openAIAPIKey: String = ""
     @Published var keyboardShortcut: String = ""
+    /// Set when the typed shortcut can't be used; the last valid shortcut stays active.
+    @Published var shortcutError: String?
     @Published var showDiffByDefault: Bool = true
     @Published var showDialog: Bool = true
     @Published var proofreadingProvider: AIProvider = .ollama
@@ -118,10 +120,13 @@ final class AppState: ObservableObject {
         keyboardShortcutManager.removeShortcut()
     }
     
-    private func setupKeyboardShortcut() {
-        keyboardShortcutManager.setupShortcut(keyboardShortcut) { [weak self] in
+    @discardableResult
+    private func setupKeyboardShortcut() -> Bool {
+        let isValid = keyboardShortcutManager.setupShortcut(keyboardShortcut) { [weak self] in
             self?.handleProofreadingShortcut()
         }
+        shortcutError = isValid ? nil : "\"\(keyboardShortcut)\" isn't a valid shortcut. Use a modifier plus one key, e.g. command+shift+p."
+        return isValid
     }
     
     func checkConnection() {
@@ -143,8 +148,10 @@ final class AppState: ObservableObject {
     
     // MARK: - Settings Updates
     
-    func updateProviderURL(_ url: String) {
-        switch proofreadingProvider {
+    /// Updates the URL of the given provider (defaults to the active one).
+    func updateProviderURL(_ url: String, for provider: AIProvider? = nil) {
+        let url = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch provider ?? proofreadingProvider {
         case .ollama:
             ollamaURL = url
             configurationManager.updateProvidersConfig { $0.ollama.url = url }
@@ -155,11 +162,29 @@ final class AppState: ObservableObject {
         updateAIService()
         checkConnection()
     }
-    
+
+    /// Saves all provider settings at once, then refreshes the active service a single time.
+    func updateProviderSettings(ollamaURL: String, openAIURL: String, openAIAPIKey: String) {
+        let ollamaURL = ollamaURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let openAIURL = openAIURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.ollamaURL = ollamaURL
+        self.openAIURL = openAIURL
+        self.openAIAPIKey = openAIAPIKey
+        configurationManager.updateProvidersConfig {
+            $0.ollama.url = ollamaURL
+            $0.openai.url = openAIURL
+            $0.openai.apiKey = openAIAPIKey
+        }
+        updateAIService()
+        checkConnection()
+    }
+
     func updateKeyboardShortcut(_ shortcut: String) {
         keyboardShortcut = shortcut
-        configurationManager.updateProofreadingConfig { $0.keyboardShortcut = shortcut }
-        setupKeyboardShortcut()
+        // Only save shortcuts that work, so an invalid one never survives a restart.
+        if setupKeyboardShortcut() {
+            configurationManager.updateProofreadingConfig { $0.keyboardShortcut = shortcut }
+        }
     }
     
     func updateCurrentPrompt(_ prompt: String) {
@@ -185,6 +210,11 @@ final class AppState: ObservableObject {
     func updateOpenAIAPIKey(_ apiKey: String) {
         openAIAPIKey = apiKey
         configurationManager.updateProvidersConfig { $0.openai.apiKey = apiKey }
+        // Rebuild the service so the new key is used right away.
+        updateAIService()
+        if proofreadingProvider == .openai {
+            checkConnection()
+        }
     }
     
     // MARK: - Proofreading Workflow
@@ -258,11 +288,11 @@ final class AppState: ObservableObject {
             }
         } else {
             // Inline replacement mode - no dialog
-            // Store previous clipboard contents to restore later
+            // Remember the clipboard and the app the text came from
             let pasteboard = NSPasteboard.general
             let previousClipboard = pasteboard.string(forType: .string)
-            
-            // Perform proofreading using the service
+            let targetApp = NSWorkspace.shared.frontmostApplication
+
             Task {
                 let result = await proofreadingService.proofread(
                     text: selectedText,
@@ -272,57 +302,47 @@ final class AppState: ObservableObject {
                     promptBuilder: promptBuilder,
                     maxRetries: 3
                 )
-                
-                await MainActor.run {
-                    switch result {
-                    case .success(let correctedText):
-                        self.correctedText = correctedText
-                        
-                        // Copy corrected text to clipboard
-                        self.clipboardService.copyToClipboard(correctedText)
-                        
-                        // Small delay to ensure clipboard is updated
-                        usleep(50000) // 50ms
-                        
-                        // Paste to replace selected text
-                        self.clipboardService.pasteFromClipboard()
-                        
-                        // Wait for paste operation to complete
-                        usleep(150000) // 150ms
-                        
-                        // Restore previous clipboard if it was different
-                        if let previousClipboard = previousClipboard, 
-                           previousClipboard != selectedText,
-                           previousClipboard != correctedText {
-                            self.clipboardService.copyToClipboard(previousClipboard)
-                        }
-                        
-                        // Update status to success with 2 second timeout
-                        self.statusManager.updateStatus(
-                            state: .success,
-                            priority: .proofreading,
-                            timeout: 2.0
-                        )
-                        
-                        Logger.shared.info("AppState: Text replaced successfully")
-                        
-                    case .failure(let error):
-                        self.correctedText = "Error: \(error.localizedDescription)"
-                        
-                        // Restore previous clipboard on error
-                        if let previousClipboard = previousClipboard {
-                            self.clipboardService.copyToClipboard(previousClipboard)
-                        }
-                        
-                        // Update status to failure with 5 second timeout
-                        self.statusManager.updateStatus(
-                            state: .failure,
-                            priority: .proofreading,
-                            timeout: 5.0
-                        )
-                        
-                        Logger.shared.error("AppState: Proofreading failed - \(error.localizedDescription)")
+
+                switch result {
+                case .success(let correctedText):
+                    self.correctedText = correctedText
+                    self.clipboardService.copyToClipboard(correctedText)
+
+                    // If the user moved to another app while waiting, don't paste into the wrong place.
+                    // Leave the corrected text on the clipboard instead.
+                    let currentApp = NSWorkspace.shared.frontmostApplication
+                    guard targetApp == nil || currentApp?.processIdentifier == targetApp?.processIdentifier else {
+                        Logger.shared.warning("AppState: Focus moved to another app - corrected text left on clipboard instead of pasting")
+                        self.statusManager.updateStatus(state: .failure, priority: .proofreading, timeout: 5.0)
+                        return
                     }
+
+                    // Small delay to ensure clipboard is updated
+                    try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+                    let changeCountAfterCopy = pasteboard.changeCount
+
+                    self.clipboardService.pasteFromClipboard()
+
+                    // Give the target app time to read the clipboard before restoring it.
+                    // Slow apps (Electron, browsers) can take several hundred milliseconds.
+                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s
+
+                    // Restore the previous clipboard only if nothing else changed it meanwhile
+                    if let previousClipboard = previousClipboard,
+                       pasteboard.changeCount == changeCountAfterCopy,
+                       previousClipboard != correctedText {
+                        self.clipboardService.copyToClipboard(previousClipboard)
+                    }
+
+                    self.statusManager.updateStatus(state: .success, priority: .proofreading, timeout: 2.0)
+                    Logger.shared.info("AppState: Text replaced successfully")
+
+                case .failure(let error):
+                    self.correctedText = "Error: \(error.localizedDescription)"
+
+                    // Clipboard was not touched on failure, so nothing to restore
+                    self.statusManager.updateStatus(state: .failure, priority: .proofreading, timeout: 5.0)
+                    Logger.shared.error("AppState: Proofreading failed - \(error.localizedDescription)")
                 }
             }
         }

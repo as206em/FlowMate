@@ -53,6 +53,13 @@ struct ProofreadingSettingsView: View {
                                     appState.updateKeyboardShortcut(appState.keyboardShortcut)
                                 }
                         }
+
+                        if let shortcutError = appState.shortcutError {
+                            Text(shortcutError)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                                .padding(.leading, 88)
+                        }
                         
                         HStack {
                             Text("Show Dialog:")
@@ -105,7 +112,10 @@ struct ProofreadingSettingsView: View {
                 Button("OK") {
                     appState.updateCurrentPrompt(editedPrompt)
                     appState.updateKeyboardShortcut(appState.keyboardShortcut)
-                    dismiss()
+                    // Keep the window open so the user can correct an invalid shortcut
+                    if appState.shortcutError == nil {
+                        dismiss()
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.return)
