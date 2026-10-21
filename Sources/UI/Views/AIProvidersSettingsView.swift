@@ -1,137 +1,138 @@
 import SwiftUI
 import AppKit
 
-// MARK: - AI Providers Settings Content
+// MARK: - AI provider settings
+/// Both providers side by side. Addresses and the API key are drafts until Save changes.
 struct AIProvidersSettingsView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
-    @FocusState private var isURLFieldFocused: Bool
-    @State private var selectedProviderForConfig: AIProvider = .ollama
-    @State private var connectionStatus: String = ""
-    @State private var isTestingConnection: Bool = false
-    // Local copies: edits only take effect on OK, so Cancel really cancels
     @State private var ollamaURL: String = ""
     @State private var openAIURL: String = ""
     @State private var openAIAPIKey: String = ""
-    
+    @State private var status: [AIProvider: TestStatus] = [:]
+
+    enum TestStatus: Equatable {
+        case testing
+        case connected(Int)
+        case failed(String)
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            // Content area
-            Form {
-                Picker("Configure Provider:", selection: $selectedProviderForConfig) {
-                    ForEach(AIProvider.allCases, id: \.self) { provider in
-                        Text(provider.displayName).tag(provider)
+        StampSettingsPage(
+            title: "AI providers",
+            subtitle: "Choose where your text is sent."
+        ) {
+            HStack(alignment: .top, spacing: 18) {
+                providerCard(.ollama, note: "Runs on this Mac. Your text never leaves it.") {
+                    StampLabeled(label: "Server address") {
+                        TextField(AIProvider.ollama.defaultURL, text: $ollamaURL)
+                            .stampField()
                     }
                 }
-                .pickerStyle(.menu)
-                
-                if selectedProviderForConfig == .ollama {
-                    TextField("URL:", text: $ollamaURL)
-                        .focused($isURLFieldFocused)
-                    connectionRow {
-                        await testConnection(provider: .ollama, url: ollamaURL, apiKey: "")
-                    }
-                } else {
-                    TextField("URL:", text: $openAIURL)
-                        .focused($isURLFieldFocused)
-                    SecureField("API Key:", text: $openAIAPIKey)
-                    connectionRow {
-                        await testConnection(provider: .openai, url: openAIURL, apiKey: openAIAPIKey)
+                providerCard(.openai, note: "Sends text to OpenAI. Check your company's policy first.") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        StampLabeled(label: "API key", hint: "Stored in your Keychain") {
+                            SecureField("sk-…", text: $openAIAPIKey)
+                                .stampField()
+                        }
+                        StampLabeled(label: "Server address") {
+                            TextField(AIProvider.openai.defaultURL, text: $openAIURL)
+                                .stampField()
+                        }
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(20)
-            
-            // Bottom bar with action buttons
-            Divider()
-            
-            HStack(spacing: 12) {
-                Spacer()
-                
-                Button("Cancel") {
-                    dismiss()
-                }
-                .keyboardShortcut(.escape)
-                
-                Button("OK") {
-                    // Save each provider's own fields; never write one provider's URL into the other
-                    appState.updateProviderSettings(
-                        ollamaURL: ollamaURL,
-                        openAIURL: openAIURL,
-                        openAIAPIKey: openAIAPIKey
-                    )
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.return)
+        } footer: {
+            Button("Cancel") { dismiss() }
+                .buttonStyle(.stamp(.default))
+                .keyboardShortcut(.cancelAction)
+            Button("Save changes") {
+                // Save each provider's own fields; never write one provider's URL into the other
+                appState.updateProviderSettings(
+                    ollamaURL: ollamaURL,
+                    openAIURL: openAIURL,
+                    openAIAPIKey: openAIAPIKey
+                )
+                dismiss()
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
+            .buttonStyle(.stamp(.primary))
+            .keyboardShortcut("s", modifiers: .command)
         }
         .onAppear {
             ollamaURL = appState.ollamaURL
             openAIURL = appState.openAIURL
             openAIAPIKey = appState.openAIAPIKey
-            isURLFieldFocused = true
         }
     }
-    
-    /// Status text plus the Test Connection button. The text wraps instead of squeezing the button.
-    private func connectionRow(test: @escaping () async -> Void) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(connectionStatus)
-                .font(.caption)
-                .foregroundColor(connectionStatus.contains("Connected") ? .green :
-                                 connectionStatus.contains("Connecting") ? .orange : .red)
+
+    private func providerCard<Fields: View>(_ provider: AIProvider, note: String, @ViewBuilder fields: () -> Fields) -> some View {
+        let isActive = appState.proofreadingProvider == provider
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text(provider.displayName).font(Stamp.title).foregroundColor(Stamp.ink)
+                Spacer()
+                if isActive {
+                    StampBadge(text: "Active", tone: .sky)
+                } else {
+                    Button("Make active") { appState.setProvider(provider) }
+                        .buttonStyle(.stamp(.default, size: .sm))
+                }
+            }
+            Text(note)
+                .font(Stamp.small)
+                .foregroundColor(Stamp.inkMuted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            fields()
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                statusText(for: provider)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Test connection") {
+                    Task { await test(provider) }
+                }
+                .buttonStyle(.stamp(.default, size: .sm))
+                .fixedSize()
+                .disabled(status[provider] == .testing)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .stampSurface(fill: Stamp.paperRaised, radius: Stamp.radiusLg,
+                      stroke: isActive ? Stamp.stroke2 : Stamp.stroke1, shadow: isActive ? .lg : .md)
+    }
+
+    @ViewBuilder
+    private func statusText(for provider: AIProvider) -> some View {
+        switch status[provider] {
+        case .none:
+            Text(" ").font(Stamp.small)
+        case .testing:
+            Text("Connecting…").font(Stamp.small).foregroundColor(Stamp.inkSubtle)
+        case .connected(let count):
+            Label("Connected · \(count) models", systemImage: "checkmark.circle")
+                .font(Stamp.small.weight(.bold))
+                .foregroundColor(Stamp.ink)
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.circle")
+                .font(Stamp.small)
+                .foregroundColor(Stamp.alert)
                 .lineLimit(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if isTestingConnection {
-                ProgressView()
-                    .controlSize(.small)
-            }
-
-            Button("Test Connection") {
-                Task { await test() }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .fixedSize() // never truncate the label
-            .disabled(isTestingConnection)
         }
     }
 
-    private func testConnection(provider: AIProvider, url: String, apiKey: String) async {
-        await MainActor.run {
-            connectionStatus = "Connecting..."
-            isTestingConnection = true
-        }
-        
+    private func test(_ provider: AIProvider) async {
+        status[provider] = .testing
+        let configuration = AIConfiguration(
+            ollamaURL: provider == .ollama ? ollamaURL : AIProvider.ollama.defaultURL,
+            openAIURL: provider == .openai ? openAIURL : AIProvider.openai.defaultURL,
+            openAIAPIKey: openAIAPIKey
+        )
         do {
-            let configuration = AIConfiguration(
-                ollamaURL: provider == .ollama ? url : AIProvider.ollama.defaultURL,
-                openAIURL: provider == .openai ? url : AIProvider.openai.defaultURL,
-                openAIAPIKey: apiKey
-            )
-            
-            let service = AIServiceFactory.createService(for: provider, configuration: configuration)
-            let models = try await service.listModels()
-            
-            await MainActor.run {
-                connectionStatus = "Connected (\(models.count) models)"
-                isTestingConnection = false
-            }
+            let models = try await AIServiceFactory.createService(for: provider, configuration: configuration).listModels()
+            status[provider] = .connected(models.count)
         } catch {
-            await MainActor.run {
-                connectionStatus = "Error: \(error.localizedDescription)"
-                isTestingConnection = false
-            }
+            status[provider] = .failed(error.localizedDescription)
         }
     }
-}
-
-#Preview("AI Providers Settings Content") {
-    AIProvidersSettingsView()
-        .frame(width: 500, height: 400)
 }

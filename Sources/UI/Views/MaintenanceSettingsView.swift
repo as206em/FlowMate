@@ -11,144 +11,78 @@ struct MaintenanceSettingsView: View {
     @State private var showDeleteConfigConfirmation = false
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Content area
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // Log Information Section
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Logs Information")
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Log Files:")
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text("\(logFiles.count)")
-                                    .fontWeight(.medium)
-                            }
-                            
-                            HStack {
-                                Text("Total Size:")
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text(formatBytes(totalLogSize))
-                                    .fontWeight(.medium)
-                            }
-                            
-                            HStack {
-                                Text("Log Directory:")
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text(Logger.shared.getLogDirectory().lastPathComponent)
-                                    .fontWeight(.medium)
-                                    .font(.system(size: 11, design: .monospaced))
-                            }
-                        }
-                        .padding(12)
-                        .background(Color(.controlBackgroundColor))
-                        .cornerRadius(6)
+        StampSettingsPage(
+            title: "Maintenance",
+            subtitle: "Logs and a clean start. Logs never contain the text you proofread."
+        ) {
+            StampCard(title: "Logs") {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 24) {
+                        stat("Files", "\(logFiles.count)")
+                        stat("Size", formatBytes(totalLogSize))
+                        stat("Kept for", "7 days")
                     }
-                    
-                    Divider()
-                    
-                    // Actions Section
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Actions")
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                        
-                        VStack(spacing: 12) {
-                            Button(action: {
-                                Logger.shared.openLogsFolder()
-                            }) {
-                                HStack {
-                                    Image(systemName: "folder.fill")
-                                    Text("Open Logs Folder")
-                                    Spacer()
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.large)
-                            
-                            Button(action: {
-                                showClearConfirmation = true
-                            }) {
-                                HStack {
-                                    Image(systemName: "trash.fill")
-                                    Text("Clear All Logs")
-                                    Spacer()
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.large)
-                            .foregroundColor(.red)
-                            .alert("Clear All Logs?", isPresented: $showClearConfirmation) {
-                                Button("Cancel", role: .cancel) { }
-                                Button("Clear", role: .destructive) {
-                                    clearLogs()
-                                }
-                            } message: {
-                                Text("This will permanently delete all log files. This action cannot be undone.")
-                            }
-                            
-                            Button(action: {
-                                showDeleteConfigConfirmation = true
-                            }) {
-                                HStack {
-                                    Image(systemName: "trash.circle.fill")
-                                    Text("Delete Current Configuration")
-                                    Spacer()
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.large)
-                            .foregroundColor(.red)
-                            .alert("Delete Configuration?", isPresented: $showDeleteConfigConfirmation) {
-                                Button("Cancel", role: .cancel) { }
-                                Button("Delete & Restart", role: .destructive) {
-                                    deleteConfigAndRestart()
-                                }
-                            } message: {
-                                Text("This will delete all app settings and restart the application with default configuration. This action cannot be undone.")
-                            }
+                    HStack(spacing: 10) {
+                        Button {
+                            Logger.shared.openLogsFolder()
+                        } label: {
+                            Label("Open logs folder", systemImage: "folder")
                         }
+                        .buttonStyle(.stamp(.default, size: .sm))
+
+                        Button {
+                            showClearConfirmation = true
+                        } label: {
+                            Label("Clear all logs", systemImage: "trash")
+                        }
+                        .buttonStyle(.stamp(.default, size: .sm))
                     }
-                    
-                    Spacer()
                 }
-                .padding(20)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            
-            // Bottom bar with action buttons
-            Divider()
-            
-            HStack(spacing: 12) {
-                Spacer()
-                
-                Button("Close") {
-                    dismiss()
+            .alert("Clear all logs?", isPresented: $showClearConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Clear", role: .destructive) { clearLogs() }
+            } message: {
+                Text("This permanently deletes every log file.")
+            }
+
+            StampCard(title: "Start over") {
+                HStack(spacing: 12) {
+                    Text("Delete all settings and your saved API key, then restart FlowMate with the defaults.")
+                        .font(Stamp.small)
+                        .foregroundColor(Stamp.inkMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        showDeleteConfigConfirmation = true
+                    } label: {
+                        Text("Reset FlowMate").foregroundColor(Stamp.alert)
+                    }
+                    .buttonStyle(.stamp(.default, size: .sm))
                 }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.return)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
+            .alert("Reset FlowMate?", isPresented: $showDeleteConfigConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Reset and restart", role: .destructive) { deleteConfigAndRestart() }
+            } message: {
+                Text("All settings and the saved API key are deleted. This can't be undone.")
+            }
+        } footer: {
+            Button("Close") { dismiss() }
+                .buttonStyle(.stamp(.default))
         }
         .onAppear {
             refreshLogInfo()
         }
     }
-    
+
+    private func stat(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased()).font(Stamp.caption).tracking(0.4).foregroundColor(Stamp.inkSubtle)
+            Text(value).font(Stamp.numeral).foregroundColor(Stamp.ink)
+        }
+    }
+
     private func refreshLogInfo() {
         logFiles = Logger.shared.getLogFiles()
         totalLogSize = Logger.shared.getTotalLogSize()

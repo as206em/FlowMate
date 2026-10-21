@@ -104,3 +104,17 @@ final class ReviewFixesTests: XCTestCase {
         XCTAssertEqual(AIConfiguration.default.openAIURL, AIProvider.openai.defaultURL)
     }
 }
+
+final class ShortcutRecordingTests: XCTestCase {
+    func testRecordedKeysBecomeShortcutStrings() {
+        XCTAssertEqual(KeyboardShortcutManager.shortcutString(keyCode: 47, modifiers: [.command]), "command+.")
+        XCTAssertEqual(KeyboardShortcutManager.shortcutString(keyCode: 35, modifiers: [.command, .shift]), "shift+command+p")
+        XCTAssertEqual(KeyboardShortcutManager.shortcutString(keyCode: 49, modifiers: [.option]), "option+space")
+        XCTAssertEqual(KeyboardShortcutManager.shortcutString(keyCode: 96, modifiers: []), "f5")
+        // A plain letter would fire while typing, so it's rejected
+        XCTAssertNil(KeyboardShortcutManager.shortcutString(keyCode: 0, modifiers: []))
+        // Recorded strings round-trip through the parser
+        let recorded = KeyboardShortcutManager.shortcutString(keyCode: 35, modifiers: [.command, .shift])!
+        XCTAssertEqual(KeyboardShortcutManager.parseShortcut(recorded)?.0, 35)
+    }
+}

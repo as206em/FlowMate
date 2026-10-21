@@ -60,6 +60,37 @@ final class KeyboardShortcutManager: KeyboardShortcutManagerProtocol {
         }
     }
 
+    /// Builds a shortcut string like "command+shift+p" from a pressed key, or nil for keys
+    /// that can't be used (a lone modifier, or a key FlowMate doesn't know).
+    static func shortcutString(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> String? {
+        let specialKeys: [UInt16: String] = [
+            49: "space", 36: "return", 48: "tab", 53: "escape", 51: "delete",
+            123: "left", 124: "right", 125: "down", 126: "up",
+            122: "f1", 120: "f2", 99: "f3", 118: "f4", 96: "f5", 97: "f6",
+            98: "f7", 100: "f8", 101: "f9", 109: "f10", 103: "f11", 111: "f12"
+        ]
+        // Match the physical key, so Shift (which changes "." into ">") doesn't matter
+        let typingKeys = "abcdefghijklmnopqrstuvwxyz0123456789".map(String.init) + ["/", ".", ",", ";", "'", "[", "]", "\\", "`", "=", "-"]
+        let key: String
+        if let special = specialKeys[keyCode] {
+            key = special
+        } else if let name = typingKeys.first(where: { parseShortcut("command+\($0)")?.0 == keyCode }) {
+            key = name
+        } else {
+            return nil
+        }
+
+        var parts: [String] = []
+        if modifiers.contains(.control) { parts.append("control") }
+        if modifiers.contains(.option) { parts.append("option") }
+        if modifiers.contains(.shift) { parts.append("shift") }
+        if modifiers.contains(.command) { parts.append("command") }
+        parts.append(key)
+
+        let shortcut = parts.joined(separator: "+")
+        return isValidShortcut(shortcut) ? shortcut : nil
+    }
+
     /// Turns "command+shift+p" into "⇧⌘P" for display in menus.
     static func displayString(for shortcut: String) -> String {
         var modifiers = ""

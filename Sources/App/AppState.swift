@@ -646,7 +646,7 @@ final class AppState: ObservableObject {
             id: Self.settingsWindowID,
             title: "FlowMate Settings",
             content: { SettingsView().environmentObject(self) },
-            size: NSSize(width: 600, height: 450)
+            size: NSSize(width: 880, height: 640)
         )
     }
 }

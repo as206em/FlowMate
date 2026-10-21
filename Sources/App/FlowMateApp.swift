@@ -26,6 +26,6 @@ struct FlowMateApp: App {
                 .environmentObject(appState)
                 .environmentObject(statusManager)
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
     }
 }

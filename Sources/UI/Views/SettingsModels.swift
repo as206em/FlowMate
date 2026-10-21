@@ -1,56 +1,28 @@
 import Foundation
 
-// MARK: - Settings Models
-struct SettingsSidebarItem: Identifiable, Hashable {
-    let id = UUID()
-    let title: String
-    let icon: String
-    let tag: SettingsTab
-    
-    init(title: String, icon: String, tag: SettingsTab) {
-        self.title = title
-        self.icon = icon
-        self.tag = tag
-    }
-    
-    static func == (lhs: SettingsSidebarItem, rhs: SettingsSidebarItem) -> Bool {
-        lhs.id == rhs.id
-    }
-    
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-}
-
-enum SettingsTab: Hashable {
+// MARK: - Settings sections
+enum SettingsTab: Hashable, CaseIterable {
     case general
     case proofreading
     case aiProviders
     case maintenance
-    
+
     var displayName: String {
         switch self {
-        case .general:
-            return "General"
-        case .proofreading:
-            return "Proofreading"
-        case .aiProviders:
-            return "AI Providers"
-        case .maintenance:
-            return "Maintenance"
+        case .general: return "General"
+        case .proofreading: return "Proofreading"
+        case .aiProviders: return "AI providers"
+        case .maintenance: return "Maintenance"
         }
     }
-    
+
+    /// SF Symbol name
     var icon: String {
         switch self {
-        case .general:
-            return "gearshape"
-        case .proofreading:
-            return "doc.text.magnifyingglass"
-        case .aiProviders:
-            return "cpu"
-        case .maintenance:
-            return "wrench.and.screwdriver"
+        case .general: return "gearshape"
+        case .proofreading: return "pencil.line"
+        case .aiProviders: return "cpu"
+        case .maintenance: return "wrench.and.screwdriver"
         }
     }
 }
