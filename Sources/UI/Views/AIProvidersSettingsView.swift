@@ -9,6 +9,10 @@ struct AIProvidersSettingsView: View {
     @State private var selectedProviderForConfig: AIProvider = .ollama
     @State private var connectionStatus: String = ""
     @State private var isTestingConnection: Bool = false
+    // Local copies: edits only take effect on OK, so Cancel really cancels
+    @State private var ollamaURL: String = ""
+    @State private var openAIURL: String = ""
+    @State private var openAIAPIKey: String = ""
     
     var body: some View {
         VStack(spacing: 0) {
@@ -22,7 +26,7 @@ struct AIProvidersSettingsView: View {
                 .pickerStyle(.menu)
                 
                 if selectedProviderForConfig == .ollama {
-                    TextField("URL:", text: $appState.ollamaURL)
+                    TextField("URL:", text: $ollamaURL)
                         .focused($isURLFieldFocused)
                     HStack {
                         Text(connectionStatus)
@@ -40,7 +44,7 @@ struct AIProvidersSettingsView: View {
                         
                         Button("Test Connection") {
                             Task {
-                                await testConnection(provider: .ollama, url: appState.ollamaURL, apiKey: "")
+                                await testConnection(provider: .ollama, url: ollamaURL, apiKey: "")
                             }
                         }
                         .buttonStyle(.bordered)
@@ -48,9 +52,9 @@ struct AIProvidersSettingsView: View {
                         .disabled(isTestingConnection)
                     }
                 } else {
-                    TextField("URL:", text: $appState.openAIURL)
+                    TextField("URL:", text: $openAIURL)
                         .focused($isURLFieldFocused)
-                    SecureField("API Key:", text: $appState.openAIAPIKey)
+                    SecureField("API Key:", text: $openAIAPIKey)
                     HStack {
                         Text(connectionStatus)
                             .font(.caption)
@@ -67,7 +71,7 @@ struct AIProvidersSettingsView: View {
                         
                         Button("Test Connection") {
                             Task {
-                                await testConnection(provider: .openai, url: appState.openAIURL, apiKey: appState.openAIAPIKey)
+                                await testConnection(provider: .openai, url: openAIURL, apiKey: openAIAPIKey)
                             }
                         }
                         .buttonStyle(.bordered)
@@ -93,9 +97,9 @@ struct AIProvidersSettingsView: View {
                 Button("OK") {
                     // Save each provider's own fields; never write one provider's URL into the other
                     appState.updateProviderSettings(
-                        ollamaURL: appState.ollamaURL,
-                        openAIURL: appState.openAIURL,
-                        openAIAPIKey: appState.openAIAPIKey
+                        ollamaURL: ollamaURL,
+                        openAIURL: openAIURL,
+                        openAIAPIKey: openAIAPIKey
                     )
                     dismiss()
                 }
@@ -106,6 +110,9 @@ struct AIProvidersSettingsView: View {
             .padding(.vertical, 12)
         }
         .onAppear {
+            ollamaURL = appState.ollamaURL
+            openAIURL = appState.openAIURL
+            openAIAPIKey = appState.openAIAPIKey
             isURLFieldFocused = true
         }
     }
@@ -118,8 +125,8 @@ struct AIProvidersSettingsView: View {
         
         do {
             let configuration = AIConfiguration(
-                ollamaURL: provider == .ollama ? url : "http://127.0.0.1:11434",
-                openAIURL: provider == .openai ? url : "https://api.openai.com",
+                ollamaURL: provider == .ollama ? url : AIProvider.ollama.defaultURL,
+                openAIURL: provider == .openai ? url : AIProvider.openai.defaultURL,
                 openAIAPIKey: apiKey
             )
             

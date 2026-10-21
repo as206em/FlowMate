@@ -6,6 +6,8 @@ struct ProofreadingSettingsView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var editedPrompt: String = ""
+    // Local copy: the shortcut only changes on Return or OK, so Cancel really cancels
+    @State private var editedShortcut: String = ""
     @FocusState private var isURLFieldFocused: Bool
     @FocusState private var isPromptEditorFocused: Bool
     
@@ -34,7 +36,7 @@ struct ProofreadingSettingsView: View {
                             Text("Model:")
                                 .frame(width: 80, alignment: .leading)
                             Picker("", selection: $appState.proofreadingModel) {
-                                ForEach(modelChoices, id: \.self) { model in
+                                ForEach(appState.modelChoices, id: \.self) { model in
                                     Text(model).tag(model)
                                 }
                             }
@@ -48,9 +50,9 @@ struct ProofreadingSettingsView: View {
                         HStack {
                             Text("Shortcut:")
                                 .frame(width: 80, alignment: .leading)
-                            TextField("", text: $appState.keyboardShortcut)
+                            TextField("", text: $editedShortcut)
                                 .onSubmit {
-                                    appState.updateKeyboardShortcut(appState.keyboardShortcut)
+                                    appState.updateKeyboardShortcut(editedShortcut)
                                 }
                         }
 
@@ -119,7 +121,9 @@ struct ProofreadingSettingsView: View {
                 
                 Button("OK") {
                     appState.updateCurrentPrompt(editedPrompt)
-                    appState.updateKeyboardShortcut(appState.keyboardShortcut)
+                    if editedShortcut != appState.keyboardShortcut {
+                        appState.updateKeyboardShortcut(editedShortcut)
+                    }
                     // Keep the window open so the user can correct an invalid shortcut
                     if appState.shortcutError == nil {
                         dismiss()
@@ -133,19 +137,13 @@ struct ProofreadingSettingsView: View {
         }
         .onAppear {
             editedPrompt = appState.currentPrompt
+            editedShortcut = appState.keyboardShortcut
+            // A leftover error from an earlier, cancelled edit no longer applies
+            if KeyboardShortcutManager.isValidShortcut(appState.keyboardShortcut) {
+                appState.shortcutError = nil
+            }
             isURLFieldFocused = true
         }
-    }
-}
-
-extension ProofreadingSettingsView {
-    /// Available models, plus the selected one if it's missing, so the picker never shows blank
-    fileprivate var modelChoices: [String] {
-        var models = appState.availableModels
-        if !appState.proofreadingModel.isEmpty && !models.contains(appState.proofreadingModel) {
-            models.insert(appState.proofreadingModel, at: 0)
-        }
-        return models
     }
 }
 

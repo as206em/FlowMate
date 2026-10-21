@@ -7,7 +7,7 @@ actor OpenAIService: AIService {
     /// Low randomness keeps corrections close to the original text.
     private static let proofreadingTemperature = 0.2
 
-    init(baseURL: String = "https://api.openai.com", apiKey: String) {
+    init(baseURL: String = AIProvider.openai.defaultURL, apiKey: String) {
         var trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
         self.baseURL = trimmed

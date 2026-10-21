@@ -73,6 +73,16 @@ final class AppState: ObservableObject {
         return false
     }
 
+    /// Models for the pickers: the available ones, plus the selected one if it's missing,
+    /// so a picker always has a matching entry and never shows blank
+    var modelChoices: [String] {
+        var models = availableModels
+        if !proofreadingModel.isEmpty && !models.contains(proofreadingModel) {
+            models.insert(proofreadingModel, at: 0)
+        }
+        return models
+    }
+
     /// True when the dialog's result can be pasted back into the app it came from
     var canReplace: Bool { replaceTargetApp != nil }
 
@@ -90,6 +100,9 @@ final class AppState: ObservableObject {
     private var replaceTargetApp: NSRunningApplication?
     private var proofreadingTask: Task<Void, Never>?
     private var connectionCheckID = 0
+    /// After a failed check, when to try again (nil while connected). The wait doubles up to 10 minutes.
+    private var nextConnectionRetry: Date?
+    private var connectionRetryDelay: TimeInterval = 30
     private var monitorTask: Task<Void, Never>?
 
     private static let dialogWindowID = "proofreading-dialog"
@@ -183,11 +196,12 @@ final class AppState: ObservableObject {
     }
 
     @discardableResult
-    private func setupKeyboardShortcut() -> Bool {
-        let isValid = keyboardShortcutManager.setupShortcut(keyboardShortcut) { [weak self] in
+    private func setupKeyboardShortcut(_ shortcut: String? = nil) -> Bool {
+        let shortcut = shortcut ?? keyboardShortcut
+        let isValid = keyboardShortcutManager.setupShortcut(shortcut) { [weak self] in
             self?.handleProofreadingShortcut()
         }
-        shortcutError = isValid ? nil : "\"\(keyboardShortcut)\" isn't a valid shortcut. Use a modifier plus one key, e.g. command+shift+p."
+        shortcutError = isValid ? nil : "\"\(shortcut)\" isn't a valid shortcut. Use a modifier plus one key, e.g. command+shift+p."
         return isValid
     }
 
@@ -203,7 +217,9 @@ final class AppState: ObservableObject {
         }
 
         Task {
-            Logger.shared.debug("AppState: Checking connection for provider: \(provider)")
+            if !quiet {
+                Logger.shared.debug("AppState: Checking connection for provider: \(provider)")
+            }
             do {
                 let models = try await service.listModels()
                 // Ignore results from a check that was superseded (e.g. provider changed meanwhile)
@@ -214,6 +230,8 @@ final class AppState: ObservableObject {
                 self.availableModels = models
                 self.connectionState = .connected(modelCount: models.count)
                 self.statusManager.setIdleState(.idle)
+                self.nextConnectionRetry = nil
+                self.connectionRetryDelay = 30
             } catch {
                 guard checkID == self.connectionCheckID else { return }
                 if !quiet || self.connectionState == .checking {
@@ -221,20 +239,23 @@ final class AppState: ObservableObject {
                 }
                 self.connectionState = .failed(error.localizedDescription)
                 self.statusManager.setIdleState(.disconnected)
+                // Try again later, waiting longer each time
+                self.nextConnectionRetry = Date().addingTimeInterval(self.connectionRetryDelay)
+                self.connectionRetryDelay = min(self.connectionRetryDelay * 2, 600)
             }
         }
     }
 
-    /// Re-checks the connection every minute and the Accessibility permission every few seconds.
+    /// Checks the Accessibility permission every few seconds, and retries a failed connection
+    /// with a growing wait. A working connection isn't polled; proofreading errors re-check it.
     private func startBackgroundMonitoring() {
         monitorTask = Task { [weak self] in
-            var tick = 0
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 5_000_000_000) // 5s
                 guard let self else { return }
-                tick += 1
                 self.refreshAccessibilityPermission()
-                if tick % 12 == 0 { // every 60s
+                if let retryAt = self.nextConnectionRetry, Date() >= retryAt {
+                    self.nextConnectionRetry = nil
                     self.checkConnection(quiet: true)
                 }
             }
@@ -255,10 +276,16 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Shows the system prompt and opens the Accessibility pane in System Settings.
-    func requestAccessibilityPermission() {
+    /// Shows the system's "allow Accessibility access" prompt if access is missing.
+    static func promptForAccessibilityAccess() {
+        guard !AXIsProcessTrusted() else { return }
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
+    }
+
+    /// Shows the system prompt and opens the Accessibility pane in System Settings.
+    func requestAccessibilityPermission() {
+        Self.promptForAccessibilityAccess()
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
         }
@@ -298,9 +325,10 @@ final class AppState: ObservableObject {
     }
 
     func updateKeyboardShortcut(_ shortcut: String) {
-        keyboardShortcut = shortcut
-        // Only save shortcuts that work, so an invalid one never survives a restart.
-        if setupKeyboardShortcut() {
+        // Only apply and save shortcuts that work. An invalid one sets shortcutError and the
+        // current shortcut stays as it is, so the menu never shows a shortcut that isn't active.
+        if setupKeyboardShortcut(shortcut) {
+            keyboardShortcut = shortcut
             configurationManager.updateProofreadingConfig { $0.keyboardShortcut = shortcut }
         }
     }
@@ -477,6 +505,7 @@ final class AppState: ObservableObject {
             case .failure(let error):
                 proofreadingError = error.localizedDescription
                 statusManager.updateStatus(state: .failure, priority: .proofreading, timeout: 5.0)
+                checkConnection(quiet: true) // the provider may have gone away
             }
         }
     }
@@ -513,6 +542,7 @@ final class AppState: ObservableObject {
             case .failure(let error):
                 correctedText = "Error: \(error.localizedDescription)"
                 statusManager.updateStatus(state: .failure, priority: .proofreading, timeout: 5.0)
+                checkConnection(quiet: true) // the provider may have gone away
                 Logger.shared.error("AppState: Proofreading failed - \(error.localizedDescription)")
             }
         }
@@ -568,10 +598,16 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Copies the dialog's (possibly edited) result to the clipboard.
+    func copyResult() {
+        clipboardService.copyToClipboard(correctedText)
+    }
+
     /// Pastes text into the frontmost app, then puts the user's previous clipboard back.
     private func paste(_ text: String) async {
         let pasteboard = NSPasteboard.general
-        let previousClipboard = pasteboard.string(forType: .string)
+        // Save everything on the clipboard (images, files, rich text), not just plain text
+        let previousClipboard = pasteboard.snapshot()
 
         clipboardService.copyToClipboard(text)
         // Small delay to ensure clipboard is updated
@@ -585,10 +621,8 @@ final class AppState: ObservableObject {
         try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s
 
         // Restore the previous clipboard only if nothing else changed it meanwhile
-        if let previousClipboard = previousClipboard,
-           pasteboard.changeCount == changeCountAfterCopy,
-           previousClipboard != text {
-            clipboardService.copyToClipboard(previousClipboard)
+        if pasteboard.changeCount == changeCountAfterCopy {
+            pasteboard.restore(previousClipboard)
         }
     }
 

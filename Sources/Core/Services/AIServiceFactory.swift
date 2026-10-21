@@ -7,8 +7,8 @@ struct AIConfiguration {
     
     static var `default`: AIConfiguration {
         return AIConfiguration(
-            ollamaURL: "http://127.0.0.1:11434",
-            openAIURL: "https://api.openai.com",
+            ollamaURL: AIProvider.ollama.defaultURL,
+            openAIURL: AIProvider.openai.defaultURL,
             openAIAPIKey: ""
         )
     }

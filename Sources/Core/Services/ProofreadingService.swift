@@ -1,4 +1,5 @@
 import Foundation
+import Alamofire
 
 /// Protocol for proofreading service to enable mocking in tests
 protocol ProofreadingServiceProtocol {
@@ -72,11 +73,20 @@ final class ProofreadingService: ProofreadingServiceProtocol {
             
         } catch {
             await Logger.shared.error("ProofreadingService: Proofreading failed (attempt \(currentAttempt + 1)/\(maxRetries + 1))", error: error)
-            
-            // Check if we should retry
-            if currentAttempt < maxRetries {
-                // Wait briefly before retry
-                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+
+            // Stop at once when the user cancelled
+            if Task.isCancelled || error is CancellationError {
+                return .failure(error: CancellationError())
+            }
+
+            // Only retry errors that might go away (timeouts, dropped connections, server overload)
+            if currentAttempt < maxRetries && Self.isRetryable(error) {
+                // Wait briefly before retry; a cancel during the wait ends the run
+                do {
+                    try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                } catch {
+                    return .failure(error: CancellationError())
+                }
                 
                 // Retry
                 return await performProofreadingWithRetry(
@@ -93,5 +103,31 @@ final class ProofreadingService: ProofreadingServiceProtocol {
                 return .failure(error: error)
             }
         }
+    }
+
+    /// True for errors where trying again can help. Wrong model, bad API key, invalid URL
+    /// or a cut-off result will fail the same way every time.
+    static func isRetryable(_ error: Error) -> Bool {
+        let nsError = underlyingError(error) as NSError
+        if nsError.domain == NSURLErrorDomain {
+            let retryableCodes: Set<Int> = [
+                NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorCannotConnectToHost,
+                NSURLErrorNotConnectedToInternet, NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed
+            ]
+            return retryableCodes.contains(nsError.code)
+        }
+        // HTTP status from the services: retry rate limits and server errors only
+        if nsError.domain == "OpenAIService" || nsError.domain == "OllamaService" {
+            return nsError.code == 429 || (500...599).contains(nsError.code)
+        }
+        return false
+    }
+
+    /// Unwraps Alamofire's wrapper so the URL error inside can be checked.
+    private static func underlyingError(_ error: Error) -> Error {
+        if let afError = error as? AFError, let underlying = afError.underlyingError {
+            return underlying
+        }
+        return error
     }
 }

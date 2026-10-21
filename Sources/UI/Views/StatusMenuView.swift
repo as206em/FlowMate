@@ -32,7 +32,7 @@ struct StatusMenuView: View {
             get: { appState.proofreadingModel },
             set: { appState.updateCurrentModel($0) }
         )) {
-            ForEach(modelChoices, id: \.self) { model in
+            ForEach(appState.modelChoices, id: \.self) { model in
                 Text(model).tag(model)
             }
         }
@@ -95,14 +95,5 @@ struct StatusMenuView: View {
                 appState.requestAccessibilityPermission()
             }
         }
-    }
-
-    /// Available models, plus the selected one if it's missing, so the picker always has a matching tag
-    private var modelChoices: [String] {
-        var models = appState.availableModels
-        if !appState.proofreadingModel.isEmpty && !models.contains(appState.proofreadingModel) {
-            models.insert(appState.proofreadingModel, at: 0)
-        }
-        return models
     }
 }

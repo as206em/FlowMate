@@ -10,6 +10,9 @@ final class Logger {
     private let dateFormatter: DateFormatter
     private let logDirectory: URL
     private var currentLogFile: URL
+    /// The day the current log file belongs to; when it changes, a new file is started
+    private var currentDay: String
+    private let timestampFormatter = ISO8601DateFormatter()
     
     enum LogLevel: String {
         case debug = "DEBUG"
@@ -41,6 +44,7 @@ final class Logger {
         
         // Set current log file
         let today = dateFormatter.string(from: Date())
+        currentDay = today
         currentLogFile = logDirectory.appendingPathComponent("flowmate-\(today).log")
         
         // Clean up old logs (keep last 7 days)
@@ -75,7 +79,7 @@ final class Logger {
     // MARK: - Core Logging
     
     private func log(_ message: String, level: LogLevel, file: String, function: String, line: Int) {
-        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let timestamp = timestampFormatter.string(from: Date())
         let fileName = (file as NSString).lastPathComponent
         
         // Format: [TIMESTAMP] [LEVEL] [File:Line] Message
@@ -90,6 +94,14 @@ final class Logger {
     
     private func writeToFile(_ message: String) {
         guard let data = message.data(using: .utf8) else { return }
+
+        // The app can run for weeks: start a new file each day and drop old ones
+        let today = dateFormatter.string(from: Date())
+        if today != currentDay {
+            currentDay = today
+            currentLogFile = logDirectory.appendingPathComponent("flowmate-\(today).log")
+            cleanupOldLogs()
+        }
         
         // Create file if it doesn't exist
         if !fileManager.fileExists(atPath: currentLogFile.path) {

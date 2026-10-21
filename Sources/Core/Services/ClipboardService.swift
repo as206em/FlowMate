@@ -17,7 +17,8 @@ final class ClipboardService: ClipboardServiceProtocol {
     /// Restores the previous clipboard contents afterwards.
     func getSelectedText() -> String? {
         let pasteboard = NSPasteboard.general
-        let previousContents = pasteboard.string(forType: .string)
+        // Save everything on the clipboard (images, files, rich text), not just plain text
+        let previousContents = pasteboard.snapshot()
         let changeCountBefore = pasteboard.changeCount
 
         // Use Command+C to copy instead of Command+X to cut
@@ -45,10 +46,7 @@ final class ClipboardService: ClipboardServiceProtocol {
         let selectedText = pasteboard.string(forType: .string)
 
         // Put back what the user had on the clipboard before
-        if let previousContents = previousContents {
-            pasteboard.clearContents()
-            pasteboard.setString(previousContents, forType: .string)
-        }
+        pasteboard.restore(previousContents)
 
         guard let selectedText, !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
@@ -74,5 +72,36 @@ final class ClipboardService: ClipboardServiceProtocol {
         
         keyDown?.post(tap: .cgAnnotatedSessionEventTap)
         keyUp?.post(tap: .cgAnnotatedSessionEventTap)
+    }
+}
+
+/// A full copy of the clipboard: every item with all of its types and data.
+struct PasteboardSnapshot {
+    fileprivate let items: [[(NSPasteboard.PasteboardType, Data)]]
+
+    var isEmpty: Bool { items.isEmpty }
+}
+
+extension NSPasteboard {
+    /// Copies everything currently on the pasteboard
+    func snapshot() -> PasteboardSnapshot {
+        let items = (pasteboardItems ?? []).map { item in
+            item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
+        }
+        return PasteboardSnapshot(items: items.filter { !$0.isEmpty })
+    }
+
+    /// Replaces the pasteboard contents with a snapshot taken earlier
+    func restore(_ snapshot: PasteboardSnapshot) {
+        clearContents()
+        guard !snapshot.isEmpty else { return }
+        let items = snapshot.items.map { entries -> NSPasteboardItem in
+            let item = NSPasteboardItem()
+            for (type, data) in entries {
+                item.setData(data, forType: type)
+            }
+            return item
+        }
+        writeObjects(items)
     }
 }

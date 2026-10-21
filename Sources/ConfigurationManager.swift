@@ -34,7 +34,6 @@ class ConfigurationManager: ObservableObject {
         var needsMigration = false
 
         if let fileKey = config.providers.openai.apiKey, !fileKey.isEmpty {
-            secretStore.setSecret(fileKey, for: Self.openAIKeyAccount)
             needsMigration = true
         } else {
             config.providers.openai.apiKey = secretStore.secret(for: Self.openAIKeyAccount) ?? ""
@@ -42,7 +41,6 @@ class ConfigurationManager: ObservableObject {
         }
 
         if let fileKey = config.providers.ollama.apiKey, !fileKey.isEmpty {
-            secretStore.setSecret(fileKey, for: Self.ollamaKeyAccount)
             needsMigration = true
         } else {
             let storedKey = secretStore.secret(for: Self.ollamaKeyAccount)
@@ -50,8 +48,9 @@ class ConfigurationManager: ObservableObject {
             savedSecrets[Self.ollamaKeyAccount] = storedKey ?? ""
         }
 
+        // Saving writes the keys to the store and removes them from the file only if that worked
         if needsMigration {
-            Logger.shared.info("ConfigurationManager: Moved API keys from config file to Keychain")
+            Logger.shared.info("ConfigurationManager: Moving API keys from config file to Keychain")
             saveConfiguration()
         }
     }
@@ -80,8 +79,8 @@ IMPORTANT SYSTEM RULES (ALWAYS FOLLOW):
     private static var defaultConfiguration: AppConfig {
         return AppConfig(
             providers: ProvidersConfig(
-                ollama: ProviderConfig(url: "http://127.0.0.1:11434", apiKey: nil),
-                openai: ProviderConfig(url: "https://api.openai.com", apiKey: "")
+                ollama: ProviderConfig(url: AIProvider.ollama.defaultURL, apiKey: nil),
+                openai: ProviderConfig(url: AIProvider.openai.defaultURL, apiKey: "")
             ),
             proofreading: ProofreadingConfig(
                 selectedProvider: "ollama",
@@ -158,12 +157,15 @@ IMPORTANT SYSTEM RULES (ALWAYS FOLLOW):
             let directory = configURL.deletingLastPathComponent()
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
             
-            // Keep API keys out of the plain-text file
-            saveSecretIfChanged(config.providers.openai.apiKey, for: Self.openAIKeyAccount)
-            saveSecretIfChanged(config.providers.ollama.apiKey, for: Self.ollamaKeyAccount)
+            // Keep API keys out of the plain-text file, but only once the secret store has them.
+            // If the Keychain write fails, the key stays in the file so it is never lost.
             var fileConfig = config
-            fileConfig.providers.openai.apiKey = nil
-            fileConfig.providers.ollama.apiKey = nil
+            if saveSecretIfChanged(config.providers.openai.apiKey, for: Self.openAIKeyAccount) {
+                fileConfig.providers.openai.apiKey = nil
+            }
+            if saveSecretIfChanged(config.providers.ollama.apiKey, for: Self.ollamaKeyAccount) {
+                fileConfig.providers.ollama.apiKey = nil
+            }
 
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -175,11 +177,16 @@ IMPORTANT SYSTEM RULES (ALWAYS FOLLOW):
         }
     }
     
-    private func saveSecretIfChanged(_ value: String?, for account: String) {
+    /// - Returns: true if the store holds the current value
+    private func saveSecretIfChanged(_ value: String?, for account: String) -> Bool {
         let value = value ?? ""
-        guard savedSecrets[account] != value else { return }
-        secretStore.setSecret(value, for: account)
+        guard savedSecrets[account] != value else { return true }
+        guard secretStore.setSecret(value, for: account) else {
+            Logger.shared.error("ConfigurationManager: Couldn't save \(account) to Keychain - keeping it in the config file")
+            return false
+        }
         savedSecrets[account] = value
+        return true
     }
 
     /// Deletes the configuration file and the stored API keys

@@ -132,7 +132,7 @@ struct ProofreadingDialog: View {
 
                 if appState.canReplace {
                     Button("Copy") {
-                        copyToClipboard(appState.correctedText)
+                        appState.copyResult()
                         appState.closeProofreadingDialog()
                     }
 
@@ -144,7 +144,7 @@ struct ProofreadingDialog: View {
                     .help("Paste the result over the selected text (⌘↩)")
                 } else {
                     Button("Copy") {
-                        copyToClipboard(appState.correctedText)
+                        appState.copyResult()
                         appState.closeProofreadingDialog()
                     }
                     .buttonStyle(.borderedProminent)
@@ -174,11 +174,5 @@ struct ProofreadingDialog: View {
     private func removeKeyMonitor() {
         keyMonitorService.removeKeyMonitor(monitor)
         self.monitor = nil
-    }
-
-    private func copyToClipboard(_ text: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
     }
 }

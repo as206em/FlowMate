@@ -13,6 +13,8 @@ final class WindowManager: NSObject {
     
     func showWindow<Content: View>(id: String, title: String, content: @escaping () -> Content, size: NSSize) {
         if let existingWindow = windows[id] {
+            // Activate too, or the window shows but keystrokes keep going to the other app
+            NSApp.activate(ignoringOtherApps: true)
             existingWindow.makeKeyAndOrderFront(nil)
             return
         }

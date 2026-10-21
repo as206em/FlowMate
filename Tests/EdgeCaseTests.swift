@@ -263,8 +263,16 @@ final class EdgeCaseTests: XCTestCase {
         
         for shortcut in edgeCaseShortcuts {
             if !shortcut.trimmingCharacters(in: .whitespaces).isEmpty {
+                let previous = appState.keyboardShortcut
                 appState.updateKeyboardShortcut(shortcut)
-                XCTAssertEqual(appState.keyboardShortcut, shortcut)
+                if KeyboardShortcutManager.isValidShortcut(shortcut) {
+                    XCTAssertEqual(appState.keyboardShortcut, shortcut)
+                    XCTAssertNil(appState.shortcutError)
+                } else {
+                    // Invalid shortcuts are rejected and the active one stays
+                    XCTAssertEqual(appState.keyboardShortcut, previous)
+                    XCTAssertNotNil(appState.shortcutError)
+                }
             }
         }
     }

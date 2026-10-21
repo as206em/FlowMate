@@ -4,8 +4,10 @@ import Security
 /// Stores secrets such as API keys outside the plain-text config file
 protocol SecretStore: AnyObject {
     func secret(for account: String) -> String?
-    /// Saves the secret; nil or an empty string deletes it
-    func setSecret(_ value: String?, for account: String)
+    /// Saves the secret; nil or an empty string deletes it.
+    /// - Returns: false if the store couldn't save it
+    @discardableResult
+    func setSecret(_ value: String?, for account: String) -> Bool
 }
 
 /// Saves secrets in the user's login Keychain
@@ -32,7 +34,8 @@ final class KeychainSecretStore: SecretStore {
         return String(data: data, encoding: .utf8)
     }
 
-    func setSecret(_ value: String?, for account: String) {
+    @discardableResult
+    func setSecret(_ value: String?, for account: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -40,17 +43,18 @@ final class KeychainSecretStore: SecretStore {
         ]
 
         guard let value, !value.isEmpty, let data = value.data(using: .utf8) else {
-            SecItemDelete(query as CFDictionary)
-            return
+            let status = SecItemDelete(query as CFDictionary)
+            return status == errSecSuccess || status == errSecItemNotFound
         }
 
-        let updateStatus = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        if updateStatus == errSecItemNotFound {
+        var status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
             var addQuery = query
             addQuery[kSecValueData as String] = data
             addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-            SecItemAdd(addQuery as CFDictionary, nil)
+            status = SecItemAdd(addQuery as CFDictionary, nil)
         }
+        return status == errSecSuccess
     }
 }
 
@@ -62,11 +66,17 @@ final class InMemorySecretStore: SecretStore {
         secrets[account]
     }
 
-    func setSecret(_ value: String?, for account: String) {
+    /// Set to true to simulate a store that can't save (tests)
+    var failsWrites = false
+
+    @discardableResult
+    func setSecret(_ value: String?, for account: String) -> Bool {
+        guard !failsWrites else { return false }
         if let value, !value.isEmpty {
             secrets[account] = value
         } else {
             secrets.removeValue(forKey: account)
         }
+        return true
     }
 }
