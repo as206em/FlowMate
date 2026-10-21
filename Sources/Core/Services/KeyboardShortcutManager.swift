@@ -60,6 +60,38 @@ final class KeyboardShortcutManager: KeyboardShortcutManagerProtocol {
         }
     }
 
+    /// Turns "command+shift+p" into "⇧⌘P" for display in menus.
+    static func displayString(for shortcut: String) -> String {
+        var modifiers = ""
+        var key = ""
+        for raw in shortcut.lowercased().components(separatedBy: "+") {
+            let part = raw.trimmingCharacters(in: .whitespaces)
+            switch part {
+            case "control", "ctrl": modifiers += "⌃"
+            case "option", "opt", "alt": modifiers += "⌥"
+            case "shift": modifiers += "⇧"
+            case "command", "cmd": modifiers += "⌘"
+            case "period": key = "."
+            case "comma": key = ","
+            case "slash": key = "/"
+            case "space": key = "Space"
+            case "return", "enter": key = "↩"
+            case "tab": key = "⇥"
+            case "escape", "esc": key = "⎋"
+            case "delete": key = "⌫"
+            case "up": key = "↑"
+            case "down": key = "↓"
+            case "left": key = "←"
+            case "right": key = "→"
+            default: key = part.uppercased()
+            }
+        }
+        // Apple's standard modifier order is ⌃⌥⇧⌘
+        let order: [Character] = ["⌃", "⌥", "⇧", "⌘"]
+        let sorted = String(order.filter { modifiers.contains($0) })
+        return sorted + key
+    }
+
     /// Returns true if the shortcut string can be used as a global shortcut.
     static func isValidShortcut(_ shortcut: String) -> Bool {
         parseShortcut(shortcut) != nil

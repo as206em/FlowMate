@@ -38,6 +38,12 @@ final class WindowManager: NSObject {
         window.orderFrontRegardless()
     }
     
+    /// True if the window with this id is the one receiving keyboard input
+    func isKeyWindow(id: String) -> Bool {
+        guard let window = windows[id] else { return false }
+        return window.isKeyWindow
+    }
+
     func closeWindow(id: String) {
         windows[id]?.close()
         windows.removeValue(forKey: id)

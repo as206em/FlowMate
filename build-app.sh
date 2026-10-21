@@ -52,9 +52,11 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
     <key>CFBundleVersion</key>
     <string>$BUILD_NUMBER</string>
     <key>LSMinimumSystemVersion</key>
-    <string>12.0</string>
+    <string>13.0</string>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2025 asem-mkl. All rights reserved.</string>
+    <key>LSUIElement</key>
+    <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>CFBundleIconFile</key>

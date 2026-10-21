@@ -6,11 +6,12 @@ import Foundation
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedTab: SettingsTab = .proofreading
+    @State private var selectedTab: SettingsTab = .general
     @State private var monitor: Any?
     private let keyMonitorService: KeyMonitorServiceProtocol = KeyMonitorService()
     
     private let sidebarItems = [
+        SettingsSidebarItem(title: "General", icon: "gearshape", tag: .general),
         SettingsSidebarItem(title: "Proofreading", icon: "doc.text.magnifyingglass", tag: .proofreading),
         SettingsSidebarItem(title: "AI Providers", icon: "cpu", tag: .aiProviders),
         SettingsSidebarItem(title: "Maintenance", icon: "wrench.and.screwdriver", tag: .maintenance)
@@ -23,6 +24,8 @@ struct SettingsView: View {
             contentView: { selectedTab in
                 Group {
                     switch selectedTab {
+                    case .general:
+                        GeneralSettingsView()
                     case .proofreading:
                         ProofreadingSettingsView()
                     case .aiProviders:
@@ -47,7 +50,11 @@ struct SettingsView: View {
     }
     
     private func setupKeyMonitor() {
-        monitor = keyMonitorService.setupEscapeKeyMonitor(dismissAction: { dismiss() })
+        monitor = keyMonitorService.setupEscapeKeyMonitor(dismissAction: {
+            // Only react to Esc pressed in the Settings window
+            guard WindowManager.shared.isKeyWindow(id: "settings") else { return }
+            dismiss()
+        })
     }
     
     private func removeKeyMonitor() {

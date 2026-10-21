@@ -13,6 +13,9 @@ final class StatusManager: ObservableObject {
     /// Current priority level
     private var currentPriority: StatusPriority = .app
     
+    /// State shown when nothing else is happening: .idle, or .disconnected when the provider is unreachable
+    private var idleState: StatusState = .idle
+
     /// Active timeout task that will reset to idle state
     private var timeoutTask: Task<Void, Never>?
     
@@ -62,11 +65,21 @@ final class StatusManager: ObservableObject {
         }
     }
     
-    /// Resets the status to idle state with app priority
+    /// Sets what the icon shows at rest. Applied right away unless a higher-priority status is showing.
+    func setIdleState(_ state: StatusState) {
+        guard state != idleState else { return }
+        idleState = state
+        if currentPriority == .app {
+            currentState = state
+            currentIcon = state.iconName
+        }
+    }
+
+    /// Resets the status to the idle state with app priority
     private func returnToIdle() {
-        currentState = .idle
+        currentState = idleState
         currentPriority = .app
-        currentIcon = StatusState.idle.iconName
+        currentIcon = idleState.iconName
         timeoutTask = nil
         
         Logger.shared.info("StatusManager: Returned to idle state")

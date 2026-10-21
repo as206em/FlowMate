@@ -27,7 +27,7 @@ final class ConfigurationManagerTests: XCTestCase {
         let config = configManager.config
         
         // Test providers - check that they exist and have expected properties (no model anymore)
-        XCTAssertEqual(config.providers.ollama.url, "http://127.0.1:11434")
+        XCTAssertEqual(config.providers.ollama.url, "http://127.0.0.1:11434")
         XCTAssertNil(config.providers.ollama.apiKey)
         XCTAssertEqual(config.providers.openai.url, "https://api.openai.com")
         XCTAssertEqual(config.providers.openai.apiKey, "")
@@ -93,7 +93,6 @@ final class ConfigurationManagerTests: XCTestCase {
         let settings = configManager.getAppSettings()
         XCTAssertNotNil(settings)
         XCTAssertNotNil(settings.theme)
-        XCTAssertNotNil(settings.autoCheckUpdates)
         XCTAssertNotNil(settings.maxHistoryItems)
     }
     
@@ -101,7 +100,6 @@ final class ConfigurationManagerTests: XCTestCase {
         // Test the new feature-level API for app settings
         configManager.updateAppSettings { settings in
             settings.theme = "dark"
-            settings.autoCheckUpdates = false
             settings.maxHistoryItems = 100
             settings.customSettings = ["test": "value"]
         }
@@ -109,7 +107,6 @@ final class ConfigurationManagerTests: XCTestCase {
         let retrievedSettings = configManager.getAppSettings()
         XCTAssertNotNil(retrievedSettings)
         XCTAssertEqual(retrievedSettings.theme, "dark")
-        XCTAssertEqual(retrievedSettings.autoCheckUpdates, false)
         XCTAssertEqual(retrievedSettings.maxHistoryItems, 100)
     }
     
@@ -201,7 +198,6 @@ final class ConfigurationManagerTests: XCTestCase {
         // Test updating all app settings at once
         configManager.updateAppSettings { settings in
             settings.theme = "light"
-            settings.autoCheckUpdates = true
             settings.maxHistoryItems = 200
             settings.customSettings = [
                 "setting1": "value1",
@@ -211,7 +207,6 @@ final class ConfigurationManagerTests: XCTestCase {
         
         let updatedSettings = configManager.getAppSettings()
         XCTAssertEqual(updatedSettings.theme, "light")
-        XCTAssertEqual(updatedSettings.autoCheckUpdates, true)
         XCTAssertEqual(updatedSettings.maxHistoryItems, 200)
         XCTAssertEqual(updatedSettings.customSettings["setting1"], "value1")
         XCTAssertEqual(updatedSettings.customSettings["setting2"], "value2")

@@ -36,7 +36,7 @@ final class AppStateTests: XCTestCase {
         XCTAssertTrue(appState.availableModels.isEmpty)
         XCTAssertFalse(appState.isProcessing)
         XCTAssertTrue(appState.correctedText.isEmpty)
-        XCTAssertEqual(appState.ollamaURL, "http://127.0.1:11434")
+        XCTAssertEqual(appState.ollamaURL, "http://127.0.0.1:11434")
     }
     
     

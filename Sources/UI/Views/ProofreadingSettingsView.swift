@@ -34,7 +34,7 @@ struct ProofreadingSettingsView: View {
                             Text("Model:")
                                 .frame(width: 80, alignment: .leading)
                             Picker("", selection: $appState.proofreadingModel) {
-                                ForEach(appState.availableModels, id: \.self) { model in
+                                ForEach(modelChoices, id: \.self) { model in
                                     Text(model).tag(model)
                                 }
                             }
@@ -77,9 +77,17 @@ struct ProofreadingSettingsView: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Proofreading Instructions:")
-                            .font(.headline)
-                            .foregroundColor(.primary)
+                        HStack {
+                            Text("Proofreading Instructions:")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Button("Reset to Default") {
+                                editedPrompt = ConfigurationManager.defaultPrompt
+                            }
+                            .disabled(editedPrompt == ConfigurationManager.defaultPrompt)
+                            .help("Restore the built-in instructions. Press OK to save.")
+                        }
                         
                         TextEditor(text: $editedPrompt)
                             .font(.system(size: 13, design: .monospaced))
@@ -127,6 +135,17 @@ struct ProofreadingSettingsView: View {
             editedPrompt = appState.currentPrompt
             isURLFieldFocused = true
         }
+    }
+}
+
+extension ProofreadingSettingsView {
+    /// Available models, plus the selected one if it's missing, so the picker never shows blank
+    fileprivate var modelChoices: [String] {
+        var models = appState.availableModels
+        if !appState.proofreadingModel.isEmpty && !models.contains(appState.proofreadingModel) {
+            models.insert(appState.proofreadingModel, at: 0)
+        }
+        return models
     }
 }
 

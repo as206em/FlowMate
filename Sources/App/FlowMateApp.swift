@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-@available(macOS 13.0, *)
+
 @main
 struct FlowMateApp: App {
     @StateObject private var statusManager = StatusManager()

@@ -23,12 +23,15 @@ struct SettingsSidebarItem: Identifiable, Hashable {
 }
 
 enum SettingsTab: Hashable {
+    case general
     case proofreading
     case aiProviders
     case maintenance
     
     var displayName: String {
         switch self {
+        case .general:
+            return "General"
         case .proofreading:
             return "Proofreading"
         case .aiProviders:
@@ -40,6 +43,8 @@ enum SettingsTab: Hashable {
     
     var icon: String {
         switch self {
+        case .general:
+            return "gearshape"
         case .proofreading:
             return "doc.text.magnifyingglass"
         case .aiProviders:

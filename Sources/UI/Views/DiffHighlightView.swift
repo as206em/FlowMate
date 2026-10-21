@@ -19,6 +19,7 @@ struct DiffHighlightView: View {
                                 .textSelection(.enabled)
                                 .lineSpacing(2) // Better reading experience
                                 .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(Color(NSColor.controlBackgroundColor))
                                 .cornerRadius(6)
                                 .overlay(
@@ -36,6 +37,7 @@ struct DiffHighlightView: View {
                                 .textSelection(.enabled)
                                 .lineSpacing(2) // Better reading experience
                                 .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(Color.green.opacity(0.05))
                                 .cornerRadius(6)
                                 .overlay(
@@ -53,6 +55,7 @@ struct DiffHighlightView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
         }
     }

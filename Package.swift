@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "FlowMate",
     platforms: [
-        .macOS(.v12)
+        .macOS(.v13)
     ],
     products: [
         .executable(name: "FlowMate", targets: ["FlowMate"])

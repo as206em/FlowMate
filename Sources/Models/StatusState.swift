@@ -6,6 +6,8 @@ enum StatusState {
     case processing
     case success
     case failure
+    /// Idle, but the AI provider can't be reached
+    case disconnected
     
     /// Maps each state to its corresponding SF Symbol icon name
     var iconName: String {
@@ -18,6 +20,8 @@ enum StatusState {
             return "hand.thumbsup.fill"
         case .failure:
             return "exclamationmark.triangle.fill"
+        case .disconnected:
+            return "bolt.horizontal.circle"
         }
     }
 }

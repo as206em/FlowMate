@@ -1,87 +1,130 @@
 # FlowMate
 
-A macOS menu bar application that provides AI-powered text proofreading capabilities. The app integrates with both Ollama and OpenAI services to offer flexible proofreading options.
+A macOS menu bar app that proofreads text with AI. Select text in any app, press a shortcut, and FlowMate fixes typos and grammar using a local Ollama model or OpenAI.
+
+Requires macOS 13 (Ventura) or later.
 
 ## Features
 
-- Menu bar application for quick access
-- Support for both Ollama and OpenAI services
-- Customizable proofreading instructions
-- Keyboard shortcut support
-- Real-time connection status monitoring
-- Configurable AI models and settings
+- **Proofread anywhere**: select text in any app and press the shortcut (default `⌘.`).
+- **Review before replacing**: a results dialog shows the changes. You can edit the result, then **Replace** it in the original app (`⌘↩`), **Copy** it, or **Retry**.
+- **Instant replace**: turn off "Show Results Before Replacing" to swap the selected text right away.
+- **Proofread Clipboard**: proofread whatever is on the clipboard from the menu bar.
+- **Menu bar status**: see the active provider and model, whether the connection works, and whether Accessibility access is missing. Switch provider or model from the menu.
+- **Recent results**: re-open recent results from the menu. They're kept in memory only and cleared when FlowMate quits.
+- **Ollama and OpenAI**: run fully on your Mac with Ollama, or use OpenAI.
+- **Custom instructions**: edit the proofreading instructions, with a reset to the default.
+- **Launch at login** and **Light/Dark/System appearance** in Settings → General.
+- **API keys in the Keychain**: never written to the config file.
 
-## Architecture
+## Using FlowMate
 
-The application follows modern Swift development practices with clear separation of concerns:
+1. Select some text in any app.
+2. Press the shortcut (`⌘.` by default; change it in Settings → Proofreading).
+3. Review the result and press **Replace** (`⌘↩`), or **Copy**.
 
-- **UI Layer**: SwiftUI views in `Sources/UI/Views/`
-- **Business Logic**: Services in `Sources/Core/Services/`
-- **Data Models**: Configuration models in `Sources/Models/Configuration/`
-- **App Structure**: App delegate and state management in `Sources/App/`
+The menu bar icon shows what's happening:
 
-## Setup
+| Icon | Meaning |
+| --- | --- |
+| ✓ circle | Ready |
+| Arrows | Proofreading |
+| Thumbs up | Done |
+| Warning triangle | Failed, nothing selected, or the result was left on the clipboard because you switched apps |
+| Plug | The AI provider can't be reached |
 
-1. Ensure you have Swift 5.9+ installed
-2. Clone the repository
-3. Run `swift build` to build the project
-4. Run `swift run` to start the application
+## Permissions
 
-## Installing Ollama Locally
+FlowMate needs **Accessibility** access to notice the shortcut and to copy and paste in other apps. On first launch macOS asks for it. You can also grant it in **System Settings → Privacy & Security → Accessibility**, or from the FlowMate menu (**Allow Accessibility Access…**). The menu shows a warning until access is granted.
 
-To use FlowMate with Ollama, you need to install and run Ollama locally:
+## Installing Ollama
 
-1. Install Ollama using Homebrew:
-   ```bash
-   brew install ollama
-   ```
+FlowMate uses `gemma3:4b` by default.
 
-2. Start the Ollama service:
-   ```bash
-   brew services start ollama
-   ```
+```bash
+brew install ollama
+```
 
-3. Pull a model (e.g., phi3):
-   ```bash
-   ollama pull phi3
-   ```
+```bash
+brew services start ollama
+```
 
-4. Run the model to verify installation:
-   ```bash
-   ollama run phi3
-   ```
+```bash
+ollama pull gemma3:4b
+```
 
-Once Ollama is running, FlowMate will automatically connect to it at `http://localhost:11434`. You can select the phi3 model (or any other installed model) from the FlowMate settings.
+FlowMate connects to `http://127.0.0.1:11434`. Any other installed model can be picked in the menu bar under **Model**.
 
-## Development
+## Building
 
-The project uses Swift Package Manager for dependency management. Key dependencies include:
-- Alamofire for HTTP networking
-- SwiftUI for UI components
+1. Install Swift 5.9+ (Xcode or `xcode-select --install`).
+2. Create the signing certificate (see below). It only has to be done once.
+3. Build the app bundle:
+
+```bash
+./build-app.sh
+```
+
+This creates `FlowMate.app`, signs it, and opens it. Move it to `/Applications` so **Launch at login** works.
+
+> `build-app.sh` quits any running FlowMate first. It uses `pkill -f FlowMate`, which also matches other processes whose command line contains "FlowMate" (for example an editor opened in this folder).
+
+For development you can also use `swift build`, `swift run` and `swift test`. Launch at login only works from the app bundle.
+
+## Installing on another Mac
+
+The simplest way is to build on that Mac (steps above). The certificate has to be created on each Mac you build on.
+
+If you copy a built `FlowMate.app` from another Mac instead:
+
+- macOS blocks it on first open because it isn't notarized. Open it once, then allow it in **System Settings → Privacy & Security → Open Anyway**.
+- The build only runs on the same chip type (Apple Silicon or Intel) as the Mac that built it.
+- Grant Accessibility access on the new Mac.
+
+## Signing the app
+
+Signing with the same certificate every time keeps the Accessibility permission and the Keychain access working across rebuilds.
+
+1. Create a self-signed code signing certificate:
+   - Open Keychain Access (Applications → Utilities → Keychain Access).
+   - From the menu: Keychain Access → Certificate Assistant → Create a Certificate.
+   - Fill in:
+     - Name: `FlowMate Dev Certificate` (must match the name in `build-app.sh`).
+     - Identity Type: Self Signed Root.
+     - Certificate Type: Code Signing.
+     - Check "Let me override defaults".
+   - Accept the defaults until you see Key Usage, and make sure Code Signing is included.
+   - Finish. The certificate appears in login → Certificates.
+2. Trust the certificate:
+   - Double-click the new certificate in Keychain Access.
+   - Expand Trust and set Code Signing to Always Trust.
+   - Close it and enter your password if prompted.
 
 ## Configuration
 
-The app stores configuration in `~/Application Support/FlowMate/config.json` and supports:
-- Provider settings (Ollama/OpenAI URLs and API keys)
-- Proofreading preferences
-- App settings (theme, auto-check updates, etc.)
+Settings are stored in `~/Library/Application Support/FlowMate/config.json`:
+
+- Provider URLs (Ollama, OpenAI)
+- Proofreading settings (provider, model, instructions, shortcut, dialog preferences)
+- App settings (appearance, number of recent results)
+
+The OpenAI API key is stored in the login Keychain (service `com.asem-mkl.FlowMate`), not in the file. Keys found in older config files are moved to the Keychain automatically.
+
+Logs are written to `~/Library/Application Support/FlowMate/logs` and kept for 7 days. They don't contain the text you proofread. Settings → Maintenance can open or clear them, or reset all settings.
+
+## Architecture
+
+- **UI**: SwiftUI views in `Sources/UI/Views/`
+- **Services**: AI providers, clipboard, shortcut and Keychain handling in `Sources/Core/Services/`
+- **Models**: configuration and status models in `Sources/Models/`
+- **App**: app delegate and state in `Sources/App/`
+
+Networking uses Alamofire (Ollama) and URLSession (OpenAI).
 
 ## Testing
 
-Run tests with `swift test` to ensure all functionality works correctly.
+```bash
+swift test
+```
 
-## Signing the app:
-1. Create a Self-Signed Code Signing Certificate
-- Open Keychain Access (Applications → Utilities → Keychain Access).
-- From the menu: Keychain Access → Certificate Assistant → Create a Certificate.
-- Fill in:
-    - Name: FlowMate Dev Certificate (must match exactly what you'll use in the script).
-    - Identity Type: Self Signed Root.
-    - Certificate Type: Code Signing.
-    - Check Let me override defaults.
-    - On the next screens, accept defaults until you see Key Usage, make sure Code Signing is included.
-    - Finish, and the certificate will appear in login → Certificates in Keychain.
-2. Trust the Certificate
-- Double click the new certificate in Keychain.
-- Expand Trust and set Code Signing → Always Trust.
-- Close, enter your password if prompted.
+Tests use a temporary config file and an in-memory secret store, so they never touch your settings or Keychain.
