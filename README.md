@@ -1,6 +1,6 @@
 # FlowMate
 
-A macOS menu bar app that proofreads text with AI. Select text in any app, press a shortcut, and FlowMate fixes typos and grammar using a local Ollama model or OpenAI.
+A macOS menu bar app for a solo engineer running many projects: a task manager with timers that run side by side, plus AI proofreading. Select text in any app, press a shortcut, and FlowMate fixes typos and grammar using a local Ollama model or OpenAI.
 
 Requires macOS 13 (Ventura) or later.
 
@@ -14,9 +14,23 @@ Requires macOS 13 (Ventura) or later.
 - **Recent results**: re-open recent results from the menu. They're kept in memory only and cleared when FlowMate quits.
 - **Ollama and OpenAI**: run fully on your Mac with Ollama, or use OpenAI.
 - **Custom instructions**: edit the proofreading instructions, with a reset to the default.
-- **Launch at login** and **Light/Dark/System appearance** in Settings → General.
+- **Launch at login** in Settings → General. FlowMate is light only.
 - **API keys in the Keychain**: never written to the config file.
 - **Clean results**: reasoning blocks (`<think>…</think>`), "Here's the corrected text:" lines, and quotes or code fences the model wraps around the answer are removed.
+
+## Tasks
+
+Open the main window with **Open FlowMate** in the menu bar dropdown (`⌘O`).
+
+- **Projects**: create, rename, recolor and delete projects in the sidebar (right-click a project). Choose **All projects** or one project to set the scope.
+- **Tasks** have a title, one project, an optional milestone, a sprint slot (active, next or backlog), a status (To do, In progress, Done), a priority, an optional due date, an expected time (15m to 8h), the time spent, a Markdown description and subtasks.
+- **Timers**: every play button is a ring that fills toward the task's expected time and turns red past it. Any number of timers can run at once; starting one never stops another. Marking a task Done pauses its timer.
+- **Views**: **Board** (drag cards between To do, In progress and Done), **List** (grouped by status, Done collapsed), **Sprints** (drag tasks between Active, Next and Backlog; one project at a time) and **Milestones**.
+- **Sprints**: each project has a two-week active sprint with a number, dates and a goal. **Complete sprint** closes the done tasks, keeps unfinished ones active, moves next-sprint tasks in, and starts the next sprint.
+- **Task panel**: click a task to open it in a side panel. Edit the title, write the description with Write and Preview (checklists can be ticked in Preview), manage subtasks, and set status, priority, milestone, sprint, due date and expected time. Close it with ×, Esc or a click outside.
+- **Menu bar dropdown**: search tasks and projects, or type a title and press Enter to add a task. It lists the running timers with **Pause all**, and every project with a play button that starts its most recent In progress task (or the top To do of its sprint). A running project shows its sprint tasks with their own play buttons. The menu bar icon shows how many timers are running.
+
+Task data is saved on your Mac in `~/Library/Application Support/FlowMate/workspace.json` (with a `.bak` copy of the last good file). All reads and writes go through the `WorkspaceRepository` protocol (`Sources/Tasks/Data/`), so a backend can replace local storage later.
 
 ## Using FlowMate
 
@@ -36,7 +50,7 @@ The menu bar icon shows what's happening:
 
 ## Permissions
 
-FlowMate needs **Accessibility** access to notice the shortcut and to copy and paste in other apps. On first launch macOS asks for it. You can also grant it in **System Settings → Privacy & Security → Accessibility**, or from the FlowMate menu (**Allow Accessibility Access…**). The menu shows a warning until access is granted.
+FlowMate needs **Accessibility** access to notice the shortcut and to copy and paste in other apps. On first launch macOS asks for it. You can also grant it in **System Settings → Privacy & Security → Accessibility**, or from the FlowMate menu (**Allow**). The menu shows a warning until access is granted.
 
 ## Installing Ollama
 
@@ -70,7 +84,7 @@ This creates `FlowMate.app`, signs it, and opens it. Move it to `/Applications` 
 
 `build-app.sh` quits any running FlowMate first.
 
-For development you can also use `swift build`, `swift run` and `swift test`. Launch at login only works from the app bundle.
+For development you can also use `swift build`, `swift run` and `swift test`. Launch at login only works from the app bundle. To try a build without touching your real tasks, point it at another data file: `FLOWMATE_WORKSPACE_FILE=/tmp/flowmate/workspace.json .build/debug/FlowMate`.
 
 ## Installing on another Mac
 
@@ -107,7 +121,7 @@ Settings are stored in `~/Library/Application Support/FlowMate/config.json`:
 
 - Provider URLs (Ollama, OpenAI)
 - Proofreading settings (provider, model, instructions, shortcut, dialog preferences)
-- App settings (appearance, number of recent results)
+- App settings (number of recent results; the old appearance setting is kept but ignored)
 
 Settings missing from the file (for example after an update) get their default values. If the file can't be read at all, it is copied to `config.json.bak` before defaults are used.
 
@@ -117,7 +131,9 @@ Logs are written to `~/Library/Application Support/FlowMate/logs` and kept for 7
 
 ## Architecture
 
-- **UI**: SwiftUI views in `Sources/UI/Views/`
+- **UI**: SwiftUI views in `Sources/UI/Views/`, built on the Focus design system
+- **Design system**: Focus, documented in `docs/design/FOCUS.md` with tokens in `docs/design/focus-tokens.json` and reference screens in `docs/design/reference/`. The SwiftUI tokens and shared components are in `Sources/UI/Focus/Focus.swift`.
+- **Tasks**: models, the repository and `TaskStore` in `Sources/Tasks/Models/` and `Sources/Tasks/Data/`; the main window and menu sections in `Sources/Tasks/UI/`
 - **Services**: AI providers, clipboard, shortcut and Keychain handling in `Sources/Core/Services/`
 - **Models**: configuration and status models in `Sources/Models/`
 - **App**: app delegate and state in `Sources/App/`

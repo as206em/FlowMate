@@ -1,0 +1,220 @@
+import SwiftUI
+
+/// The 320pt right column of the task panel: the large timer ring and the task's properties.
+struct TaskInspector: View {
+    @EnvironmentObject private var store: TaskStore
+    @EnvironmentObject private var model: TasksViewModel
+    let task: TaskItem
+
+    var body: some View {
+        SidePanelInspector {
+                timer
+                VStack(spacing: 6) {
+                    property("Status") { statusPicker }
+                    property("Priority") { priorityPicker }
+                    property("Milestone") { milestonePicker }
+                    property("Sprint") { sprintPicker }
+                    property("Due date") { TaskDueDateField(task: task) }
+                    property("Expected") { expectedPicker }
+                    property("Project") { projectPicker }
+                }
+                .padding(.top, 16)
+                .overlay(alignment: .top) { FocusDivider() }
+
+                HStack(spacing: 4) {
+                    Button {
+                        model.duplicateTask(task.id, store: store)
+                    } label: {
+                        Label("Duplicate", systemImage: "plus.square.on.square")
+                    }
+                    .buttonStyle(.focus(.ghost))
+                    .help("Copy this task with its subtasks unchecked (⌘D)")
+                    Button(role: .destructive) {
+                        model.deleteTask(task.id, store: store)
+                    } label: {
+                        Label("Delete task", systemImage: "trash")
+                            .foregroundColor(Focus.risk)
+                    }
+                    .buttonStyle(.focus(.ghost))
+                }
+        }
+    }
+
+    // MARK: Timer
+
+    private var timer: some View {
+        LiveTime { now in
+            let running = store.isRunning(task.id)
+            let others = store.runningTasks.filter { $0.id != task.id }.count
+            VStack(spacing: 14) {
+                FocusLargeTimerRing(
+                    progress: store.progress(task, now: now),
+                    isRunning: running,
+                    clock: Focus.clockString(store.elapsed(task, now: now)),
+                    caption: "of \(Focus.durationString(minutes: task.expectedMinutes)) expected"
+                ) {
+                    store.toggleTimer(task.id)
+                }
+                .help(running ? "Pause timer" : "Start timer")
+                HStack(spacing: 6) {
+                    Text(running ? "Click the timer to pause" : "Click the timer to start")
+                        .font(.system(size: 12))
+                        .foregroundColor(Focus.text3)
+                    Text("·").font(.system(size: 12)).foregroundColor(Focus.text3)
+                    AdjustTimeButton(task: task)
+                }
+                .padding(.top, -4)
+                if others > 0 {
+                    Text("\(others) other \(others == 1 ? "task is" : "tasks are") running too. Timers never stop each other.")
+                        .font(.system(size: 12))
+                        .foregroundColor(Focus.text3)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    // MARK: Properties
+
+    private func property<Content: View>(_ label: String, @ViewBuilder content: @escaping () -> Content) -> some View {
+        SidePanelProperty(label: label, content: content)
+    }
+
+    private var statusPicker: some View {
+        FocusTintedPicker(
+            options: TaskStatus.ordered,
+            selection: Binding(get: { task.status }, set: { store.setStatus(task.id, $0) }),
+            title: { $0.title },
+            tint: { $0.focusKind.tint },
+            icon: { FocusStatusIcon(kind: $0.focusKind, size: 15) },
+            accessibilityName: "Status"
+        )
+    }
+
+    private var priorityPicker: some View {
+        FocusTintedPicker(
+            options: TaskPriority.ordered,
+            selection: Binding(get: { task.priority }, set: { store.setPriority(task.id, $0) }),
+            title: { $0.title },
+            tint: { $0.focusLevel.tint },
+            icon: { FocusPriorityBars(level: $0.focusLevel) },
+            accessibilityName: "Priority"
+        )
+    }
+
+    private var milestonePicker: some View {
+        let ids: [UUID?] = [nil] + store.milestones(of: task.projectId)
+            .filter { !$0.isCompleted || $0.id == task.milestoneId }.map(\.id)
+        return FocusPicker(
+            options: ids,
+            selection: Binding(get: { task.milestoneId }, set: { store.setMilestone(task.id, $0) }),
+            title: { id in id.flatMap { store.milestone($0)?.name } ?? "None" }
+        )
+        .accessibilityLabel("Milestone")
+    }
+
+    /// Moves the task to another project. Its milestone is cleared; the hint says so.
+    private var projectPicker: some View {
+        FocusPicker(
+            options: store.projects.map(\.id) + (store.isArchived(task.projectId) ? [task.projectId] : []),
+            selection: Binding(get: { task.projectId }, set: { store.setProject(task.id, $0) }),
+            title: { store.project($0)?.name ?? "" }
+        )
+        .help(task.milestoneId == nil ? "Move to another project" : "Move to another project. The milestone is cleared.")
+        .accessibilityLabel("Project")
+    }
+
+    private var sprintPicker: some View {
+        // A closed task keeps showing its slot so the picker never lies
+        let slots = task.sprintSlot == .closed ? SprintSlot.plannable + [.closed] : SprintSlot.plannable
+        return FocusPicker(
+            options: slots,
+            selection: Binding(get: { task.sprintSlot }, set: { store.setSprintSlot(task.id, $0) }),
+            title: { slot in
+                let name = store.sprintLabel(slot, projectId: task.projectId)
+                switch slot {
+                case .active: return "\(name) (active)"
+                case .next: return "\(name) (next)"
+                case .backlog, .closed: return name
+                }
+            }
+        )
+        .accessibilityLabel("Sprint")
+    }
+
+    /// Presets and a custom entry ("1h 15m") in a popover.
+    private var expectedPicker: some View {
+        TaskExpectedField(task: task)
+    }
+}
+
+/// The task's due date field; it turns red when overdue or due today.
+private struct TaskDueDateField: View {
+    @EnvironmentObject private var store: TaskStore
+    let task: TaskItem
+
+    var body: some View {
+        DateField(
+            date: task.dueDate,
+            risk: store.isOverdue(task) || store.isDueToday(task),
+            accessibilityName: "Due date"
+        ) { store.setDueDate(task.id, $0) }
+    }
+}
+
+/// Field-sized button with the expected time; opens the presets and the custom entry.
+private struct TaskExpectedField: View {
+    let task: TaskItem
+
+    @State private var open = false
+    @State private var hovering = false
+
+    var body: some View {
+        Button { open = true } label: {
+            HStack(spacing: 7) {
+                Text(Focus.durationString(minutes: task.expectedMinutes))
+                    .font(Focus.control.monospacedDigit())
+                    .foregroundColor(Focus.text)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(Focus.text3)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusField(focused: hovering || open)
+        .onHover { hovering = $0 }
+        .accessibilityLabel("Expected time: \(Focus.durationString(minutes: task.expectedMinutes))")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            TaskExpectedEditor(task: task) { open = false }
+        }
+    }
+}
+
+/// "Adjust time" under the large ring: fix the time spent (a forgotten timer).
+private struct AdjustTimeButton: View {
+    let task: TaskItem
+
+    @State private var open = false
+
+    var body: some View {
+        Button("Adjust time") { open = true }
+            .buttonStyle(.plain)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(Focus.text2)
+            .focusPointerCursor()
+            .help("Fix the time spent, e.g. after a forgotten timer")
+            .popover(isPresented: $open, arrowEdge: .bottom) {
+                FocusPopoverMenu(width: 260) {
+                    FocusMenuSection(title: "Time spent", first: true)
+                    TaskTimeSpentEditor(task: task, autofocus: true)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 8)
+                }
+            }
+    }
+}

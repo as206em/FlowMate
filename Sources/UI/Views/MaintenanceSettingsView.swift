@@ -11,31 +11,31 @@ struct MaintenanceSettingsView: View {
     @State private var showDeleteConfigConfirmation = false
     
     var body: some View {
-        StampSettingsPage(
+        FocusSettingsPage(
             title: "Maintenance",
-            subtitle: "Logs and a clean start. Logs never contain the text you proofread."
+            subtitle: "Logs, task data and a clean start. Logs never contain the text you proofread."
         ) {
-            StampCard(title: "Logs") {
+            FocusSection(title: "Logs") {
                 VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 24) {
+                    HStack(spacing: 28) {
                         stat("Files", "\(logFiles.count)")
                         stat("Size", formatBytes(totalLogSize))
                         stat("Kept for", "7 days")
                     }
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         Button {
                             Logger.shared.openLogsFolder()
                         } label: {
                             Label("Open logs folder", systemImage: "folder")
                         }
-                        .buttonStyle(.stamp(.default, size: .sm))
+                        .buttonStyle(.focus())
 
                         Button {
                             showClearConfirmation = true
                         } label: {
                             Label("Clear all logs", systemImage: "trash")
                         }
-                        .buttonStyle(.stamp(.default, size: .sm))
+                        .buttonStyle(.focus())
                     }
                 }
             }
@@ -46,19 +46,42 @@ struct MaintenanceSettingsView: View {
                 Text("This permanently deletes every log file.")
             }
 
-            StampCard(title: "Start over") {
+            FocusSection(
+                title: "Task data",
+                subtitle: "Projects, tasks and timers are saved on this Mac."
+            ) {
                 HStack(spacing: 12) {
-                    Text("Delete all settings and your saved API key, then restart FlowMate with the defaults.")
-                        .font(Stamp.small)
-                        .foregroundColor(Stamp.inkMuted)
+                    Text(dataPath)
+                        .font(Focus.mono)
+                        .foregroundColor(Focus.text2)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        revealTaskData()
+                    } label: {
+                        Label("Show in Finder", systemImage: "folder")
+                    }
+                    .buttonStyle(.focus())
+                    .fixedSize()
+                }
+            }
+
+            FocusSection(title: "Start over") {
+                HStack(spacing: 12) {
+                    Text("Delete all settings and your saved API key, then restart FlowMate with the defaults. Your tasks are kept.")
+                        .font(Focus.meta)
+                        .foregroundColor(Focus.text2)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Button {
                         showDeleteConfigConfirmation = true
                     } label: {
-                        Text("Reset FlowMate").foregroundColor(Stamp.alert)
+                        Text("Reset FlowMate").foregroundColor(Focus.risk)
                     }
-                    .buttonStyle(.stamp(.default, size: .sm))
+                    .buttonStyle(.focus())
+                    .fixedSize()
                 }
             }
             .alert("Reset FlowMate?", isPresented: $showDeleteConfigConfirmation) {
@@ -69,7 +92,7 @@ struct MaintenanceSettingsView: View {
             }
         } footer: {
             Button("Close") { dismiss() }
-                .buttonStyle(.stamp(.default))
+                .buttonStyle(.focus())
         }
         .onAppear {
             refreshLogInfo()
@@ -77,9 +100,25 @@ struct MaintenanceSettingsView: View {
     }
 
     private func stat(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label.uppercased()).font(Stamp.caption).tracking(0.4).foregroundColor(Stamp.inkSubtle)
-            Text(value).font(Stamp.numeral).foregroundColor(Stamp.ink)
+        VStack(alignment: .leading, spacing: 3) {
+            FocusCaption(text: label)
+            Text(value).font(Focus.clock).foregroundColor(Focus.text)
+        }
+    }
+
+    private var dataPath: String {
+        (LocalJSONWorkspaceRepository.defaultFileURL.path as NSString).abbreviatingWithTildeInPath
+    }
+
+    /// Selects the task data file in Finder, or opens its folder if it doesn't exist yet
+    private func revealTaskData() {
+        let url = LocalJSONWorkspaceRepository.defaultFileURL
+        if FileManager.default.fileExists(atPath: url.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } else {
+            let folder = url.deletingLastPathComponent()
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(folder)
         }
     }
 

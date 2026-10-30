@@ -14,7 +14,7 @@ struct ProofreadingDialog: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 0) {
             if appState.isProcessing {
                 processingView
             } else if let error = appState.proofreadingError {
@@ -24,6 +24,8 @@ struct ProofreadingDialog: View {
             }
         }
         .frame(minWidth: 560, idealWidth: 800, maxWidth: .infinity, minHeight: 360, idealHeight: 500, maxHeight: .infinity)
+        .background(Focus.canvas)
+        .focusLight()
         .onAppear {
             setupKeyMonitor()
         }
@@ -40,88 +42,97 @@ struct ProofreadingDialog: View {
             Button("Cancel") {
                 appState.cancelProofreading()
             }
-            .padding(.bottom, 16)
+            .buttonStyle(.focus())
+            .padding(.bottom, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func errorView(_ error: String) -> some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 36))
-                .foregroundColor(.orange)
-            Text("Proofreading failed")
-                .font(.title3)
-                .fontWeight(.semibold)
-            Text(error)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .textSelection(.enabled)
-                .frame(maxWidth: 480)
-            Spacer()
-            HStack(spacing: 12) {
+        VStack(spacing: 0) {
+            VStack(spacing: 12) {
+                Spacer()
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 28))
+                    .foregroundColor(Focus.risk)
+                Text("Proofreading failed")
+                    .font(Focus.pageTitle)
+                    .foregroundColor(Focus.text)
+                Text(error)
+                    .font(Focus.body)
+                    .foregroundColor(Focus.text2)
+                    .multilineTextAlignment(.center)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 480)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+            actionBar {
                 Button("Open Settings") {
                     appState.closeProofreadingDialog()
                     appState.showSettings(nil)
                 }
+                .buttonStyle(.focus(.ghost))
                 Spacer()
                 Button("Close") {
                     appState.closeProofreadingDialog()
                 }
+                .buttonStyle(.focus())
                 Button("Retry") {
                     appState.retryProofreading()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.focus(.primary))
                 .keyboardShortcut(.return)
             }
-            .padding([.horizontal, .bottom], 16)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var resultView: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Toggle("Show Differences", isOn: showDiff)
-                    .toggleStyle(SwitchToggleStyle())
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Toggle(isOn: showDiff) {
+                    Text("Show differences").font(Focus.control).foregroundColor(Focus.text)
+                }
+                .toggleStyle(.focus)
+                .fixedSize()
                 Text(showDiff.wrappedValue ? "Turn off to edit the result" : "You can edit the result before copying or replacing")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(Focus.meta)
+                    .foregroundColor(Focus.text3)
+                    .lineLimit(1)
                 Spacer()
                 if appState.correctedText == appState.originalText {
-                    Label("No changes needed", systemImage: "checkmark.seal")
-                        .font(.caption)
-                        .foregroundColor(.green)
+                    Label("No changes needed", systemImage: "checkmark.circle.fill")
+                        .font(Focus.meta.weight(.medium))
+                        .foregroundColor(Focus.ok)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
+            .padding(.horizontal, 20)
+            .frame(height: 52)
 
-            if showDiff.wrappedValue && !appState.originalText.isEmpty {
-                DiffHighlightView(
-                    originalText: appState.originalText,
-                    correctedText: appState.correctedText
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                // Editable result: Copy and Replace use the edited text
-                TextEditor(text: $appState.correctedText)
-                    .font(.system(.body, design: .default))
-                    .background(Color(NSColor.textBackgroundColor))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
+            Group {
+                if showDiff.wrappedValue && !appState.originalText.isEmpty {
+                    DiffHighlightView(
+                        originalText: appState.originalText,
+                        correctedText: appState.correctedText
                     )
-                    .cornerRadius(6)
-                    .padding(.horizontal, 16)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    // Editable result: Copy and Replace use the edited text
+                    TextEditor(text: $appState.correctedText)
+                        .font(Focus.body)
+                        .foregroundColor(Focus.text)
+                        .lineSpacing(3)
+                        .focusTextArea()
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            HStack(spacing: 12) {
+            actionBar {
                 Button("Retry") {
                     appState.retryProofreading()
                 }
+                .buttonStyle(.focus(.ghost))
                 .help("Proofread the original text again")
 
                 Spacer()
@@ -129,17 +140,19 @@ struct ProofreadingDialog: View {
                 Button("Close") {
                     appState.closeProofreadingDialog()
                 }
+                .buttonStyle(.focus())
 
                 if appState.canReplace {
                     Button("Copy") {
                         appState.copyResult()
                         appState.closeProofreadingDialog()
                     }
+                    .buttonStyle(.focus())
 
                     Button("Replace") {
                         appState.replaceInSourceApp()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.focus(.primary))
                     .keyboardShortcut(.return, modifiers: .command)
                     .help("Paste the result over the selected text (⌘↩)")
                 } else {
@@ -147,14 +160,20 @@ struct ProofreadingDialog: View {
                         appState.copyResult()
                         appState.closeProofreadingDialog()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.focus(.primary))
                     .keyboardShortcut(.return, modifiers: .command)
                     .help("Copy the result to the clipboard (⌘↩)")
                 }
             }
-            .padding(.bottom, 16)
-            .padding(.horizontal, 16)
         }
+    }
+
+    /// Bottom bar with a hairline above it
+    private func actionBar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 8) { content() }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .overlay(alignment: .top) { FocusDivider() }
     }
 
     // MARK: - Helpers

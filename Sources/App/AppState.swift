@@ -41,6 +41,10 @@ final class AppState: ObservableObject {
     @Published var keyboardShortcut: String = ""
     /// Set when the typed shortcut can't be used; the last valid shortcut stays active.
     @Published var shortcutError: String?
+    /// Global shortcut for the floating New task box ("" = off)
+    @Published private(set) var quickAddShortcut: String = ""
+    /// Set when a new quick-add shortcut can't be used (invalid, or taken by proofreading)
+    @Published var quickAddShortcutError: String?
     @Published var showDiffByDefault: Bool = true
     @Published var showDialog: Bool = true
     @Published var proofreadingProvider: AIProvider = .ollama
@@ -92,6 +96,7 @@ final class AppState: ObservableObject {
 
     // Service dependencies
     private let keyboardShortcutManager: KeyboardShortcutManagerProtocol
+    private let quickAddShortcutManager: KeyboardShortcutManagerProtocol
     private let clipboardService: ClipboardServiceProtocol
     private let promptBuilder: PromptBuilderProtocol
     private let proofreadingService: ProofreadingServiceProtocol
@@ -112,6 +117,7 @@ final class AppState: ObservableObject {
         configurationManager: ConfigurationManager? = nil,
         statusManager: StatusManager,
         keyboardShortcutManager: KeyboardShortcutManagerProtocol? = nil,
+        quickAddShortcutManager: KeyboardShortcutManagerProtocol? = nil,
         clipboardService: ClipboardServiceProtocol? = nil,
         promptBuilder: PromptBuilderProtocol? = nil,
         proofreadingService: ProofreadingServiceProtocol? = nil
@@ -120,6 +126,11 @@ final class AppState: ObservableObject {
         self.configurationManager = configurationManager ?? ConfigurationManager()
         self.statusManager = statusManager
         self.keyboardShortcutManager = keyboardShortcutManager ?? KeyboardShortcutManager()
+        // Also works while FlowMate's own windows are in front
+        self.quickAddShortcutManager = quickAddShortcutManager ?? KeyboardShortcutManager(
+            alsoWhenActive: true,
+            passesThroughLocally: { MainActor.assumeIsolated { ShortcutRecorder.isRecording } }
+        )
         self.clipboardService = clipboardService ?? ClipboardService()
         self.promptBuilder = promptBuilder ?? PromptBuilder()
         self.proofreadingService = proofreadingService ?? ProofreadingService()
@@ -130,6 +141,7 @@ final class AppState: ObservableObject {
         loadConfiguration()
         updateAIService()
         setupKeyboardShortcut()
+        setupQuickAddShortcut()
         checkConnection()
         refreshLaunchAtLogin()
         applyAppearance()
@@ -140,6 +152,7 @@ final class AppState: ObservableObject {
 
     deinit {
         keyboardShortcutManager.removeShortcut()
+        quickAddShortcutManager.removeShortcut()
         monitorTask?.cancel()
     }
 
@@ -162,6 +175,11 @@ final class AppState: ObservableObject {
         openAIAPIKey = config.providers.openai.apiKey ?? ""
 
         // App settings
+        quickAddShortcut = config.app.quickAddShortcut
+        // A file edited by hand could give both features the same keys; proofreading keeps them
+        if KeyboardShortcutManager.isSameShortcut(quickAddShortcut, keyboardShortcut) {
+            quickAddShortcut = ""
+        }
         appearance = config.app.theme
         maxHistoryItems = config.app.maxHistoryItems
     }
@@ -273,6 +291,7 @@ final class AppState: ObservableObject {
         if trusted {
             // A global key monitor created before access was granted doesn't receive events
             setupKeyboardShortcut()
+            setupQuickAddShortcut()
         }
     }
 
@@ -327,10 +346,63 @@ final class AppState: ObservableObject {
     func updateKeyboardShortcut(_ shortcut: String) {
         // Only apply and save shortcuts that work. An invalid one sets shortcutError and the
         // current shortcut stays as it is, so the menu never shows a shortcut that isn't active.
+        if KeyboardShortcutManager.isSameShortcut(shortcut, quickAddShortcut) {
+            shortcutError = "\(KeyboardShortcutManager.displayString(for: shortcut)) already opens Quick add. Pick another, or change Quick add in General."
+            return
+        }
         if setupKeyboardShortcut(shortcut) {
             keyboardShortcut = shortcut
             configurationManager.updateProofreadingConfig { $0.keyboardShortcut = shortcut }
         }
+    }
+
+    // MARK: - Quick add shortcut
+
+    @discardableResult
+    private func setupQuickAddShortcut() -> Bool {
+        QuickAddPanel.shortcutKeys = quickAddShortcut.isEmpty ? nil : Self.keyCaps(quickAddShortcut)
+        guard !quickAddShortcut.isEmpty else {
+            quickAddShortcutManager.removeShortcut()
+            return true
+        }
+        return quickAddShortcutManager.setupShortcut(quickAddShortcut) {
+            Task { @MainActor in
+                // Recording a new shortcut in Settings isn't a request for the box
+                guard !ShortcutRecorder.isRecording else { return }
+                QuickAddPanel.toggle()
+            }
+        }
+    }
+
+    /// "control+option+n" → ["⌃", "⌥", "N"]
+    static func keyCaps(_ shortcut: String) -> [String] {
+        let display = KeyboardShortcutManager.displayString(for: shortcut)
+        let modifiers = display.prefix { "⌃⌥⇧⌘".contains($0) }.map(String.init)
+        let key = String(display.dropFirst(modifiers.count))
+        return modifiers + (key.isEmpty ? [] : [key])
+    }
+
+    /// Sets the global shortcut for the floating New task box; "" turns it off. Refused (with
+    /// quickAddShortcutError) when it's invalid or the proofreading shortcut already uses it.
+    /// Returns true when it was applied.
+    @discardableResult
+    func updateQuickAddShortcut(_ shortcut: String) -> Bool {
+        let shortcut = shortcut.trimmingCharacters(in: .whitespaces)
+        if !shortcut.isEmpty {
+            guard KeyboardShortcutManager.isValidShortcut(shortcut) else {
+                quickAddShortcutError = "Use a modifier (⌘, ⌥, ⌃ or ⇧) plus one key, or a function key."
+                return false
+            }
+            if KeyboardShortcutManager.isSameShortcut(shortcut, keyboardShortcut) {
+                quickAddShortcutError = "\(KeyboardShortcutManager.displayString(for: shortcut)) is the proofreading shortcut. Pick another."
+                return false
+            }
+        }
+        quickAddShortcutError = nil
+        quickAddShortcut = shortcut
+        setupQuickAddShortcut()
+        configurationManager.updateAppSettings { $0.quickAddShortcut = shortcut }
+        return true
     }
 
     func updateCurrentPrompt(_ prompt: String) {
@@ -365,7 +437,8 @@ final class AppState: ObservableObject {
 
     // MARK: - General Settings
 
-    /// "system", "light" or "dark"
+    /// Stores the old "system" / "light" / "dark" setting for compatibility.
+    /// The Focus design is light only, so the app always draws light whatever is stored.
     func updateAppearance(_ appearance: String) {
         self.appearance = appearance
         configurationManager.updateAppSettings { $0.theme = appearance }
@@ -373,11 +446,7 @@ final class AppState: ObservableObject {
     }
 
     private func applyAppearance() {
-        switch appearance {
-        case "light": NSApplication.shared.appearance = NSAppearance(named: .aqua)
-        case "dark": NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
-        default: NSApplication.shared.appearance = nil
-        }
+        NSApplication.shared.appearance = NSAppearance(named: .aqua)
     }
 
     /// How many recent results to keep in memory (0 turns history off)
@@ -646,7 +715,8 @@ final class AppState: ObservableObject {
             id: Self.settingsWindowID,
             title: "FlowMate Settings",
             content: { SettingsView().environmentObject(self) },
-            size: NSSize(width: 880, height: 640)
+            size: NSSize(width: 880, height: 640),
+            fullSizeContent: true
         )
     }
 }

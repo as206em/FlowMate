@@ -1,15 +1,15 @@
 import SwiftUI
 
+/// Shown in the proofreading dialog while the model works
 struct LoadingView: View {
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             ProgressView()
-                .scaleEffect(1.5)
-                .progressViewStyle(CircularProgressViewStyle())
-            
-            Text("Proofreading...")
-                .font(.headline)
-                .foregroundColor(.secondary)
+                .controlSize(.regular)
+                .progressViewStyle(.circular)
+            Text("Proofreading…")
+                .font(Focus.header)
+                .foregroundColor(Focus.text2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

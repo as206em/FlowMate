@@ -1,0 +1,628 @@
+import AppKit
+import SwiftUI
+
+// The task part of the menu bar dropdown: search / quick add, running timers and projects.
+// Matches docs/design/reference/FocusMenu.dc.html.
+
+/// Opens the main window from the menu, optionally on a task or a project.
+@MainActor
+enum MenuNavigation {
+    static func openTask(_ id: UUID) {
+        MenuBarPanel.close()
+        TasksWindow.show(openTask: id)
+    }
+
+    /// Opens the project on its own last tab with its own filters (both kept per project).
+    static func openProject(_ id: UUID, focus: TasksViewModel.FocusRequest.Field? = nil) {
+        MenuBarPanel.close()
+        TasksWindow.viewModel.select(.project(id))
+        TasksWindow.show()
+        if let focus { TasksWindow.viewModel.requestFocus(focus) }
+    }
+
+    static func openApp(focus: TasksViewModel.FocusRequest.Field? = nil) {
+        MenuBarPanel.close()
+        TasksWindow.show()
+        if let focus { TasksWindow.viewModel.requestFocus(focus) }
+    }
+}
+
+/// The menu's own state, kept while the panel closes and opens: which projects list their tasks,
+/// the keyboard highlight and the last "Added to …" note.
+@MainActor
+final class MenuState: ObservableObject {
+    static let shared = MenuState()
+
+    /// "Added to Atlas · High" under the field, with Open
+    struct AddedNote: Equatable {
+        let id = UUID()
+        let message: String
+        let taskId: UUID
+    }
+
+    @Published var expansion = MenuExpansion()
+    /// Keyboard highlight while the search is empty (↑/↓ move, Space timer, ↵ open, ←/→ fold)
+    @Published var highlight: MenuRowItem?
+    @Published var added: AddedNote?
+}
+
+/// Keys the menu handles itself while the search field has focus.
+enum MenuKey: Equatable {
+    case up, down, left, right, space, escape
+    case returnKey(command: Bool)
+}
+
+/// Search field that filters projects and tasks, with the quick-add target shown inside it.
+/// While typing, ↑/↓ move the highlight in the results, ↵ opens the highlighted project or task,
+/// and ⌘↵ adds the text as a task. Plain ↵ never creates a task unless the "Add" row is highlighted.
+/// With the field empty, ↑/↓ move through the menu rows instead (see StatusMenuView).
+struct MenuSearchField: View {
+    @EnvironmentObject private var store: TaskStore
+    @Binding var query: String
+    let target: Project?
+    let setTarget: (UUID) -> Void
+    /// Key hint on the right ("↵ open", "␣ timer"), or nil
+    let hint: String?
+    /// Fallback when the key monitor didn't see ↵
+    let submit: (_ command: Bool) -> Void
+    /// Returns true when the key was used
+    let handleKey: (MenuKey) -> Bool
+
+    @FocusState private var focused: Bool
+    @State private var pickingTarget = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Focus.text3)
+            TextField(target == nil ? "Search tasks" : "Search, or add a task…", text: $query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 14))
+                .foregroundColor(Focus.text)
+                .focused($focused)
+                .onSubmit { submit(NSApp.currentEvent?.modifierFlags.contains(.command) ?? false) }
+                .accessibilityLabel("Search or add a task")
+                .accessibilityHint("Return opens the highlighted result. Command-Return adds a task to \(target?.name ?? "a project").")
+            if let hint {
+                FocusKey(text: hint).fixedSize()
+            }
+            if let target {
+                targetChip(target)
+            }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 8)
+        .frame(height: 44)
+        .overlay(alignment: .bottom) { FocusDivider() }
+        .background(MenuSearchKeyMonitor(isActive: focused, handle: handleKey))
+        .onAppear { DispatchQueue.main.async { focused = true } }
+    }
+
+    /// Where new tasks go, inside the field: the last project used. Click to change it.
+    private func targetChip(_ target: Project) -> some View {
+        Button { pickingTarget.toggle() } label: {
+            HStack(spacing: 5) {
+                FocusProjectTile(name: target.name, colorHex: target.colorHex, size: 14)
+                Text(target.name)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(Focus.text2)
+                    .lineLimit(1)
+                    .frame(maxWidth: 96, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(Focus.text3)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: 22)
+            .background(RoundedRectangle(cornerRadius: Focus.radiusTag).fill(Focus.sidebar))
+            .overlay(RoundedRectangle(cornerRadius: Focus.radiusTag).strokeBorder(Focus.hairline, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("New tasks go to \(target.name). Click to change.")
+        .accessibilityLabel("Add tasks to \(target.name)")
+        .popover(isPresented: $pickingTarget, arrowEdge: .bottom) {
+            FocusPopoverMenu(width: 220) {
+                FocusMenuSection(title: "Add new tasks to", first: true)
+                ForEach(store.projects) { project in
+                    FocusMenuItem(isSelected: project.id == target.id) {
+                        setTarget(project.id)
+                        pickingTarget = false
+                    } label: {
+                        FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                        Text(project.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Watches the menu keys in the menu panel's window only, while the search field has focus.
+/// The field editor would otherwise eat the arrows and turn ↵ into a submit. A key the handler
+/// doesn't use goes on to the field (← → move the caret, Space types).
+private struct MenuSearchKeyMonitor: NSViewRepresentable {
+    let isActive: Bool
+    let handle: (MenuKey) -> Bool
+
+    func makeNSView(context: Context) -> MonitorView { MonitorView() }
+
+    func updateNSView(_ view: MonitorView, context: Context) {
+        view.isActive = isActive
+        view.handle = handle
+    }
+
+    final class MonitorView: NSView {
+        var isActive = false
+        var handle: ((MenuKey) -> Bool)?
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, self.isActive, let window = self.window, event.window === window else { return event }
+                // Leave IME composition (marked text) alone
+                if let editor = window.firstResponder as? NSTextView, editor.hasMarkedText() { return event }
+                guard let key = Self.key(for: event) else { return event }
+                return self.handle?(key) == true ? nil : event
+            }
+        }
+
+        static func key(for event: NSEvent) -> MenuKey? {
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let plain = flags.subtracting([.numericPad, .function]).isEmpty
+            switch event.keyCode {
+            case 126 where plain: return .up
+            case 125 where plain: return .down
+            case 123 where plain: return .left
+            case 124 where plain: return .right
+            case 49 where plain: return .space
+            case 53 where plain: return .escape
+            case 36, 76: return .returnKey(command: flags.contains(.command))
+            default: return nil
+            }
+        }
+
+        deinit {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+        }
+    }
+}
+
+/// While typing: the "Add “x” to Project" row, then matching projects and tasks.
+/// The highlighted row (keyboard) gets the hover fill; ↵ activates it.
+struct MenuSearchResults: View {
+    @EnvironmentObject private var store: TaskStore
+    let query: String
+    let results: MenuSearchResultsModel
+    let highlight: MenuSearchItem?
+    let target: Project?
+    let setTarget: (UUID) -> Void
+    let activate: (MenuSearchItem) -> Void
+
+    var body: some View {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let projects = results.projects.compactMap { store.project($0) }
+        let tasks = results.tasks.compactMap { store.task($0) }
+
+        VStack(alignment: .leading, spacing: 2) {
+            if let target, results.canAdd {
+                MenuItemRow(highlighted: highlight == .add, action: { activate(.add) }) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Focus.text2)
+                        .frame(width: 20, height: 20)
+                    let title = QuickAddInput.parse(q).title
+                    let parts = store.quickAddPreview(q, projectId: target.id)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 0) {
+                            (Text("Add “") + Text(title.isEmpty ? q : title).foregroundColor(Focus.text) + Text("” to "))
+                                .font(Focus.row)
+                                .foregroundColor(Focus.text2)
+                                .lineLimit(1)
+                            targetMenu(target)
+                        }
+                        if !parts.isEmpty {
+                            Text(parts.joined(separator: " · "))
+                                .font(.system(size: 11.5))
+                                .foregroundColor(Focus.text3)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 4)
+                    FocusKey(text: highlight == .add ? "↵" : "⌘↵")
+                }
+            }
+
+            if !projects.isEmpty {
+                FocusCaption(text: "Projects").padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 2)
+                ForEach(projects) { project in
+                    MenuItemRow(highlighted: highlight == .project(project.id), action: { activate(.project(project.id)) }) {
+                        FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 20)
+                        Text(project.name).font(Focus.rowStrong).foregroundColor(Focus.text).lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text("\(store.openCount(project.id))")
+                            .font(.system(size: 12).monospacedDigit())
+                            .foregroundColor(Focus.text3)
+                    }
+                }
+            }
+
+            if !tasks.isEmpty {
+                FocusCaption(text: "Tasks").padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 2)
+                ForEach(tasks) { task in
+                    MenuItemRow(highlighted: highlight == .task(task.id), action: { activate(.task(task.id)) }) {
+                        FocusStatusIcon(kind: task.status.focusKind, size: 14).frame(width: 20)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(task.title)
+                                .font(.system(size: 13, weight: store.isRunning(task.id) ? .medium : .regular))
+                                .foregroundColor(task.isDone ? Focus.text3 : Focus.text)
+                                .lineLimit(1)
+                            Text(store.project(of: task)?.name ?? "")
+                                .font(.system(size: 11.5))
+                                .foregroundColor(Focus.text3)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 4)
+                        TaskTimeText(task: task, font: .system(size: 12))
+                        if !task.isDone {
+                            TaskTimerButton(task: task, size: 24)
+                        }
+                    }
+                }
+            }
+
+            if projects.isEmpty && tasks.isEmpty {
+                Text(target == nil
+                     ? "No matches. Create a project in FlowMate to add tasks."
+                     : "No matches. Press ⌘↵ to add it as a task.")
+                    .font(Focus.meta)
+                    .foregroundColor(Focus.text3)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 8)
+    }
+
+    private func targetMenu(_ target: Project) -> some View {
+        Menu {
+            ForEach(store.projects) { project in
+                Button(project.name) { setTarget(project.id) }
+            }
+        } label: {
+            Text(target.name).font(Focus.row.weight(.semibold))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.visible)
+        .fixedSize()
+        .help("Choose the project")
+    }
+}
+
+/// "2 running" with Pause all, then one tinted row per running timer.
+struct MenuRunningSection: View {
+    @EnvironmentObject private var store: TaskStore
+    @ObservedObject private var menu = MenuState.shared
+
+    var body: some View {
+        let running = store.runningTasks
+        if !running.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("\(running.count) running".uppercased())
+                        .font(Focus.caption)
+                        .tracking(0.5)
+                        .foregroundColor(Focus.liveText)
+                    Spacer()
+                    Button("Pause all") { store.pauseAllTimers() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12))
+                        .foregroundColor(Focus.text3)
+                }
+                .padding(.horizontal, 8)
+                .padding(.top, 4)
+                .padding(.bottom, 2)
+
+                ForEach(running) { task in
+                    let highlighted = menu.highlight == .running(task.id)
+                    HStack(spacing: 10) {
+                        TaskTimerButton(task: task, size: 32)
+                        Button { MenuNavigation.openTask(task.id) } label: {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(task.title)
+                                    .font(Focus.rowStrong)
+                                    .foregroundColor(Focus.text)
+                                    .lineLimit(1)
+                                Text("\(store.project(of: task)?.name ?? "") · \(Focus.durationString(minutes: task.expectedMinutes)) expected")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(Focus.text3)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open in FlowMate")
+                        LiveTime { now in
+                            Text(Focus.clockString(store.elapsed(task, now: now)))
+                                .font(.system(size: 17, weight: .semibold).monospacedDigit())
+                                .foregroundColor(Focus.liveText)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Focus.liveSoft))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(highlighted ? Focus.liveText.opacity(0.5) : .clear, lineWidth: 1.5)
+                    )
+                    .id(MenuRowItem.running(task.id))
+                    .accessibilityAddTraits(highlighted ? .isSelected : [])
+                    MenuLongRunLine(task: task)
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 8)
+            .overlay(alignment: .bottom) { FocusDivider() }
+        }
+    }
+}
+
+/// One row per project with a ring play button. The chevron lists the project's tasks (a running
+/// project is open by default) so you can pick which task to start.
+struct MenuProjectsSection: View {
+    @EnvironmentObject private var store: TaskStore
+    @ObservedObject private var menu = MenuState.shared
+
+    /// Rows shown under a project before "N more"
+    static let taskLimit = 8
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FocusCaption(text: "Projects").padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 6)
+            if store.projects.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(store.archivedProjects.isEmpty
+                         ? "No projects yet. A project holds tasks, sprints and timers."
+                         : "Every project is archived. Unarchive one in FlowMate, or start a new one.")
+                        .font(Focus.meta)
+                        .foregroundColor(Focus.text3)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Create a project") { MenuNavigation.openApp() }
+                        .buttonStyle(.focus())
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 6)
+            }
+            ForEach(store.projects) { project in
+                let running = store.isProjectRunning(project.id)
+                projectRow(project, live: running)
+                if menu.expansion.isExpanded(project.id, running: running) {
+                    projectTasks(project)
+                }
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 8)
+    }
+
+    private func projectRow(_ project: Project, live: Bool) -> some View {
+        let next = store.nextTaskToStart(projectId: project.id)
+        let expanded = menu.expansion.isExpanded(project.id, running: live)
+        return HStack(spacing: 6) {
+            Button {
+                withAnimation(Focus.hoverAnimation) { menu.expansion.toggle(project.id, running: live) }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(Focus.text3)
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .frame(width: 14, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(expanded ? "Hide tasks" : "Show tasks to pick which one to start")
+            .accessibilityLabel(expanded ? "Hide \(project.name) tasks" : "Show \(project.name) tasks")
+
+            Button { MenuNavigation.openProject(project.id) } label: {
+                HStack(spacing: 10) {
+                    FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 20)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 6) {
+                            Text(project.name).font(Focus.rowStrong).foregroundColor(Focus.text).lineLimit(1)
+                            Text("\(store.openCount(project.id))")
+                                .font(.system(size: 12).monospacedDigit())
+                                .foregroundColor(Focus.text3)
+                        }
+                        Text(subline(project, live: live, next: next))
+                            .font(.system(size: 12))
+                            .foregroundColor(live ? Focus.liveText : Focus.text3)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Open \(project.name) on its last tab")
+
+            FocusTimerRing(progress: live ? 1 : 0, isRunning: live, size: 28, label: "timer on \(project.name)") {
+                MenuActions.toggleProject(project.id, store: store)
+            }
+            .disabled(!live && next == nil)
+            .opacity(!live && next == nil ? 0.4 : 1)
+            .help(live ? "Pause \(project.name)'s timers" : next.map { "Start “\($0.title)”" } ?? "Nothing to start")
+        }
+        .modifier(MenuHover(highlighted: menu.highlight == .project(project.id), leading: 2))
+        .id(MenuRowItem.project(project.id))
+    }
+
+    private func subline(_ project: Project, live: Bool, next: TaskItem?) -> String {
+        if live {
+            let count = store.runningTasks.filter { $0.projectId == project.id }.count
+            return "\(count) \(count == 1 ? "timer" : "timers") running"
+        }
+        if let next { return "Next: \(next.title)" }
+        return store.openCount(project.id) == 0 ? "All done" : "Nothing planned in this sprint"
+    }
+
+    @ViewBuilder
+    private func projectTasks(_ project: Project) -> some View {
+        let listed = store.menuProjectTasks(project.id)
+        let tasks = listed.tasks
+        VStack(alignment: .leading, spacing: 0) {
+            if tasks.isEmpty {
+                Button("No open tasks. Add one in FlowMate") { MenuNavigation.openProject(project.id, focus: .newTask) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12))
+                    .foregroundColor(Focus.text3)
+                    .padding(.leading, 46)
+                    .padding(.vertical, 4)
+            } else if !listed.fromSprint {
+                Text("Not in the sprint · Next and Backlog")
+                    .font(.system(size: 11.5))
+                    .foregroundColor(Focus.text3)
+                    .padding(.leading, 46)
+                    .padding(.vertical, 3)
+            }
+            ForEach(tasks.prefix(Self.taskLimit)) { task in
+                let running = store.isRunning(task.id)
+                HStack(spacing: 8) {
+                    FocusStatusIcon(kind: task.status.focusKind, size: 12)
+                    Button { MenuNavigation.openTask(task.id) } label: {
+                        Text(task.title)
+                            .font(.system(size: 12.5, weight: running ? .medium : .regular))
+                            .foregroundColor(running ? Focus.text : Focus.text2)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    TaskTimeText(task: task, font: .system(size: 12))
+                    TaskTimerButton(task: task, size: 24)
+                }
+                .modifier(SubRowHover(highlighted: menu.highlight == .task(task.id)))
+                .id(MenuRowItem.task(task.id))
+            }
+            if tasks.count > Self.taskLimit {
+                Button("\(tasks.count - Self.taskLimit) more in \(project.name)") { MenuNavigation.openProject(project.id) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12))
+                    .foregroundColor(Focus.text3)
+                    .padding(.leading, 46)
+                    .padding(.vertical, 4)
+            }
+        }
+        .padding(.bottom, 4)
+    }
+}
+
+/// What the menu's play buttons and Space do.
+@MainActor
+enum MenuActions {
+    /// A project's ring: pauses its timers when any run, else starts the task it would pick next.
+    static func toggleProject(_ id: UUID, store: TaskStore) {
+        if store.isProjectRunning(id) {
+            store.pauseTimers(projectId: id)
+        } else {
+            store.startProject(id)
+        }
+    }
+}
+
+// MARK: - Row chrome
+
+/// A full-width menu row button with the 8-radius hover fill. `highlighted` shows the same
+/// fill for the keyboard highlight.
+struct MenuItemRow<Content: View>: View {
+    var highlighted = false
+    let action: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) { content() }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .modifier(MenuHover(highlighted: highlighted))
+        .accessibilityAddTraits(highlighted ? .isSelected : [])
+    }
+}
+
+/// 7/8 padding and a hover fill, as `.item` in the reference
+private struct MenuHover: ViewModifier {
+    var highlighted = false
+    var leading: CGFloat = 8
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.leading, leading)
+            .padding(.trailing, 8)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 8).fill(hovering || highlighted ? Focus.hover : .clear))
+            .onHover { hovering = $0 }
+    }
+}
+
+/// Indented task row under an expanded project, as `.sub` in the reference
+private struct SubRowHover: ViewModifier {
+    var highlighted = false
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.leading, 26)
+            .padding(.trailing, 8)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 7).fill(hovering || highlighted ? Focus.hover : .clear))
+            .onHover { hovering = $0 }
+    }
+}
+
+/// Under a running timer in the menu: "Still working on this? Keep · Stop at…" once it has run
+/// past the prompt time. Quiet: it only shows here and in the window, and never stops the timer.
+private struct MenuLongRunLine: View {
+    @EnvironmentObject private var store: TaskStore
+    let task: TaskItem
+
+    var body: some View {
+        LiveTime { now in
+            if store.longRunningTasks(now: now).contains(where: { $0.id == task.id }) {
+                LongRunPrompt(task: task, compact: true)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+            }
+        }
+    }
+}
+
+/// The menu bar title while timers run, when "Show the timer in the menu bar" is on:
+/// the most recently started timer's clock, plus how many others run ("1:12:05 +1").
+struct MenuBarClockText: View {
+    @ObservedObject var store: TaskStore
+    @ObservedObject var ticker: TimerTicker
+
+    var body: some View {
+        Text(Self.title(store: store, now: ticker.now))
+            .monospacedDigit()
+    }
+
+    static func title(store: TaskStore, now: Date) -> String {
+        let running = store.runningTasks
+        guard let latest = running.max(by: { (store.startedAt($0.id) ?? .distantPast) < (store.startedAt($1.id) ?? .distantPast) }) else {
+            return ""
+        }
+        let clock = Focus.clockString(store.elapsed(latest, now: now))
+        return running.count > 1 ? "\(clock) +\(running.count - 1)" : clock
+    }
+}

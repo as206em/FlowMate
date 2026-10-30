@@ -1,0 +1,193 @@
+import Foundation
+
+// Read-only helpers for views. All task lists are sorted by `sortIndex`.
+extension TaskStore {
+    // MARK: - Lookup
+
+    /// Projects in the sidebar, pickers and menu bar: not archived, in the user's order.
+    var projects: [Project] { workspace.projects.filter { !$0.isArchived } }
+
+    /// Archived projects, in the user's order (the sidebar's Archived section).
+    var archivedProjects: [Project] { workspace.projects.filter(\.isArchived) }
+
+    /// Every project, archived included.
+    var allProjects: [Project] { workspace.projects }
+
+    func isArchived(_ projectId: UUID) -> Bool { project(projectId)?.isArchived ?? false }
+
+    func project(_ id: UUID) -> Project? {
+        workspace.projects.first { $0.id == id }
+    }
+
+    func task(_ id: UUID) -> TaskItem? {
+        workspace.tasks.first { $0.id == id }
+    }
+
+    func milestone(_ id: UUID) -> Milestone? {
+        workspace.milestones.first { $0.id == id }
+    }
+
+    /// The project a task belongs to
+    func project(of task: TaskItem) -> Project? { project(task.projectId) }
+
+    func milestone(of task: TaskItem) -> Milestone? { task.milestoneId.flatMap { milestone($0) } }
+
+    // MARK: - Task lists
+
+    /// Every task in the scope, closed ones included. All projects leaves out archived projects.
+    func tasks(in scope: TaskScope) -> [TaskItem] {
+        let all: [TaskItem]
+        if let projectId = scope.projectId {
+            all = workspace.tasks.filter { $0.projectId == projectId }
+        } else {
+            let archived = Set(archivedProjects.map(\.id))
+            all = archived.isEmpty ? workspace.tasks : workspace.tasks.filter { !archived.contains($0.projectId) }
+        }
+        return all.sorted { $0.sortIndex < $1.sortIndex }
+    }
+
+    func tasks(of projectId: UUID) -> [TaskItem] { tasks(in: .project(projectId)) }
+
+    /// Board column: active-sprint tasks with the given status.
+    func boardTasks(in scope: TaskScope, status: TaskStatus) -> [TaskItem] {
+        tasks(in: scope).filter { $0.sprintSlot == .active && $0.status == status }
+    }
+
+    /// List group: all tasks in scope with the given status (Done includes closed sprints).
+    func listTasks(in scope: TaskScope, status: TaskStatus) -> [TaskItem] {
+        tasks(in: scope).filter { $0.status == status }
+    }
+
+    /// Sprints view group for one project: active, next or backlog.
+    func sprintTasks(projectId: UUID, slot: SprintSlot) -> [TaskItem] {
+        tasks(in: .project(projectId)).filter { $0.sprintSlot == slot }
+    }
+
+    /// Case-insensitive title search across all projects, open tasks first (menu bar search).
+    func searchTasks(_ query: String, limit: Int = 20) -> [TaskItem] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        let matches = tasks(in: .all).filter { $0.title.localizedCaseInsensitiveContains(q) }
+        let ordered = matches.filter { !$0.isDone } + matches.filter(\.isDone)
+        return Array(ordered.prefix(limit))
+    }
+
+    /// Unfinished tasks in a project (sidebar count).
+    func openCount(_ projectId: UUID) -> Int {
+        workspace.tasks.filter { $0.projectId == projectId && !$0.isDone }.count
+    }
+
+    // MARK: - Milestones
+
+    /// Milestones in scope: open ones first, then by due date (undated last), then name.
+    /// All projects leaves out archived projects.
+    func milestones(in scope: TaskScope) -> [Milestone] {
+        let archived = scope.projectId == nil ? Set(archivedProjects.map(\.id)) : []
+        return workspace.milestones
+            .filter { m in scope.projectId.map { m.projectId == $0 } ?? !archived.contains(m.projectId) }
+            .sorted { a, b in
+                if a.isCompleted != b.isCompleted { return !a.isCompleted }
+                switch (a.dueDate, b.dueDate) {
+                case let (x?, y?) where x != y: return x < y
+                case (_?, nil): return true
+                case (nil, _?): return false
+                default: return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+                }
+            }
+    }
+
+    func milestones(of projectId: UUID) -> [Milestone] { milestones(in: .project(projectId)) }
+
+    /// The milestone's tasks in manual order.
+    func milestoneTasks(_ milestoneId: UUID) -> [TaskItem] {
+        workspace.tasks.filter { $0.milestoneId == milestoneId }.sorted { $0.sortIndex < $1.sortIndex }
+    }
+
+    func milestoneProgress(_ milestoneId: UUID) -> MilestoneProgress {
+        let tasks = workspace.tasks.filter { $0.milestoneId == milestoneId }
+        return MilestoneProgress(done: tasks.filter(\.isDone).count, total: tasks.count)
+    }
+
+    /// An open milestone past its due date with unfinished tasks.
+    func isOverdue(_ milestone: Milestone, now: Date = Date()) -> Bool {
+        guard !milestone.isCompleted, let due = milestone.dueDate else { return false }
+        let progress = milestoneProgress(milestone.id)
+        return progress.done < progress.total && TaskDates.isBeforeToday(due, now: now)
+    }
+
+    // MARK: - Sprints
+
+    /// "Sprint 14"
+    func sprintName(_ projectId: UUID) -> String {
+        project(projectId)?.sprint.name ?? ""
+    }
+
+    /// "Oct 26 – Nov 8"
+    func sprintDateRange(_ projectId: UUID) -> String {
+        project(projectId)?.sprint.dateRange ?? ""
+    }
+
+    /// Label for a task's slot: "Sprint 14", "Sprint 15", "Backlog", or for a closed task the
+    /// past sprint it closed in ("Sprint 12"; "Closed sprint" for older data).
+    func sprintLabel(for task: TaskItem) -> String {
+        if task.sprintSlot == .closed, let number = task.closedSprintNumber { return "Sprint \(number)" }
+        return sprintLabel(task.sprintSlot, projectId: task.projectId)
+    }
+
+    /// Completed sprints, newest first.
+    func pastSprints(_ projectId: UUID) -> [PastSprint] {
+        (project(projectId)?.pastSprints ?? []).reversed()
+    }
+
+    /// The tasks of a past sprint that still exist, in manual order.
+    func tasks(of pastSprint: PastSprint) -> [TaskItem] {
+        let ids = Set(pastSprint.taskIds)
+        return workspace.tasks.filter { ids.contains($0.id) }.sorted { $0.sortIndex < $1.sortIndex }
+    }
+
+    func sprintLabel(_ slot: SprintSlot, projectId: UUID) -> String {
+        guard let sprint = project(projectId)?.sprint else { return "" }
+        switch slot {
+        case .active: return sprint.name
+        case .next: return sprint.nextName
+        case .backlog: return "Backlog"
+        case .closed: return "Past sprint"
+        }
+    }
+
+    // MARK: - Due dates
+
+    /// Open task whose due date is before today.
+    func isOverdue(_ task: TaskItem, now: Date = Date()) -> Bool {
+        guard !task.isDone, let due = task.dueDate else { return false }
+        return TaskDates.isBeforeToday(due, now: now)
+    }
+
+    /// Open task due today.
+    func isDueToday(_ task: TaskItem, now: Date = Date()) -> Bool {
+        guard !task.isDone, let due = task.dueDate else { return false }
+        return Calendar.current.isDate(due, inSameDayAs: now)
+    }
+}
+
+enum TaskDates {
+    static func isBeforeToday(_ date: Date, now: Date = Date()) -> Bool {
+        date < Calendar.current.startOfDay(for: now)
+    }
+
+    /// "Today", "Tomorrow", "Yesterday", or "Nov 18" ("Nov 18, 2027" outside the current year).
+    static func dueLabel(_ date: Date, now: Date = Date()) -> String {
+        let calendar = Calendar.current
+        if calendar.isDate(date, inSameDayAs: now) { return "Today" }
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(date, inSameDayAs: tomorrow) {
+            return "Tomorrow"
+        }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
+            return "Yesterday"
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = calendar.isDate(date, equalTo: now, toGranularity: .year) ? "MMM d" : "MMM d, yyyy"
+        return formatter.string(from: date)
+    }
+}

@@ -12,6 +12,16 @@ protocol KeyboardShortcutManagerProtocol {
 /// Service responsible for global keyboard shortcut monitoring and parsing
 final class KeyboardShortcutManager: KeyboardShortcutManagerProtocol {
     private var eventMonitor: Any?
+    private var localMonitor: Any?
+    /// Also fire while FlowMate itself is active (a global monitor only sees other apps' keys).
+    private let alsoWhenActive: Bool
+    /// While true, the in-app monitor lets the key through (e.g. while recording a new shortcut).
+    private let passesThroughLocally: () -> Bool
+
+    init(alsoWhenActive: Bool = false, passesThroughLocally: @escaping () -> Bool = { false }) {
+        self.alsoWhenActive = alsoWhenActive
+        self.passesThroughLocally = passesThroughLocally
+    }
 
     /// Only these modifiers are compared, so Caps Lock, Fn and the numeric-pad flag don't break matching.
     private static let relevantModifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
@@ -42,6 +52,20 @@ final class KeyboardShortcutManager: KeyboardShortcutManagerProtocol {
                 handler()
             }
         }
+        if alsoWhenActive {
+            let passesThrough = passesThroughLocally
+            localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                guard !passesThrough() else { return event }
+                // Inside FlowMate's own text fields the keys belong to the text
+                if let text = event.window?.firstResponder as? NSTextView, text.isEditable || text.hasMarkedText() {
+                    return event
+                }
+                let pressed = event.modifierFlags.intersection(Self.relevantModifiers)
+                guard event.keyCode == keyCode && pressed == modifiers else { return event }
+                handler()
+                return nil
+            }
+        }
 
         Task { @MainActor in
             Logger.shared.debug("KeyboardShortcutManager: Set up shortcut '\(shortcut)'")
@@ -51,6 +75,10 @@ final class KeyboardShortcutManager: KeyboardShortcutManagerProtocol {
 
     /// Removes the current keyboard shortcut monitor
     func removeShortcut() {
+        if let localMonitor {
+            NSEvent.removeMonitor(localMonitor)
+            self.localMonitor = nil
+        }
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
@@ -121,6 +149,13 @@ final class KeyboardShortcutManager: KeyboardShortcutManagerProtocol {
         let order: [Character] = ["⌃", "⌥", "⇧", "⌘"]
         let sorted = String(order.filter { modifiers.contains($0) })
         return sorted + key
+    }
+
+    /// True when both strings name the same keys ("cmd+." and "command+period"), so two
+    /// features never listen for one shortcut.
+    static func isSameShortcut(_ a: String, _ b: String) -> Bool {
+        guard let first = parseShortcut(a), let second = parseShortcut(b) else { return false }
+        return first.0 == second.0 && first.1 == second.1
     }
 
     /// Returns true if the shortcut string can be used as a global shortcut.

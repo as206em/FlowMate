@@ -12,31 +12,32 @@ struct ProofreadingSettingsView: View {
     @State private var editedShowDialog: Bool = true
 
     var body: some View {
-        StampSettingsPage(
+        FocusSettingsPage(
             title: "Proofreading",
             subtitle: "Pick a model and how fixes come back to you."
         ) {
-            HStack(alignment: .top, spacing: 18) {
-                StampCard(title: "Model") {
+            HStack(alignment: .top, spacing: 16) {
+                FocusSection(title: "Model") {
                     VStack(alignment: .leading, spacing: 12) {
-                        StampSegmented(
-                            label: "Provider",
-                            options: AIProvider.allCases.map { .init(value: $0, label: $0.displayName) },
-                            selection: Binding(
-                                get: { appState.proofreadingProvider },
-                                set: { appState.setProvider($0) }
+                        FocusLabeled(label: "Provider") {
+                            FocusTabs(
+                                options: AIProvider.allCases.map { (value: $0, label: $0.displayName) },
+                                selection: Binding(
+                                    get: { appState.proofreadingProvider },
+                                    set: { appState.setProvider($0) }
+                                )
                             )
-                        )
-                        StampLabeled(label: "Model", hint: modelHint) {
+                            .fixedSize()
+                        }
+                        FocusLabeled(label: "Model", hint: modelHint) {
                             if appState.modelChoices.isEmpty {
                                 Text("No models found")
-                                    .font(Stamp.body)
-                                    .foregroundColor(Stamp.inkSubtle)
-                                    .padding(.horizontal, 10)
-                                    .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-                                    .stampSurface(fill: Stamp.paperSunk, shadow: .none)
+                                    .font(Focus.control)
+                                    .foregroundColor(Focus.text3)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .focusField()
                             } else {
-                                StampPicker(
+                                FocusPicker(
                                     options: appState.modelChoices,
                                     selection: Binding(
                                         get: { appState.proofreadingModel },
@@ -49,59 +50,48 @@ struct ProofreadingSettingsView: View {
                     }
                 }
 
-                StampCard(title: "Shortcut") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Press it with text selected in any app.")
-                            .font(Stamp.small)
-                            .foregroundColor(Stamp.inkMuted)
+                FocusSection(title: "Shortcut", subtitle: "Press it with text selected in any app.") {
+                    VStack(alignment: .leading, spacing: 10) {
                         ShortcutRecorder(shortcut: $editedShortcut)
                         if let error = appState.shortcutError {
-                            Text(error).font(Stamp.small).foregroundColor(Stamp.alert)
+                            Text(error).font(.system(size: 12)).foregroundColor(Focus.risk)
                         }
                     }
                 }
             }
 
-            StampCard(title: "When a fix is ready") {
-                StampSegmented(
-                    options: [
-                        .init(value: true, label: "Show me first", tint: Stamp.sky),
-                        .init(value: false, label: "Replace right away", tint: Stamp.mint)
-                    ],
+            FocusSection(title: "When a fix is ready") {
+                FocusTabs(
+                    options: [(value: true, label: "Show me first"), (value: false, label: "Replace right away")],
                     selection: $editedShowDialog
                 )
+                .fixedSize()
             }
 
-            StampCard(title: "Instructions") {
+            FocusSection(title: "Instructions", subtitle: "Sent to the model before your text.") {
                 VStack(alignment: .leading, spacing: 10) {
                     TextEditor(text: $editedPrompt)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(Stamp.ink)
-                        .scrollContentBackground(.hidden)
-                        .padding(8)
-                        .frame(height: 110)
-                        .background(RoundedRectangle(cornerRadius: Stamp.radiusMd).fill(Stamp.paperSunk))
-                        .overlay(RoundedRectangle(cornerRadius: Stamp.radiusMd).strokeBorder(Stamp.line, lineWidth: Stamp.stroke1))
+                        .font(Focus.mono)
+                        .foregroundColor(Focus.text)
+                        .frame(height: 120)
+                        .focusTextArea()
                         .accessibilityLabel("Proofreading instructions")
                     HStack {
-                        Text("Sent to the model before your text.")
-                            .font(Stamp.small)
-                            .foregroundColor(Stamp.inkSubtle)
                         Spacer()
                         Button("Reset to default") {
                             editedPrompt = ConfigurationManager.defaultPrompt
                         }
-                        .buttonStyle(.stamp(.ghost, size: .sm))
+                        .buttonStyle(.focus(.ghost))
                         .disabled(editedPrompt == ConfigurationManager.defaultPrompt)
                     }
                 }
             }
         } footer: {
             Button("Cancel") { dismiss() }
-                .buttonStyle(.stamp(.default))
+                .buttonStyle(.focus())
                 .keyboardShortcut(.cancelAction)
             Button("Save changes") { save() }
-                .buttonStyle(.stamp(.primary))
+                .buttonStyle(.focus(.primary))
                 .keyboardShortcut("s", modifiers: .command)
         }
         .onAppear {

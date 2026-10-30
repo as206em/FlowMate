@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Focus menu bar timers</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.fx{font-family:Inter,-apple-system,system-ui,sans-serif;font-size:13.5px;color:var(--text);-webkit-font-smoothing:antialiased}
+.dark{--desk:#2A2A31;--bar:rgba(20,20,24,.82);--panel:rgba(28,28,32,.94);--elev:rgba(255,255,255,.05);--hover:rgba(255,255,255,.07);--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.14);--text:#EDEDEF;--text2:#A8A8B3;--text3:#83838F;--accent:#FF6B4A;--accentText:#FF8B70;--accentSoft:rgba(255,107,74,.12);--accentGlow:rgba(255,107,74,.55);--ring:#33333B}
+.light{--desk:#C9CCD3;--bar:rgba(246,246,246,.85);--panel:rgba(250,250,249,.96);--elev:rgba(0,0,0,.03);--hover:rgba(0,0,0,.05);--line:rgba(0,0,0,.08);--line2:rgba(0,0,0,.14);--text:#18181B;--text2:#4F4F58;--text3:#6E6E78;--accent:#F0532F;--accentText:#C93C1B;--accentSoft:rgba(240,83,47,.09);--accentGlow:rgba(240,83,47,.35);--ring:#E2E2DE}
+.fx button,.fx input{font-family:inherit;color:inherit}
+.fx button{cursor:pointer}
+.t2{color:var(--text2)}.t3{color:var(--text3)}
+.num{font-variant-numeric:tabular-nums}
+.cap{font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--text3)}
+.tile{width:20px;height:20px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:none}
+.ring{width:32px;height:32px;border:0;background:transparent;padding:0;flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:50%}
+.ring:hover{background:var(--hover)}
+.ring.on{filter:drop-shadow(0 0 5px var(--accentGlow))}
+.item{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:8px}
+.item:hover{background:var(--hover)}
+.sub{display:flex;align-items:center;gap:8px;padding:3px 8px 3px 38px;border-radius:7px;font-size:12.5px}
+.sub:hover{background:var(--hover)}
+.kbd{font-size:11px;line-height:16px;border:1px solid var(--line2);border-radius:4px;padding:0 5px;color:var(--text3);font-weight:500}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.pulse{animation:pulse 1.6s ease-in-out infinite}
+</style>
+</helmet>
+<div class="fx {{theme}}" style="width:560px;height:760px;box-sizing:border-box;background:var(--desk);position:relative;overflow:hidden">
+  <div style="height:26px;background:var(--bar);display:flex;align-items:center;padding:0 14px;gap:14px;font-size:13px;font-weight:500">
+    <span style="flex:1"></span>
+    <div style="display:flex;align-items:center;gap:6px;background:var(--hover);border-radius:5px;padding:1px 8px">
+      <sc-if value="{{hasRuns}}" hint-placeholder-val="{{true}}"><span class="pulse" style="width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accentGlow)"></span></sc-if>
+      <span class="num" style="font-size:12px;font-weight:600">{{barTxt}}</span>
+    </div>
+    <span>Thu 29 Oct</span><span class="num">14:32</span>
+  </div>
+
+  <div style="position:absolute;top:32px;right:16px;width:400px;box-sizing:border-box;background:var(--panel);border:1px solid var(--line2);border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.45);overflow:hidden">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" class="t3" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input value="{{q}}" onChange="{{onQ}}" onKeyDown="{{onKey}}" aria-label="Search or add a task" placeholder="{{placeholder}}" style="flex:1;min-width:0;border:0;background:transparent;outline:none;font-size:14px">
+      <span class="kbd">&#8629; add</span>
+    </div>
+
+    <div style="padding:8px 6px 4px">
+      <div style="display:flex;align-items:center;padding:4px 8px 6px"><span class="cap" style="flex:1;{{runCapStyle}}">{{runHead}}</span><sc-if value="{{hasRuns}}" hint-placeholder-val="{{true}}"><button class="t3" style="border:0;background:transparent;font-size:12px;padding:0" onClick="{{pauseAll}}">Pause all</button></sc-if></div>
+      <sc-if value="{{noRuns}}" hint-placeholder-val="{{false}}"><div class="t3" style="padding:2px 8px 8px;font-size:12.5px">Nothing running. Press play on any project below.</div></sc-if>
+      <sc-for list="{{runs}}" as="r" hint-placeholder-count="2">
+        <div class="item" style="background:var(--accentSoft);margin-bottom:4px">
+          <button class="ring on" aria-label="{{r.label}}" onClick="{{r.stop}}">
+            <svg width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" style="stroke:var(--ring)" stroke-width="2.5"/><circle cx="16" cy="16" r="13" fill="none" style="stroke:var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="{{r.dash}}" transform="rotate(-90 16 16)"/><rect x="12.4" y="11" width="2.6" height="10" rx="1" style="fill:var(--accent)"/><rect x="17" y="11" width="2.6" height="10" rx="1" style="fill:var(--accent)"/></svg>
+          </button>
+          <div style="flex:1;min-width:0"><div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{r.title}}</div><div class="t3" style="font-size:12px">{{r.pname}} &middot; {{r.est}} expected</div></div>
+          <span class="num" style="font-size:17px;font-weight:600;color:var(--accentText)">{{r.clock}}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="border-top:1px solid var(--line);padding:8px 6px">
+      <div class="cap" style="padding:4px 8px 6px">Projects</div>
+      <sc-for list="{{projects}}" as="p" hint-placeholder-count="4">
+        <div>
+          <div class="item">
+            <span class="tile" style="{{p.tile}}" aria-hidden="true">{{p.letter}}</span>
+            <div style="flex:1;min-width:0"><div style="font-weight:500">{{p.name}}</div><div class="t3" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{p.nextLine}}</div></div>
+            <button class="ring {{p.playCls}}" aria-label="{{p.label}}" onClick="{{p.toggle}}">
+              <svg width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" style="stroke:var(--ring)" stroke-width="2.5"/>
+                <sc-if value="{{p.live}}" hint-placeholder-val="{{false}}"><circle cx="16" cy="16" r="13" fill="none" style="stroke:var(--accent)" stroke-width="2.5"/><rect x="12.4" y="11" width="2.6" height="10" rx="1" style="fill:var(--accent)"/><rect x="17" y="11" width="2.6" height="10" rx="1" style="fill:var(--accent)"/></sc-if>
+                <sc-if value="{{p.idle}}" hint-placeholder-val="{{true}}"><path d="M13.2 10.8v10.4l8.4-5.2z" style="fill:var(--text2)"/></sc-if>
+              </svg>
+            </button>
+          </div>
+          <sc-if value="{{p.live}}" hint-placeholder-val="{{false}}">
+            <div style="padding-bottom:4px">
+              <sc-for list="{{p.tasks}}" as="t" hint-placeholder-count="3">
+                <div class="sub">
+                  <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;{{t.titleStyle}}">{{t.title}}</span>
+                  <span class="num t3" style="font-size:12px;{{t.rightStyle}}">{{t.right}}</span>
+                  <button class="ring {{t.cls}}" style="width:24px;height:24px" aria-label="{{t.label}}" onClick="{{t.toggle}}">
+                    <svg width="24" height="24" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" style="stroke:var(--ring)" stroke-width="2.5"/>
+                      <sc-if value="{{t.running}}" hint-placeholder-val="{{false}}"><circle cx="16" cy="16" r="13" fill="none" style="stroke:var(--accent)" stroke-width="2.5"/><rect x="12.4" y="11" width="2.6" height="10" rx="1" style="fill:var(--accent)"/><rect x="17" y="11" width="2.6" height="10" rx="1" style="fill:var(--accent)"/></sc-if>
+                      <sc-if value="{{t.idle}}" hint-placeholder-val="{{true}}"><path d="M13.2 10.8v10.4l8.4-5.2z" style="fill:var(--text2)"/></sc-if>
+                    </svg>
+                  </button>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="border-top:1px solid var(--line);padding:9px 14px;display:flex;align-items:center;gap:12px;font-size:12px;background:var(--elev)" class="t3">
+      <span style="display:flex;align-items:center;gap:5px"><span class="kbd">&#8997;&#8984;T</span>toggle last</span>
+      <span style="display:flex;align-items:center;gap:5px"><span class="kbd">&#8984;O</span>open app</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":560,"height":760}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const n = Date.now();
+    this.state = { runs: { 1: n - (42 * 60 + 10) * 1000, 12: n - (11 * 60 + 40) * 1000 }, now: n, q: '', adds: 0, extra: {} };
+  }
+  componentDidMount() { this._iv = setInterval(() => this.setState({ now: Date.now() }), 1000); }
+  componentWillUnmount() { clearInterval(this._iv); }
+  data() {
+    if (!this._d) {
+      this._d = [
+        { id: 'fm', name: 'FlowMate', color: '#FF6B4A', base: 5400, tasks: [{ id: 1, title: 'Menu bar timer dropdown', est: 120, s0: 3300 }, { id: 2, title: 'Persist tasks in SQLite', est: 90, s0: 0 }, { id: 7, title: 'Notarize and ship the DMG', est: 120, s0: 0 }] },
+        { id: 'lx', name: 'Liloxi', color: '#4EA1F5', base: 1200, tasks: [{ id: 12, title: 'Fix checkout rounding for AED', est: 45, s0: 1200 }, { id: 13, title: 'Upload winter product photos', est: 60, s0: 0 }] },
+        { id: 'ds', name: 'DrSecurity', color: '#3DD68C', base: 2400, tasks: [{ id: 18, title: 'Scan result page redesign', est: 90, s0: 2400 }, { id: 19, title: 'Rate limit the scan API', est: 120, s0: 0 }] },
+        { id: 'at', name: 'Atlas (client)', color: '#F5B544', base: 0, tasks: [{ id: 24, title: 'Send handover document', est: 30, s0: 0 }, { id: 25, title: 'Send final invoice', est: 30, s0: 0 }] }
+      ];
+    }
+    return this._d;
+  }
+  clock(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    const p = (n) => (n < 10 ? '0' + n : '' + n);
+    return h + ':' + p(m) + ':' + p(s);
+  }
+  dur(sec) { const m = Math.round(sec / 60), h = Math.floor(m / 60); return h ? h + 'h ' + (m % 60) + 'm' : m + 'm'; }
+  est(min) { const h = Math.floor(min / 60); return h ? h + 'h' + (min % 60 ? ' ' + (min % 60) + 'm' : '') : min + 'm'; }
+  without(runs, id) { const r = { ...runs }; delete r[id]; return r; }
+  renderVals() {
+    const s = this.state, d = this.data();
+    const el = (id) => (s.runs[id] ? Math.max(0, (s.now - s.runs[id]) / 1000) : 0);
+    const all = [];
+    d.forEach((p) => p.tasks.concat(s.extra[p.id] || []).forEach((t) => all.push({ ...t, p })));
+    const runIds = Object.keys(s.runs).map(Number);
+    const runs = runIds.map((id) => {
+      const t = all.find((x) => x.id === id), sec = (t.s0 || 0) + el(id);
+      return { title: t.title, pname: t.p.name, est: this.est(t.est), clock: this.clock(sec), dash: (Math.min(1, sec / (t.est * 60)) * 81.68).toFixed(1) + ' 81.68', label: 'Pause timer: ' + t.title, stop: () => this.setState({ runs: this.without(s.runs, id) }) };
+    });
+    let tracked = 0;
+    const projects = d.map((p) => {
+      const tasks = p.tasks.concat(s.extra[p.id] || []);
+      const liveIds = tasks.filter((t) => s.runs[t.id]).map((t) => t.id), live = liveIds.length > 0, next = tasks.find((t) => !s.runs[t.id]) || tasks[0];
+      const secs = p.base + liveIds.reduce((a, id) => a + el(id), 0);
+      tracked += secs;
+      return {
+        name: p.name, letter: p.name[0], tile: 'background:' + p.color + '2E;color:' + p.color, today: this.dur(secs), todayStyle: live ? 'color:var(--accentText);font-weight:600' : 'color:var(--text3)',
+        nextLine: live ? liveIds.length + (liveIds.length === 1 ? ' timer' : ' timers') + ' running' : next ? 'Next: ' + next.title : 'All done',
+        live, idle: !live, playCls: live ? 'on' : '', label: (live ? 'Pause timers on ' : 'Start timer on ') + p.name,
+        toggle: () => {
+          if (live) { let r = s.runs; liveIds.forEach((id) => (r = this.without(r, id))); this.setState({ runs: r }); }
+          else if (next) this.setState({ runs: { ...s.runs, [next.id]: Date.now() } });
+        },
+        tasks: tasks.map((t) => {
+          const on = !!s.runs[t.id];
+          return {
+            title: t.title, titleStyle: on ? 'color:var(--text);font-weight:500' : 'color:var(--text2)', right: on ? this.clock((t.s0 || 0) + el(t.id)) : this.est(t.est), rightStyle: on ? 'color:var(--accentText)' : '',
+            running: on, idle: !on, cls: on ? 'on' : '', label: (on ? 'Pause: ' : 'Start: ') + t.title,
+            toggle: () => this.setState({ runs: on ? this.without(s.runs, t.id) : { ...s.runs, [t.id]: Date.now() } })
+          };
+        })
+      };
+    });
+    const target = runIds.length ? all.find((x) => x.id === runIds[0]).p : d[0];
+    return {
+      theme: 'light',
+      hasRuns: runs.length > 0, noRuns: runs.length === 0, runs, projects,
+      barTxt: runs.length > 1 ? runs.length + ' running' : runs.length ? runs[0].clock : 'FlowMate',
+      runHead: runs.length ? runs.length + ' running' : 'Running', runCapStyle: runs.length ? 'color:var(--accentText)' : '',
+      trackedTxt: this.dur(tracked) + ' tracked today',
+      pauseAll: () => this.setState({ runs: {} }),
+      q: s.q, placeholder: 'Add a task to ' + target.name + '…', onQ: (e) => this.setState({ q: e.target.value }),
+      onKey: (e) => {
+        const title = s.q.trim();
+        if (e.key !== 'Enter' || !title) return;
+        this.setState({ q: '', adds: s.adds + 1, extra: { ...s.extra, [target.id]: (s.extra[target.id] || []).concat([{ id: 1000 + s.adds, title, est: 60, s0: 0 }]) } });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

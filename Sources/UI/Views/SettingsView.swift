@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Settings window: Stamp sidebar plus the selected section
+// MARK: - Settings window: Focus sidebar plus the selected section
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
@@ -16,7 +16,6 @@ struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-            Rectangle().fill(Stamp.line).frame(width: Stamp.stroke1)
             Group {
                 switch selectedTab {
                 case .general: GeneralSettingsView()
@@ -28,7 +27,8 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 860, minHeight: 600)
-        .background(Stamp.paper)
+        .background(Focus.canvas)
+        .focusLight()
         .onAppear {
             appState.checkConnection()
             setupKeyMonitor()
@@ -39,49 +39,46 @@ struct SettingsView: View {
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Settings")
-                .font(Stamp.heading)
-                .foregroundColor(Stamp.ink)
-                .padding(.horizontal, 8)
-                .padding(.bottom, 14)
+        VStack(alignment: .leading, spacing: 2) {
+            // Room for the window's traffic lights
+            Color.clear.frame(height: 30)
+
+            HStack(spacing: 9) {
+                FocusAppTile()
+                Text("Settings").font(.system(size: 14, weight: .semibold)).foregroundColor(Focus.text)
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 14)
+            .accessibilityElement(children: .combine)
 
             ForEach(SettingsTab.allCases, id: \.self) { tab in
-                let isSelected = tab == selectedTab
-                Button {
-                    selectedTab = tab
-                } label: {
-                    Label(tab.displayName, systemImage: tab.icon)
-                        .font(Stamp.label)
-                        .foregroundColor(isSelected ? Stamp.onFill : Stamp.ink)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-                        .background {
-                            if isSelected {
-                                Color.clear.stampSurface(fill: Stamp.sky, radius: Stamp.radiusMd, shadow: .sm)
-                            }
-                        }
-                        .contentShape(Rectangle())
+                FocusSidebarItem(selected: tab == selectedTab, action: { selectedTab = tab }) {
+                    Image(systemName: tab.icon)
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 18)
+                    Text(tab.displayName).frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
 
             Spacer()
 
             Group {
+                let name = appState.proofreadingProvider.displayName
                 switch appState.connectionState {
-                case .checking: StampBadge(text: "Checking…", tone: .sun)
-                case .connected: StampBadge(text: "\(appState.proofreadingProvider.displayName) ready", tone: .mint)
-                case .failed: StampBadge(text: "\(appState.proofreadingProvider.displayName) offline", tone: .alert)
+                case .checking: FocusStatusLabel(text: "Checking \(name)…", tone: .pending)
+                case .connected: FocusStatusLabel(text: "\(name) ready", tone: .ok)
+                case .failed: FocusStatusLabel(text: "\(name) offline", tone: .risk)
                 }
             }
             .padding(.horizontal, 8)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 24)
+        .padding(.top, 14)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 16)
         .frame(width: 220)
         .frame(maxHeight: .infinity, alignment: .top)
+        .background(Focus.sidebar)
+        .overlay(alignment: .trailing) { Rectangle().fill(Focus.hairline).frame(width: 1) }
     }
 
     private func setupKeyMonitor() {
@@ -100,7 +97,7 @@ struct SettingsView: View {
 
 /// The page layout every settings section shares: a title, a short description,
 /// scrolling content and an optional footer with actions
-struct StampSettingsPage<Content: View, Footer: View>: View {
+struct FocusSettingsPage<Content: View, Footer: View>: View {
     let title: String
     let subtitle: String
     @ViewBuilder var content: Content
@@ -109,24 +106,27 @@ struct StampSettingsPage<Content: View, Footer: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(title).font(Stamp.heading).foregroundColor(Stamp.ink)
-                        Text(subtitle).font(Stamp.body).foregroundColor(Stamp.inkMuted)
+                        Text(title).font(Focus.pageTitle).foregroundColor(Focus.text)
+                        Text(subtitle).font(Focus.meta).foregroundColor(Focus.text3)
                     }
+                    .padding(.bottom, 4)
                     content
                 }
-                .padding(24)
-                // Room for the hard shadows on the right and bottom
-                .padding(.trailing, 6)
+                .padding(.horizontal, 28)
+                .padding(.top, 40)
+                .padding(.bottom, 24)
+                .frame(maxWidth: 760, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Rectangle().fill(Stamp.lineSoft).frame(height: 1)
-            HStack(spacing: 12) {
+            FocusDivider()
+            HStack(spacing: 8) {
                 Spacer()
                 footer
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 12)
         }
     }
 }

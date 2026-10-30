@@ -17,32 +17,42 @@ struct ShortcutRecorder: View {
             HStack(spacing: 8) {
                 if recording {
                     Text("Press the new shortcut…")
-                        .font(Stamp.body)
-                        .foregroundColor(Stamp.ink)
+                        .font(Focus.control)
+                        .foregroundColor(Focus.liveText)
                         .padding(.horizontal, 12)
-                        .frame(height: 44)
-                        .stampSurface(fill: Stamp.sun, shadow: .sm)
+                        .frame(height: 36)
+                        .background(RoundedRectangle(cornerRadius: Focus.radiusControl).fill(Focus.liveSoft))
+                        .overlay(RoundedRectangle(cornerRadius: Focus.radiusControl).strokeBorder(Focus.live, lineWidth: 1))
+                } else if keyCaps.isEmpty {
+                    Text("Off")
+                        .font(Focus.control)
+                        .foregroundColor(Focus.text3)
+                        .padding(.horizontal, 12)
+                        .frame(height: 36)
+                        .overlay(RoundedRectangle(cornerRadius: Focus.radiusControl).strokeBorder(Focus.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
                 } else {
                     ForEach(Array(keyCaps.enumerated()), id: \.offset) { _, cap in
                         Text(cap)
-                            .font(Stamp.display(18))
-                            .foregroundColor(Stamp.ink)
-                            .frame(minWidth: 44, minHeight: 44)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(Focus.text)
+                            .frame(minWidth: 36, minHeight: 36)
                             .padding(.horizontal, cap.count > 1 ? 8 : 0)
-                            .stampSurface(fill: Stamp.paperRaised, shadow: .md)
+                            .background(RoundedRectangle(cornerRadius: Focus.radiusControl).fill(Focus.raised))
+                            .overlay(RoundedRectangle(cornerRadius: Focus.radiusControl).strokeBorder(Focus.lineStrong, lineWidth: 1))
+                            .shadow(color: .black.opacity(0.06), radius: 0, y: 1)
                     }
                 }
                 Spacer(minLength: 8)
                 Button(recording ? "Cancel" : "Record new") {
                     recording ? stopRecording() : startRecording()
                 }
-                .buttonStyle(.stamp(.default, size: .sm))
+                .buttonStyle(.focus())
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Shortcut \(KeyboardShortcutManager.displayString(for: shortcut))")
+            .accessibilityLabel(shortcut.isEmpty ? "Shortcut off" : "Shortcut \(KeyboardShortcutManager.displayString(for: shortcut))")
 
             if let message {
-                Text(message).font(Stamp.small).foregroundColor(Stamp.alert)
+                Text(message).font(.system(size: 12)).foregroundColor(Focus.risk)
             }
         }
         .onDisappear { stopRecording() }
@@ -50,6 +60,7 @@ struct ShortcutRecorder: View {
 
     /// "command+shift+p" → ["⇧", "⌘", "P"]
     private var keyCaps: [String] {
+        guard !shortcut.isEmpty else { return [] }
         let display = KeyboardShortcutManager.displayString(for: shortcut)
         let modifiers = display.prefix { "⌃⌥⇧⌘".contains($0) }.map(String.init)
         let key = String(display.dropFirst(modifiers.count))

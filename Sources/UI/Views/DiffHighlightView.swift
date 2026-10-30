@@ -19,60 +19,38 @@ struct DiffHighlightView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let diff {
-                    VStack(alignment: .leading, spacing: 12) {
-                        if diff.isTooLarge {
-                            Text("This text is too long to highlight every change.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Original:")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-
-                            Text(diff.original)
-                                .textSelection(.enabled)
-                                .lineSpacing(2) // Better reading experience
-                                .padding(12)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color(NSColor.controlBackgroundColor))
-                                .cornerRadius(6)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                                )
-                        }
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Corrected:")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-
-                            Text(diff.corrected)
-                                .textSelection(.enabled)
-                                .lineSpacing(2) // Better reading experience
-                                .padding(12)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.green.opacity(0.05))
-                                .cornerRadius(6)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(Color.green.opacity(0.3), lineWidth: 1)
-                                )
-                        }
+                    if diff.isTooLarge {
+                        Text("This text is too long to highlight every change.")
+                            .font(Focus.meta)
+                            .foregroundColor(Focus.text3)
                     }
+                    textBlock("Original", diff.original, fill: Focus.sidebar, border: Focus.hairline)
+                    textBlock("Corrected", diff.corrected, fill: Focus.raised, border: Focus.ok.opacity(0.35))
                 } else {
                     // No original to compare with: show the result only
-                    Text(correctedText)
-                        .textSelection(.enabled)
-                        .lineSpacing(2) // Better reading experience
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    textBlock(nil, AttributedString(correctedText), fill: Focus.raised, border: Focus.hairline)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
+        }
+    }
+
+    private func textBlock(_ title: String?, _ text: AttributedString, fill: Color, border: Color) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let title {
+                FocusCaption(text: title)
+            }
+            Text(text)
+                .font(Focus.body)
+                .foregroundColor(Focus.text)
+                .textSelection(.enabled)
+                .lineSpacing(3)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: Focus.radiusCard).fill(fill))
+                .overlay(RoundedRectangle(cornerRadius: Focus.radiusCard).strokeBorder(border, lineWidth: 1))
         }
     }
 }
@@ -158,13 +136,13 @@ enum TextDiff {
             var piece = AttributedString(token)
             if highlighted.contains(index) && !token.allSatisfy(\.isWhitespace) {
                 if isOriginal {
-                    piece.backgroundColor = Color.red.opacity(0.2)
-                    piece.foregroundColor = Color.red.opacity(0.8)
+                    piece.backgroundColor = Focus.riskTint.fill
+                    piece.foregroundColor = Focus.riskTint.text
                     piece.strikethroughStyle = .single
                 } else {
-                    piece.backgroundColor = Color.green.opacity(0.25)
-                    piece.foregroundColor = Color.green.opacity(0.9)
-                    piece.font = .body.weight(.medium)
+                    piece.backgroundColor = Focus.ok.opacity(0.14)
+                    piece.foregroundColor = Focus.ok
+                    piece.font = Focus.body.weight(.semibold)
                 }
             }
             result.append(piece)

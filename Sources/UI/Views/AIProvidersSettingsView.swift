@@ -18,33 +18,33 @@ struct AIProvidersSettingsView: View {
     }
 
     var body: some View {
-        StampSettingsPage(
+        FocusSettingsPage(
             title: "AI providers",
             subtitle: "Choose where your text is sent."
         ) {
-            HStack(alignment: .top, spacing: 18) {
+            HStack(alignment: .top, spacing: 16) {
                 providerCard(.ollama, note: "Runs on this Mac. Your text never leaves it.") {
-                    StampLabeled(label: "Server address") {
+                    FocusLabeled(label: "Server address") {
                         TextField(AIProvider.ollama.defaultURL, text: $ollamaURL)
-                            .stampField()
+                            .focusField()
                     }
                 }
                 providerCard(.openai, note: "Sends text to OpenAI. Check your company's policy first.") {
                     VStack(alignment: .leading, spacing: 12) {
-                        StampLabeled(label: "API key", hint: "Stored in your Keychain") {
+                        FocusLabeled(label: "API key", hint: "Stored in your Keychain") {
                             SecureField("sk-…", text: $openAIAPIKey)
-                                .stampField()
+                                .focusField()
                         }
-                        StampLabeled(label: "Server address") {
+                        FocusLabeled(label: "Server address") {
                             TextField(AIProvider.openai.defaultURL, text: $openAIURL)
-                                .stampField()
+                                .focusField()
                         }
                     }
                 }
             }
         } footer: {
             Button("Cancel") { dismiss() }
-                .buttonStyle(.stamp(.default))
+                .buttonStyle(.focus())
                 .keyboardShortcut(.cancelAction)
             Button("Save changes") {
                 // Save each provider's own fields; never write one provider's URL into the other
@@ -55,7 +55,7 @@ struct AIProvidersSettingsView: View {
                 )
                 dismiss()
             }
-            .buttonStyle(.stamp(.primary))
+            .buttonStyle(.focus(.primary))
             .keyboardShortcut("s", modifiers: .command)
         }
         .onAppear {
@@ -69,54 +69,57 @@ struct AIProvidersSettingsView: View {
         let isActive = appState.proofreadingProvider == provider
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text(provider.displayName).font(Stamp.title).foregroundColor(Stamp.ink)
+                Text(provider.displayName).font(Focus.header).foregroundColor(Focus.text)
                 Spacer()
                 if isActive {
-                    StampBadge(text: "Active", tone: .sky)
+                    FocusStatusLabel(text: "Active", tone: .ok)
                 } else {
                     Button("Make active") { appState.setProvider(provider) }
-                        .buttonStyle(.stamp(.default, size: .sm))
+                        .buttonStyle(.focus())
                 }
             }
             Text(note)
-                .font(Stamp.small)
-                .foregroundColor(Stamp.inkMuted)
+                .font(Focus.meta)
+                .foregroundColor(Focus.text3)
                 .fixedSize(horizontal: false, vertical: true)
 
             fields()
 
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
                 statusText(for: provider)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button("Test connection") {
                     Task { await test(provider) }
                 }
-                .buttonStyle(.stamp(.default, size: .sm))
+                .buttonStyle(.focus())
                 .fixedSize()
                 .disabled(status[provider] == .testing)
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .stampSurface(fill: Stamp.paperRaised, radius: Stamp.radiusLg,
-                      stroke: isActive ? Stamp.stroke2 : Stamp.stroke1, shadow: isActive ? .lg : .md)
+        .background(RoundedRectangle(cornerRadius: Focus.radiusPanel).fill(Focus.raised))
+        .overlay(
+            RoundedRectangle(cornerRadius: Focus.radiusPanel)
+                .strokeBorder(isActive ? Focus.lineStrong : Focus.hairline, lineWidth: 1)
+        )
     }
 
     @ViewBuilder
     private func statusText(for provider: AIProvider) -> some View {
         switch status[provider] {
         case .none:
-            Text(" ").font(Stamp.small)
+            Text(" ").font(Focus.meta)
         case .testing:
-            Text("Connecting…").font(Stamp.small).foregroundColor(Stamp.inkSubtle)
+            Text("Connecting…").font(Focus.meta).foregroundColor(Focus.text3)
         case .connected(let count):
             Label("Connected · \(count) models", systemImage: "checkmark.circle")
-                .font(Stamp.small.weight(.bold))
-                .foregroundColor(Stamp.ink)
+                .font(Focus.meta.weight(.medium))
+                .foregroundColor(Focus.ok)
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.circle")
-                .font(Stamp.small)
-                .foregroundColor(Stamp.alert)
+                .font(Focus.meta)
+                .foregroundColor(Focus.risk)
                 .lineLimit(3)
         }
     }
