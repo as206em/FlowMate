@@ -483,6 +483,171 @@ private struct FocusPointerCursor: ViewModifier {
     }
 }
 
+// MARK: - Calendar
+
+/// A month calendar for date popovers, replacing the small system one: month and year with
+/// ‹ › and Today, weekday initials, then 36×32 day cells. The selected day is filled, today has
+/// a ring, days of the next and previous month are faint and still clickable.
+struct FocusCalendar: View {
+    /// The selected day, if any
+    let selection: Date?
+    let select: (Date) -> Void
+
+    @State private var month: Date
+
+    init(selection: Date?, select: @escaping (Date) -> Void) {
+        self.selection = selection
+        self.select = select
+        _month = State(initialValue: Self.calendar.startOfMonth(selection ?? Date()))
+    }
+
+    private static var calendar: Calendar { Calendar.current }
+    static let cellWidth: CGFloat = 36
+    static let cellHeight: CGFloat = 32
+
+    var body: some View {
+        VStack(spacing: 6) {
+            header
+            HStack(spacing: 0) {
+                ForEach(Self.weekdaySymbols, id: \.self) { symbol in
+                    Text(symbol)
+                        .font(Focus.caption)
+                        .foregroundColor(Focus.text3)
+                        .frame(width: Self.cellWidth, height: 20)
+                }
+            }
+            VStack(spacing: 2) {
+                ForEach(Self.weeks(of: month), id: \.self) { week in
+                    HStack(spacing: 0) {
+                        ForEach(week, id: \.self) { day in
+                            FocusCalendarDay(
+                                day: day,
+                                inMonth: Self.calendar.isDate(day, equalTo: month, toGranularity: .month),
+                                isSelected: selection.map { Self.calendar.isDate($0, inSameDayAs: day) } ?? false,
+                                isToday: Self.calendar.isDateInToday(day)
+                            ) { select(day) }
+                        }
+                    }
+                }
+            }
+        }
+        .fixedSize()
+    }
+
+    private var header: some View {
+        HStack(spacing: 2) {
+            Text(Self.monthTitle(month))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(Focus.text)
+                .padding(.leading, 6)
+            Spacer(minLength: 8)
+            Button("Today") { withAnimation(Focus.hoverAnimation) { month = Self.calendar.startOfMonth(Date()) } }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(Focus.text2)
+                .padding(.horizontal, 6)
+            stepButton("chevron.left", label: "Previous month", by: -1)
+            stepButton("chevron.right", label: "Next month", by: 1)
+        }
+        .frame(height: 30)
+    }
+
+    private func stepButton(_ icon: String, label: String, by offset: Int) -> some View {
+        FocusCalendarStepButton(icon: icon) {
+            if let next = Self.calendar.date(byAdding: .month, value: offset, to: month) {
+                month = Self.calendar.startOfMonth(next)
+            }
+        }
+        .accessibilityLabel(label)
+    }
+
+    /// Weekday initials in the user's order (Su Mo … or Mo Tu …)
+    static var weekdaySymbols: [String] {
+        let symbols = calendar.veryShortStandaloneWeekdaySymbols
+        let first = calendar.firstWeekday - 1
+        return Array(symbols[first...] + symbols[..<first])
+    }
+
+    /// The month's weeks, each seven days, padded with the neighbouring months' days.
+    static func weeks(of month: Date) -> [[Date]] {
+        let cal = calendar
+        let start = cal.startOfMonth(month)
+        let lead = (cal.component(.weekday, from: start) - cal.firstWeekday + 7) % 7
+        guard let gridStart = cal.date(byAdding: .day, value: -lead, to: start),
+              let days = cal.range(of: .day, in: .month, for: start)?.count else { return [] }
+        let weekCount = Int((Double(lead + days) / 7).rounded(.up))
+        return (0..<weekCount).map { week in
+            (0..<7).compactMap { cal.date(byAdding: .day, value: week * 7 + $0, to: gridStart) }
+        }
+    }
+
+    static func monthTitle(_ month: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("MMMM yyyy")
+        return formatter.string(from: month)
+    }
+}
+
+private struct FocusCalendarDay: View {
+    let day: Date
+    let inMonth: Bool
+    let isSelected: Bool
+    let isToday: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text("\(Calendar.current.component(.day, from: day))")
+                .font(.system(size: 13, weight: isSelected || isToday ? .semibold : .regular).monospacedDigit())
+                .foregroundColor(isSelected ? .white : (inMonth ? Focus.text : Focus.text3.opacity(0.55)))
+                .frame(width: FocusCalendar.cellWidth - 2, height: FocusCalendar.cellHeight)
+                .background(RoundedRectangle(cornerRadius: Focus.radiusControl).fill(fill))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Focus.radiusControl)
+                        .strokeBorder(isToday && !isSelected ? Focus.lineStrong : .clear, lineWidth: 1)
+                )
+                .frame(width: FocusCalendar.cellWidth)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(DateFormatter.localizedString(from: day, dateStyle: .full, timeStyle: .none))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var fill: Color {
+        if isSelected { return Focus.text }
+        return hovering ? Focus.hover : .clear
+    }
+}
+
+private struct FocusCalendarStepButton: View {
+    let icon: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(Focus.text2)
+                .frame(width: 28, height: 28)
+                .background(RoundedRectangle(cornerRadius: Focus.radiusControl).fill(hovering ? Focus.hover : .clear))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+private extension Calendar {
+    func startOfMonth(_ date: Date) -> Date {
+        self.date(from: dateComponents([.year, .month], from: date)) ?? startOfDay(for: date)
+    }
+}
+
 // MARK: - Column header
 
 /// One column label over a table of rows: caption type, text3, with a sort arrow when active.
@@ -1341,6 +1506,35 @@ struct FocusShortcutRow: View {
 
 /// A clickable breadcrumb in a side panel header: `text2`, and a hover fill with `text` when hovered.
 /// `muted` (`text3`) is for an empty value such as "No milestone".
+/// "‹ Atlas": returns to the panel the current one was opened from. Same look as a crumb.
+struct FocusBackButton: View {
+    let title: String
+    var help: String = ""
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
+                Text(title).font(Focus.body).lineLimit(1)
+            }
+            .foregroundColor(hovering ? Focus.text : Focus.text2)
+            .padding(.horizontal, 7)
+            .frame(height: 26)
+            .background(RoundedRectangle(cornerRadius: Focus.radiusTag).fill(hovering ? Focus.hover : Focus.sidebar))
+            .overlay(RoundedRectangle(cornerRadius: Focus.radiusTag).strokeBorder(Focus.hairline, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .focusPointerCursor()
+        .help(help)
+        .accessibilityLabel(help.isEmpty ? "Back to \(title)" : help)
+    }
+}
+
 struct FocusCrumb: View {
     let text: String
     var help: String = ""

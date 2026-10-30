@@ -33,10 +33,13 @@ struct BoardView: View {
                 ForEach(TaskStatus.ordered) { status in
                     column(status)
                         .frame(maxWidth: .infinity, alignment: .top)
+                        .zIndex(model.activeComposer == Self.composerKey(status) ? 1 : 0)
                 }
             }
         }
     }
+
+    static func composerKey(_ status: TaskStatus) -> String { "composer-board-\(status.rawValue)" }
 
     private func column(_ status: TaskStatus) -> some View {
         let tasks = model.boardTasks(store, status: status)
@@ -74,6 +77,7 @@ struct BoardView: View {
                                 .strokeBorder(Focus.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                         )
                 }
+                TaskComposer(key: Self.composerKey(status), preset: .status(status), isDefault: status == .todo, groupName: status.title)
             }
             Spacer(minLength: 0)
         }

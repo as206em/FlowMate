@@ -1,6 +1,6 @@
 import Foundation
 
-// Menu bar and first-run polish: sample data, the menu's project task lists and keyboard rows,
+// Menu bar and first-run polish: sample data, the menu's In progress list and keyboard rows,
 // and the quick-add preview shared by the menu and the floating New task box.
 
 // MARK: - Sample data (first launch)
@@ -39,51 +39,19 @@ extension TaskStore {
     }
 }
 
-// MARK: - Menu bar projects and keyboard rows
+// MARK: - Menu bar in-progress tasks and keyboard rows
 
 /// A row in the menu bar dropdown (search empty) that ↑/↓ can highlight.
 enum MenuRowItem: Hashable, Sendable {
-    /// A task in the "N running" section at the top
+    /// A task whose timer runs (tinted, with the live clock)
     case running(UUID)
-    case project(UUID)
-    /// A task listed under its expanded project
+    /// An In progress task whose timer is paused
     case task(UUID)
 
-    var taskId: UUID? {
+    var taskId: UUID {
         switch self {
         case let .running(id), let .task(id): return id
-        case .project: return nil
         }
-    }
-
-    var projectId: UUID? {
-        if case let .project(id) = self { return id }
-        return nil
-    }
-}
-
-/// Which projects list their tasks in the menu. A running project is open unless you closed it;
-/// any other project is closed unless you opened it.
-struct MenuExpansion: Equatable {
-    var opened: Set<UUID> = []
-    var closed: Set<UUID> = []
-
-    func isExpanded(_ id: UUID, running: Bool) -> Bool {
-        running ? !closed.contains(id) : opened.contains(id)
-    }
-
-    mutating func set(_ id: UUID, expanded: Bool, running: Bool) {
-        if expanded {
-            closed.remove(id)
-            if !running { opened.insert(id) }
-        } else {
-            opened.remove(id)
-            if running { closed.insert(id) }
-        }
-    }
-
-    mutating func toggle(_ id: UUID, running: Bool) {
-        set(id, expanded: !isExpanded(id, running: running), running: running)
     }
 }
 
@@ -107,28 +75,21 @@ struct MenuBrowseModel: Equatable {
 }
 
 extension TaskStore {
-    /// The tasks a project lists when expanded in the menu, so you can pick which one its play
-    /// button starts: running ones and the open tasks of the active sprint; when the sprint has
-    /// none, the open tasks planned next and then the backlog.
-    func menuProjectTasks(_ projectId: UUID) -> (tasks: [TaskItem], fromSprint: Bool) {
-        let all = tasks(of: projectId)
-        let sprint = all.filter { ($0.sprintSlot == .active && !$0.isDone) || isRunning($0.id) }
-        if !sprint.isEmpty { return (sprint, true) }
-        let later = all.filter { $0.sprintSlot == .next && !$0.isDone } + all.filter { $0.sprintSlot == .backlog && !$0.isDone }
-        return (later, false)
+    /// The menu's task list: every running task (earliest started first), then the other In progress
+    /// tasks of all active projects, most recently changed first.
+    var menuInProgressTasks: (running: [TaskItem], paused: [TaskItem]) {
+        let running = runningTasks
+        let activeProjects = Set(projects.map(\.id))
+        let paused = workspace.tasks
+            .filter { $0.status == .inProgress && !isRunning($0.id) && activeProjects.contains($0.projectId) }
+            .sorted { $0.updatedAt == $1.updatedAt ? $0.sortIndex < $1.sortIndex : $0.updatedAt > $1.updatedAt }
+        return (running, paused)
     }
 
-    /// Menu rows top to bottom, as ↑/↓ walk them: running timers, then each project followed by
-    /// its tasks when expanded (up to `taskLimit`).
-    func menuBrowseItems(expansion: MenuExpansion, taskLimit: Int = 8) -> MenuBrowseModel {
-        var items = runningTasks.map { MenuRowItem.running($0.id) }
-        for project in projects {
-            items.append(.project(project.id))
-            if expansion.isExpanded(project.id, running: isProjectRunning(project.id)) {
-                items += menuProjectTasks(project.id).tasks.prefix(taskLimit).map { .task($0.id) }
-            }
-        }
-        return MenuBrowseModel(items: items)
+    /// Menu rows top to bottom, as ↑/↓ walk them: running timers, then the paused In progress tasks.
+    func menuBrowseItems() -> MenuBrowseModel {
+        let listed = menuInProgressTasks
+        return MenuBrowseModel(items: listed.running.map { .running($0.id) } + listed.paused.map { .task($0.id) })
     }
 
     /// Where the menu's quick add goes: the last project used (remembered across launches),

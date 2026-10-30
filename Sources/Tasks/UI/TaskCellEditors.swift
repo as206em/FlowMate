@@ -79,20 +79,14 @@ struct DateEditor: View {
                 .padding(4)
                 FocusDivider()
             }
-            DatePicker(
-                "Date",
-                selection: Binding(
-                    get: { date ?? Date() },
-                    set: { set(Calendar.current.startOfDay(for: $0)) }
-                ),
-                displayedComponents: .date
-            )
-            .datePickerStyle(.graphical)
-            .labelsHidden()
+            FocusCalendar(selection: date) { day in
+                set(Calendar.current.startOfDay(for: day))
+                close()
+            }
             .padding(10)
             .frame(maxWidth: .infinity)
         }
-        .frame(width: 250)
+        .frame(width: 280)
         .background(Focus.raised)
         .focusLight()
     }

@@ -31,7 +31,7 @@ struct MilestonesView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: Focus.radiusPanel))
         .focusPanel()
-        .frame(maxWidth: 1000, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .milestoneDeleteAlert($pendingDelete)
     }
 

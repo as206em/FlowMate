@@ -124,8 +124,9 @@ extension TasksViewModel {
             guard store.canRedo else { return false }
             redo(store)
         case .newTask:
-            // The field sits in the header, under the panel's scrim
+            // The composer sits under the header, below the panel's scrim; Milestones has none
             closePanel()
+            if effectiveTab == .milestones { tab = .list }
             requestFocus(.newTask)
         case .newProject:
             requestFocus(.newProject)

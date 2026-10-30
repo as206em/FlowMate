@@ -1,8 +1,8 @@
 import XCTest
 @testable import FlowMate
 
-/// Menu bar and polish: save and load problems, sample data, empty states, the menu's project
-/// tasks and keyboard rows, the quick-add target and global shortcut, and restoring the window.
+/// Menu bar and polish: save and load problems, sample data, empty states, the menu's In progress
+/// list and keyboard rows, the quick-add target and global shortcut, and restoring the window.
 @MainActor
 final class TaskMenuPolishBatch5Tests: XCTestCase {
     private let t0 = Date(timeIntervalSince1970: 1_793_000_000)
@@ -189,60 +189,45 @@ final class TaskMenuPolishBatch5Tests: XCTestCase {
         XCTAssertNil(model.boardEmptyReason(store))
     }
 
-    // MARK: - #34 Menu project tasks and #35 keyboard rows
+    // MARK: - Menu: tasks in progress and keyboard rows
 
-    func testMenuProjectTasksAndExpansion() async {
+    func testMenuListsInProgressTasksFromAllProjects() async {
         let (store, pid) = await makeStore()
-        let later = store.addTask(title: "Later", projectId: pid, sprintSlot: .next, now: t0)!
-        let idea = store.addTask(title: "Idea", projectId: pid, sprintSlot: .backlog, now: t0)!
-        var listed = store.menuProjectTasks(pid)
-        XCTAssertFalse(listed.fromSprint)
-        XCTAssertEqual(listed.tasks.map(\.id), [later, idea], "with an empty sprint: Next, then Backlog")
+        let other = store.addProject(name: "Beta", now: t0)!
+        let archived = store.addProject(name: "Old", now: t0)!
+        let todo = store.addTask(title: "Todo", projectId: pid, now: t0)!
+        let paused = store.addTask(title: "Paused", projectId: other, now: t0)!
+        let running = store.addTask(title: "Running", projectId: pid, now: t0)!
+        let hidden = store.addTask(title: "Hidden", projectId: archived, now: t0)!
+        store.setStatus(paused, .inProgress)
+        store.setStatus(hidden, .inProgress)
+        store.archiveProject(archived)
+        store.startTimer(running, now: t0)
 
-        let a = store.addTask(title: "A", projectId: pid, now: t0)!
-        let done = store.addTask(title: "Done", projectId: pid, now: t0)!
-        store.setStatus(done, .done)
-        listed = store.menuProjectTasks(pid)
-        XCTAssertTrue(listed.fromSprint)
-        XCTAssertEqual(listed.tasks.map(\.id), [a], "open sprint tasks only")
+        let listed = store.menuInProgressTasks
+        XCTAssertEqual(listed.running.map(\.id), [running])
+        XCTAssertEqual(listed.paused.map(\.id), [paused], "In progress from every active project; To do and archived left out")
+        XCTAssertFalse(listed.paused.contains { $0.id == todo })
 
-        var expansion = MenuExpansion()
-        XCTAssertFalse(expansion.isExpanded(pid, running: false))
-        XCTAssertTrue(expansion.isExpanded(pid, running: true), "a running project starts open")
-        expansion.toggle(pid, running: false)
-        XCTAssertTrue(expansion.isExpanded(pid, running: false))
-        expansion.toggle(pid, running: true)
-        XCTAssertFalse(expansion.isExpanded(pid, running: true), "you can close a running one")
-        expansion.set(pid, expanded: true, running: true)
-        XCTAssertTrue(expansion.isExpanded(pid, running: true))
+        store.pauseTimer(running, now: t0.addingTimeInterval(60))
+        XCTAssertTrue(store.menuInProgressTasks.running.isEmpty)
+        XCTAssertEqual(Set(store.menuInProgressTasks.paused.map(\.id)), [paused, running], "a paused timer stays listed")
     }
 
     func testMenuBrowseRowsAndHighlight() async {
         let (store, pid) = await makeStore()
-        let other = store.addProject(name: "Beta", now: t0)!
         let a = store.addTask(title: "A", projectId: pid, now: t0)!
         let b = store.addTask(title: "B", projectId: pid, now: t0)!
+        store.setStatus(a, .inProgress)
         store.startTimer(b, now: t0)
 
-        // Alpha runs, so it's open; Beta is closed
-        var browse = store.menuBrowseItems(expansion: MenuExpansion())
-        XCTAssertEqual(browse.items, [.running(b), .project(pid), .task(a), .task(b), .project(other)])
-
+        let browse = store.menuBrowseItems()
+        XCTAssertEqual(browse.items, [.running(b), .task(a)])
         XCTAssertEqual(browse.moving(nil, by: 1), .running(b), "↓ from nothing starts at the top")
-        XCTAssertEqual(browse.moving(nil, by: -1), .project(other), "↑ from nothing starts at the bottom")
-        XCTAssertEqual(browse.moving(.task(a), by: 1), .task(b))
-        XCTAssertEqual(browse.moving(.project(other), by: 1), .project(other), "clamped")
+        XCTAssertEqual(browse.moving(nil, by: -1), .task(a), "↑ from nothing starts at the bottom")
+        XCTAssertEqual(browse.moving(.task(a), by: 1), .task(a), "clamped")
         XCTAssertNil(browse.validated(.task(UUID())))
-
-        var expansion = MenuExpansion()
-        expansion.set(pid, expanded: false, running: true)
-        browse = store.menuBrowseItems(expansion: expansion, taskLimit: 1)
-        XCTAssertEqual(browse.items, [.running(b), .project(pid), .project(other)])
-        expansion.set(pid, expanded: true, running: true)
-        browse = store.menuBrowseItems(expansion: expansion, taskLimit: 1)
-        XCTAssertEqual(browse.items, [.running(b), .project(pid), .task(a), .project(other)], "only the shown rows")
         XCTAssertEqual(MenuRowItem.running(b).taskId, b)
-        XCTAssertEqual(MenuRowItem.project(pid).projectId, pid)
     }
 
     // MARK: - #36 Quick-add target

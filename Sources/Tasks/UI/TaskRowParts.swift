@@ -140,7 +140,7 @@ struct TaskStatusMenuItems: View {
 
 /// Task title that opens the side panel. Regular weight, medium while its timer runs.
 /// No underline on hover: the row's hover fill and a pointing-hand cursor show it's clickable.
-/// With `rename`, a double-click renames in place (a single click then waits a moment for a second one).
+/// With `rename`, a double-click renames in place. The first click opens at once (no waiting for a second).
 struct TaskTitleButton: View {
     @EnvironmentObject private var store: TaskStore
     let task: TaskItem
@@ -153,7 +153,11 @@ struct TaskTitleButton: View {
     var body: some View {
         if let rename {
             title
-                .gesture(TapGesture(count: 2).onEnded(rename).exclusively(before: TapGesture().onEnded(open)))
+                // One single-tap gesture, so the click opens immediately; the second click of a
+                // double-click arrives with clickCount 2 and renames instead
+                .onTapGesture {
+                    if (NSApp.currentEvent?.clickCount ?? 1) >= 2 { rename() } else { open() }
+                }
                 .focusPointerCursor()
                 .help("Click to open, double-click to rename")
                 .accessibilityElement(children: .ignore)

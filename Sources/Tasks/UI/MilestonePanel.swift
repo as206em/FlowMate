@@ -12,6 +12,10 @@ struct MilestonePanel: View {
         if let milestone = store.milestone(milestoneId) {
             VStack(spacing: 0) {
                 SidePanelHeader(closeLabel: "Close milestone", close: { model.closePanel() }) {
+                    if case let .project(backId)? = model.panelBack, let back = store.project(backId) {
+                        FocusBackButton(title: back.name, help: "Back to \(back.name)'s settings") { model.goBack() }
+                        Rectangle().fill(Focus.hairline).frame(width: 1, height: 18).padding(.horizontal, 4)
+                    }
                     if let project = store.project(milestone.projectId) {
                         FocusProjectTile(name: project.name, colorHex: project.colorHex)
                         FocusCrumb(text: project.name, help: "Open project") { model.openProject(project.id) }

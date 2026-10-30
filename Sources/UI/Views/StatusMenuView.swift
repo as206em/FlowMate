@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// The dropdown that opens from the menu bar icon, in Focus (docs/design/reference/FocusMenu.dc.html):
-/// search / quick add, running timers, projects, the proofreading tools and a footer.
+/// search / quick add, the tasks in progress, the proofreading tools and a footer.
 struct StatusMenuView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var store: TaskStore
@@ -48,8 +48,7 @@ struct StatusMenuView: View {
                                 activate: activate
                             )
                         } else {
-                            MenuRunningSection()
-                            MenuProjectsSection()
+                            MenuInProgressSection()
                         }
                         FocusDivider()
                         proofreading
@@ -59,7 +58,12 @@ struct StatusMenuView: View {
                     })
                 }
                 .frame(height: min(max(scrollHeight, 1), maxScrollHeight))
-                .onPreferenceChange(ContentHeightKey.self) { scrollHeight = $0 }
+                .onPreferenceChange(ContentHeightKey.self) { height in
+                    scrollHeight = height
+                    // The menu bar window doesn't shrink on its own when rows go away (a timer
+                    // paused), which left blank space above and below the content
+                    DispatchQueue.main.async { MenuBarPanel.fitToContent() }
+                }
                 .onChange(of: menu.highlight) { item in
                     guard let item else { return }
                     withAnimation(Focus.hoverAnimation) { proxy.scrollTo(item) }
@@ -98,7 +102,7 @@ struct StatusMenuView: View {
     }
 
     private var browse: MenuBrowseModel {
-        store.menuBrowseItems(expansion: menu.expansion, taskLimit: MenuProjectsSection.taskLimit)
+        store.menuBrowseItems()
     }
 
     /// The browse highlight while it's still on screen
@@ -110,16 +114,11 @@ struct StatusMenuView: View {
             guard let current = currentHighlight else { return target == nil ? nil : "⌘↵ add" }
             return current == .add ? "↵ add" : "↵ open"
         }
-        switch browseHighlight {
-        case .project?: return "␣ start"
-        case .running?, .task?: return "␣ timer"
-        case nil: return nil
-        }
+        return browseHighlight == nil ? nil : "␣ timer"
     }
 
     /// The menu's keys. Searching: ↑/↓ move through results, ↵ opens, ⌘↵ adds. Field empty:
-    /// ↑/↓ move through running timers, projects and listed tasks; Space starts or pauses;
-    /// ↵ opens; → lists a project's tasks and ← hides them; Esc clears the highlight.
+    /// ↑/↓ move through the tasks in progress; Space starts or pauses; ↵ opens; Esc clears the highlight.
     private func handleKey(_ key: MenuKey) -> Bool {
         if isSearching {
             switch key {
@@ -139,30 +138,14 @@ struct StatusMenuView: View {
             return true
         case .space:
             guard let current else { return false }
-            if let id = current.taskId {
-                store.toggleTimer(id)
-            } else if let id = current.projectId {
-                MenuActions.toggleProject(id, store: store)
-            }
+            store.toggleTimer(current.taskId)
             return true
         case .returnKey:
             guard let current else { return false }
-            if let id = current.taskId {
-                MenuNavigation.openTask(id)
-            } else if let id = current.projectId {
-                MenuNavigation.openProject(id)
-            }
+            MenuNavigation.openTask(current.taskId)
             return true
-        case .right, .left:
-            guard let current else { return false }
-            let expand = key == .right
-            let projectId = current.projectId ?? current.taskId.flatMap { store.task($0)?.projectId }
-            guard let projectId else { return true }
-            withAnimation(Focus.hoverAnimation) {
-                menu.expansion.set(projectId, expanded: expand, running: store.isProjectRunning(projectId))
-            }
-            if !expand, case .task = current { menu.highlight = .project(projectId) }
-            return true
+        case .left, .right:
+            return false
         case .escape:
             guard current != nil else { return false }
             menu.highlight = nil
@@ -468,7 +451,22 @@ private struct ContentHeightKey: PreferenceKey {
 enum MenuBarPanel {
     /// Closes the panel, e.g. before opening another window
     static func close() {
-        let panel = NSApp.windows.first { $0.className.contains("MenuBarExtra") && $0.isVisible }
-        (panel ?? NSApp.keyWindow)?.close()
+        (window ?? NSApp.keyWindow)?.close()
+    }
+
+    private static var window: NSWindow? {
+        NSApp.windows.first { $0.className.contains("MenuBarExtra") && $0.isVisible }
+    }
+
+    /// Sizes the open panel to its content, keeping its top edge under the menu bar.
+    @MainActor
+    static func fitToContent() {
+        guard let window, let content = window.contentView else { return }
+        let size = content.fittingSize
+        guard size.height > 0, abs(size.height - window.frame.height) > 0.5 else { return }
+        var frame = window.frame
+        frame.origin.y = frame.maxY - size.height
+        frame.size.height = size.height
+        window.setFrame(frame, display: true)
     }
 }

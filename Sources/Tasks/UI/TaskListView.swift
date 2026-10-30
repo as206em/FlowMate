@@ -25,6 +25,7 @@ struct TaskListView: View {
             sort: Binding(get: { model.sort }, set: { model.sort = $0 }),
             caption: hidden > 0 ? "\(hidden) \(hidden == 1 ? "task" : "tasks") from past sprints hidden. Filter by Sprint › Past sprints to show them." : ""
         ) {
+            let firstOpen = groups.first(where: \.acceptsDrop)?.id
             VStack(alignment: .leading, spacing: 22) {
                 ForEach(groups) { group in
                     TaskGroupSection(
@@ -34,12 +35,13 @@ struct TaskListView: View {
                         colorHex: group.colorHex,
                         tasks: group.tasks,
                         emptyText: emptyText(group, filtering: filtering),
-                        drop: group.acceptsDrop ? .group(group.value, reorder: model.sort.isManual) : nil
+                        drop: group.acceptsDrop ? .group(group.value, reorder: model.sort.isManual) : nil,
+                        composerIsDefault: group.id == firstOpen
                     )
                 }
             }
         }
-        .frame(maxWidth: 1000, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// The grouped-by column repeats the group header, so it's hidden (Project stays: its tile helps).
@@ -95,7 +97,7 @@ struct SprintPlanView: View {
                 pastSprints
             }
         }
-        .frame(maxWidth: 1000, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Completed sprints, newest first, collapsed until opened: "Sprint 3 · Oct 12 – Oct 25 · 8 of 10 done".
@@ -127,7 +129,8 @@ struct SprintPlanView: View {
             tasks: store.sprintTasks(projectId: projectId, slot: slot),
             emptyText: empty,
             showProject: false,
-            drop: .slot(slot)
+            drop: .slot(slot),
+            composerIsDefault: slot == .active
         )
     }
 }
@@ -153,6 +156,10 @@ struct TaskGroupSection: View {
     let emptyText: String
     var showProject: Bool?
     var drop: TaskGroupDrop?
+    /// ⌘N opens this group's New task composer
+    var composerIsDefault = false
+
+    private var composerKey: String { "composer-" + key }
 
     var body: some View {
         let open = !model.isCollapsed(key)
@@ -201,6 +208,12 @@ struct TaskGroupSection: View {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: Focus.radiusPanel))
                 .focusPanel()
+
+                // Outside the clipped panel, so its suggestion menu can hang below it
+                if let drop {
+                    TaskComposer(key: composerKey, preset: Self.preset(drop), isDefault: composerIsDefault, groupName: title)
+                        .padding(.top, 6)
+                }
             }
         }
         .overlay(
@@ -209,6 +222,15 @@ struct TaskGroupSection: View {
                 .padding(-4)
         )
         .modifier(GroupDrop(key: key, drop: drop))
+        .zIndex(model.activeComposer == composerKey ? 1 : 0)
+    }
+
+    /// The value a task added to the group gets
+    static func preset(_ drop: TaskGroupDrop) -> TaskGroupValue {
+        switch drop {
+        case let .slot(slot): return .sprint(slot)
+        case let .group(value, _): return value
+        }
     }
 
     @ViewBuilder
@@ -260,7 +282,8 @@ struct TaskGroupSection: View {
 /// A 46pt task row laid out in the table's columns (TaskColumns.swift): status, project, title with
 /// subtask count, milestone, sprint, due, priority, expected/live time and the timer ring.
 /// Empty cells show "–". Milestone, sprint, due, priority and expected open a small editor on click;
-/// a double-click on the title renames in place. A click on the row's empty space selects it.
+/// a double-click on the title renames in place. A click anywhere else on the row opens the task
+/// (⌘ or ⇧ click selects instead).
 struct TaskRow: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
@@ -277,7 +300,9 @@ struct TaskRow: View {
                 cell(column)
             }
         }
-        .onTapGesture { model.selectByClick(task.id, store: store) }
+        .contentShape(Rectangle())
+        .onTapGesture { model.clickTitle(task.id, store: store) }
+        .focusPointerCursor()
         .contextMenu { TaskContextMenu(task: task, rename: { renaming = true }) }
     }
 

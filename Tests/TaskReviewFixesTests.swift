@@ -73,3 +73,36 @@ final class TaskReviewFixesTests: XCTestCase {
         XCTAssertFalse(TasksShortcut.undo.usesPlainKey)
     }
 }
+
+/// Feedback round: a milestone opened from its project panel goes Back to it; a calendar month
+/// has whole weeks starting on the user's first weekday.
+@MainActor
+final class TaskFeedbackRoundTests: XCTestCase {
+    func testMilestoneFromProjectPanelGoesBack() {
+        let model = TasksViewModel()
+        let project = UUID(), milestone = UUID()
+        model.openProject(project)
+        model.openMilestone(milestone, from: .project(project))
+        XCTAssertEqual(model.openDetail, .milestone(milestone))
+        XCTAssertEqual(model.panelBack, .project(project))
+        model.goBack()
+        XCTAssertEqual(model.openDetail, .project(project))
+        XCTAssertNil(model.panelBack)
+
+        model.openMilestone(milestone)
+        XCTAssertNil(model.panelBack, "opened from elsewhere: no Back")
+        model.openMilestone(milestone, from: .project(project))
+        model.closePanel()
+        XCTAssertNil(model.panelBack)
+    }
+
+    func testCalendarWeeksAreWholeAndCoverTheMonth() {
+        let cal = Calendar.current
+        let month = cal.date(from: DateComponents(year: 2026, month: 2, day: 1))!
+        let weeks = FocusCalendar.weeks(of: month)
+        XCTAssertTrue(weeks.allSatisfy { $0.count == 7 })
+        XCTAssertEqual(cal.component(.weekday, from: weeks[0][0]), cal.firstWeekday)
+        let days = weeks.flatMap { $0 }.filter { cal.component(.month, from: $0) == 2 }
+        XCTAssertEqual(days.count, 28)
+    }
+}

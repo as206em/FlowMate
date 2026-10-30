@@ -39,15 +39,17 @@ struct TasksShortcutsHelp: View {
             Shortcut(label: "Redo", keys: ["⇧", "⌘", "Z"]),
             Shortcut(label: "Rename in the list", keys: ["Double-click"]),
         ]),
-        Section(title: "New task field", shortcuts: [
+        Section(title: "New task", shortcuts: [
             Shortcut(label: "Add and open", keys: ["⇧", "↵"]),
-            Shortcut(label: "Priority", keys: ["!high", "!low"]),
+            Shortcut(label: "Expected time", keys: ["2h", "90m"]),
+            Shortcut(label: "Sprint", keys: ["#next", "#backlog"]),
             Shortcut(label: "Milestone", keys: ["@beta"]),
-            Shortcut(label: "Due date", keys: ["due:fri", "due:nov18"]),
-            Shortcut(label: "Expected time", keys: ["~90m"]),
+            Shortcut(label: "Priority", keys: ["!high", "!low"]),
+            Shortcut(label: "Due date", keys: ["due:fri", "tomorrow"]),
+            Shortcut(label: "Every option", keys: ["/"]),
         ]),
         Section(title: "Menu bar", shortcuts: [
-            Shortcut(label: "Move through timers, projects, tasks", keys: ["↑", "↓"]),
+            Shortcut(label: "Move through tasks in progress", keys: ["↑", "↓"]),
             Shortcut(label: "Start or pause the timer", keys: ["Space"]),
             Shortcut(label: "Open in FlowMate", keys: ["↵"]),
             Shortcut(label: "Show or hide a project's tasks", keys: ["→", "←"]),

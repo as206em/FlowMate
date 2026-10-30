@@ -57,6 +57,9 @@ final class TasksViewModel: ObservableObject {
     @Published var openTaskId: UUID?
     /// The project or milestone shown in the side panel, or nil.
     @Published var openDetail: DetailPanel?
+    /// The panel the open one was reached from (a milestone opened from its project panel); its
+    /// header shows a Back button to it.
+    @Published var panelBack: DetailPanel?
     /// Projects whose milestones are listed under them in the sidebar.
     @Published var expandedProjects: Set<UUID> = [] {
         didSet { if expandedProjects != oldValue { saveWindowState() } }
@@ -89,6 +92,8 @@ final class TasksViewModel: ObservableObject {
     /// Drop target under the pointer, for the dashed outline ("status-todo", "slot-next", …).
     @Published var dropTarget: String?
     @Published var focusRequest: FocusRequest?
+    /// The New task composer that's open (its group's key); nil when all show their ＋ button
+    @Published var activeComposer: String?
     @Published var toast: Toast?
     /// The keyboard shortcuts popover (⌘/ or the ? button)
     @Published var showingShortcuts = false
@@ -150,6 +155,7 @@ final class TasksViewModel: ObservableObject {
     /// Replaces a project or milestone panel.
     func openTask(_ id: UUID) {
         selectedTaskId = id
+        panelBack = nil
         withAnimation(Focus.sheetAnimation) {
             openDetail = nil
             openTaskId = id
@@ -158,6 +164,7 @@ final class TasksViewModel: ObservableObject {
 
     /// Opens the project panel (settings, milestones, sprint, archive). Replaces any other panel.
     func openProject(_ id: UUID) {
+        panelBack = nil
         withAnimation(Focus.sheetAnimation) {
             openTaskId = nil
             openDetail = .project(id)
@@ -165,7 +172,9 @@ final class TasksViewModel: ObservableObject {
     }
 
     /// Opens the milestone panel (details, progress, its tasks). Replaces any other panel.
-    func openMilestone(_ id: UUID) {
+    /// `from` is the panel to go Back to (the project panel it was opened from).
+    func openMilestone(_ id: UUID, from back: DetailPanel? = nil) {
+        panelBack = back
         withAnimation(Focus.sheetAnimation) {
             openTaskId = nil
             openDetail = .milestone(id)
@@ -178,9 +187,20 @@ final class TasksViewModel: ObservableObject {
         withAnimation(Focus.sheetAnimation) { openTaskId = nil }
     }
 
+    /// Back to the panel this one was opened from.
+    func goBack() {
+        guard let back = panelBack else { return }
+        panelBack = nil
+        withAnimation(Focus.sheetAnimation) {
+            openTaskId = nil
+            openDetail = back
+        }
+    }
+
     /// Closes whichever side panel is open (×, Esc, scrim).
     func closePanel() {
         guard isPanelOpen else { return }
+        panelBack = nil
         withAnimation(Focus.sheetAnimation) {
             openTaskId = nil
             openDetail = nil

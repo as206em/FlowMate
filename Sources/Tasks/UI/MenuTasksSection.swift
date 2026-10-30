@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-// The task part of the menu bar dropdown: search / quick add, running timers and projects.
+// The task part of the menu bar dropdown: search / quick add and the tasks in progress.
 // Matches docs/design/reference/FocusMenu.dc.html.
 
 /// Opens the main window from the menu, optionally on a task or a project.
@@ -27,8 +27,8 @@ enum MenuNavigation {
     }
 }
 
-/// The menu's own state, kept while the panel closes and opens: which projects list their tasks,
-/// the keyboard highlight and the last "Added to …" note.
+/// The menu's own state, kept while the panel closes and opens: the keyboard highlight and the
+/// last "Added to …" note.
 @MainActor
 final class MenuState: ObservableObject {
     static let shared = MenuState()
@@ -40,7 +40,6 @@ final class MenuState: ObservableObject {
         let taskId: UUID
     }
 
-    @Published var expansion = MenuExpansion()
     /// Keyboard highlight while the search is empty (↑/↓ move, Space timer, ↵ open, ←/→ fold)
     @Published var highlight: MenuRowItem?
     @Published var added: AddedNote?
@@ -306,234 +305,135 @@ struct MenuSearchResults: View {
     }
 }
 
-/// "2 running" with Pause all, then one tinted row per running timer.
-struct MenuRunningSection: View {
+/// "In progress": every task in progress across all projects. Running timers come first, tinted,
+/// with their live clock; the paused ones follow. Click a row to open it; the ring starts or pauses.
+struct MenuInProgressSection: View {
     @EnvironmentObject private var store: TaskStore
     @ObservedObject private var menu = MenuState.shared
 
     var body: some View {
-        let running = store.runningTasks
-        if !running.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("\(running.count) running".uppercased())
+        let listed = store.menuInProgressTasks
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                FocusCaption(text: "In progress")
+                if !listed.running.isEmpty {
+                    Text("· \(listed.running.count) running".uppercased())
                         .font(Focus.caption)
                         .tracking(0.5)
                         .foregroundColor(Focus.liveText)
-                    Spacer()
+                }
+                Spacer()
+                if !listed.running.isEmpty {
                     Button("Pause all") { store.pauseAllTimers() }
                         .buttonStyle(.plain)
                         .font(.system(size: 12))
                         .foregroundColor(Focus.text3)
                 }
-                .padding(.horizontal, 8)
-                .padding(.top, 4)
-                .padding(.bottom, 2)
-
-                ForEach(running) { task in
-                    let highlighted = menu.highlight == .running(task.id)
-                    HStack(spacing: 10) {
-                        TaskTimerButton(task: task, size: 32)
-                        Button { MenuNavigation.openTask(task.id) } label: {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(task.title)
-                                    .font(Focus.rowStrong)
-                                    .foregroundColor(Focus.text)
-                                    .lineLimit(1)
-                                Text("\(store.project(of: task)?.name ?? "") · \(Focus.durationString(minutes: task.expectedMinutes)) expected")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(Focus.text3)
-                                    .lineLimit(1)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Open in FlowMate")
-                        LiveTime { now in
-                            Text(Focus.clockString(store.elapsed(task, now: now)))
-                                .font(.system(size: 17, weight: .semibold).monospacedDigit())
-                                .foregroundColor(Focus.liveText)
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Focus.liveSoft))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(highlighted ? Focus.liveText.opacity(0.5) : .clear, lineWidth: 1.5)
-                    )
-                    .id(MenuRowItem.running(task.id))
-                    .accessibilityAddTraits(highlighted ? .isSelected : [])
-                    MenuLongRunLine(task: task)
-                }
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 8)
-            .overlay(alignment: .bottom) { FocusDivider() }
-        }
-    }
-}
+            .padding(.horizontal, 8)
+            .padding(.top, 4)
+            .padding(.bottom, 2)
 
-/// One row per project with a ring play button. The chevron lists the project's tasks (a running
-/// project is open by default) so you can pick which task to start.
-struct MenuProjectsSection: View {
-    @EnvironmentObject private var store: TaskStore
-    @ObservedObject private var menu = MenuState.shared
-
-    /// Rows shown under a project before "N more"
-    static let taskLimit = 8
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            FocusCaption(text: "Projects").padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 6)
-            if store.projects.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(store.archivedProjects.isEmpty
-                         ? "No projects yet. A project holds tasks, sprints and timers."
-                         : "Every project is archived. Unarchive one in FlowMate, or start a new one.")
-                        .font(Focus.meta)
-                        .foregroundColor(Focus.text3)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button("Create a project") { MenuNavigation.openApp() }
-                        .buttonStyle(.focus())
-                }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 6)
+            if listed.running.isEmpty && listed.paused.isEmpty {
+                emptyState
             }
-            ForEach(store.projects) { project in
-                let running = store.isProjectRunning(project.id)
-                projectRow(project, live: running)
-                if menu.expansion.isExpanded(project.id, running: running) {
-                    projectTasks(project)
-                }
+            ForEach(listed.running) { task in
+                runningRow(task)
+                MenuLongRunLine(task: task)
+            }
+            ForEach(listed.paused) { task in
+                pausedRow(task)
             }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 8)
     }
 
-    private func projectRow(_ project: Project, live: Bool) -> some View {
-        let next = store.nextTaskToStart(projectId: project.id)
-        let expanded = menu.expansion.isExpanded(project.id, running: live)
-        return HStack(spacing: 6) {
-            Button {
-                withAnimation(Focus.hoverAnimation) { menu.expansion.toggle(project.id, running: live) }
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(Focus.text3)
-                    .rotationEffect(.degrees(expanded ? 90 : 0))
-                    .frame(width: 14, height: 28)
-                    .contentShape(Rectangle())
+    @ViewBuilder
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if store.projects.isEmpty {
+                Text(store.archivedProjects.isEmpty
+                     ? "No projects yet. A project holds tasks, sprints and timers."
+                     : "Every project is archived. Unarchive one in FlowMate, or start a new one.")
+                Button("Create a project") { MenuNavigation.openApp() }
+                    .buttonStyle(.focus())
+            } else {
+                Text("Nothing in progress. Start a timer on a task, or move one to In progress.")
             }
-            .buttonStyle(.plain)
-            .help(expanded ? "Hide tasks" : "Show tasks to pick which one to start")
-            .accessibilityLabel(expanded ? "Hide \(project.name) tasks" : "Show \(project.name) tasks")
+        }
+        .font(Focus.meta)
+        .foregroundColor(Focus.text3)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    }
 
-            Button { MenuNavigation.openProject(project.id) } label: {
-                HStack(spacing: 10) {
-                    FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 20)
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 6) {
-                            Text(project.name).font(Focus.rowStrong).foregroundColor(Focus.text).lineLimit(1)
-                            Text("\(store.openCount(project.id))")
-                                .font(.system(size: 12).monospacedDigit())
-                                .foregroundColor(Focus.text3)
-                        }
-                        Text(subline(project, live: live, next: next))
-                            .font(.system(size: 12))
-                            .foregroundColor(live ? Focus.liveText : Focus.text3)
-                            .lineLimit(1)
-                    }
+    private func runningRow(_ task: TaskItem) -> some View {
+        let highlighted = menu.highlight == .running(task.id)
+        return HStack(spacing: 10) {
+            TaskTimerButton(task: task, size: 32)
+            Button { MenuNavigation.openTask(task.id) } label: {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(task.title)
+                        .font(Focus.rowStrong)
+                        .foregroundColor(Focus.text)
+                        .lineLimit(1)
+                    Text("\(store.project(of: task)?.name ?? "") · \(Focus.durationString(minutes: task.expectedMinutes)) expected")
+                        .font(.system(size: 12))
+                        .foregroundColor(Focus.text3)
+                        .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Open \(project.name) on its last tab")
-
-            FocusTimerRing(progress: live ? 1 : 0, isRunning: live, size: 28, label: "timer on \(project.name)") {
-                MenuActions.toggleProject(project.id, store: store)
+            .help("Open in FlowMate")
+            LiveTime { now in
+                Text(Focus.clockString(store.elapsed(task, now: now)))
+                    .font(.system(size: 17, weight: .semibold).monospacedDigit())
+                    .foregroundColor(Focus.liveText)
             }
-            .disabled(!live && next == nil)
-            .opacity(!live && next == nil ? 0.4 : 1)
-            .help(live ? "Pause \(project.name)'s timers" : next.map { "Start “\($0.title)”" } ?? "Nothing to start")
         }
-        .modifier(MenuHover(highlighted: menu.highlight == .project(project.id), leading: 2))
-        .id(MenuRowItem.project(project.id))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Focus.liveSoft))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(highlighted ? Focus.liveText.opacity(0.5) : .clear, lineWidth: 1.5)
+        )
+        .id(MenuRowItem.running(task.id))
+        .accessibilityAddTraits(highlighted ? .isSelected : [])
     }
 
-    private func subline(_ project: Project, live: Bool, next: TaskItem?) -> String {
-        if live {
-            let count = store.runningTasks.filter { $0.projectId == project.id }.count
-            return "\(count) \(count == 1 ? "timer" : "timers") running"
-        }
-        if let next { return "Next: \(next.title)" }
-        return store.openCount(project.id) == 0 ? "All done" : "Nothing planned in this sprint"
-    }
-
-    @ViewBuilder
-    private func projectTasks(_ project: Project) -> some View {
-        let listed = store.menuProjectTasks(project.id)
-        let tasks = listed.tasks
-        VStack(alignment: .leading, spacing: 0) {
-            if tasks.isEmpty {
-                Button("No open tasks. Add one in FlowMate") { MenuNavigation.openProject(project.id, focus: .newTask) }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 12))
-                    .foregroundColor(Focus.text3)
-                    .padding(.leading, 46)
-                    .padding(.vertical, 4)
-            } else if !listed.fromSprint {
-                Text("Not in the sprint · Next and Backlog")
-                    .font(.system(size: 11.5))
-                    .foregroundColor(Focus.text3)
-                    .padding(.leading, 46)
-                    .padding(.vertical, 3)
-            }
-            ForEach(tasks.prefix(Self.taskLimit)) { task in
-                let running = store.isRunning(task.id)
-                HStack(spacing: 8) {
-                    FocusStatusIcon(kind: task.status.focusKind, size: 12)
-                    Button { MenuNavigation.openTask(task.id) } label: {
-                        Text(task.title)
-                            .font(.system(size: 12.5, weight: running ? .medium : .regular))
-                            .foregroundColor(running ? Focus.text : Focus.text2)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
+    private func pausedRow(_ task: TaskItem) -> some View {
+        let project = store.project(of: task)
+        return HStack(spacing: 10) {
+            TaskTimerButton(task: task, size: 32)
+            Button { MenuNavigation.openTask(task.id) } label: {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(task.title)
+                        .font(Focus.row)
+                        .foregroundColor(Focus.text)
+                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        if let project {
+                            FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 12)
+                            Text(project.name).lineLimit(1)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    TaskTimeText(task: task, font: .system(size: 12))
-                    TaskTimerButton(task: task, size: 24)
-                }
-                .modifier(SubRowHover(highlighted: menu.highlight == .task(task.id)))
-                .id(MenuRowItem.task(task.id))
-            }
-            if tasks.count > Self.taskLimit {
-                Button("\(tasks.count - Self.taskLimit) more in \(project.name)") { MenuNavigation.openProject(project.id) }
-                    .buttonStyle(.plain)
                     .font(.system(size: 12))
                     .foregroundColor(Focus.text3)
-                    .padding(.leading, 46)
-                    .padding(.vertical, 4)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .help("Open in FlowMate")
+            TaskTimeText(task: task, font: .system(size: 12))
         }
-        .padding(.bottom, 4)
-    }
-}
-
-/// What the menu's play buttons and Space do.
-@MainActor
-enum MenuActions {
-    /// A project's ring: pauses its timers when any run, else starts the task it would pick next.
-    static func toggleProject(_ id: UUID, store: TaskStore) {
-        if store.isProjectRunning(id) {
-            store.pauseTimers(projectId: id)
-        } else {
-            store.startProject(id)
-        }
+        .modifier(MenuHover(highlighted: menu.highlight == .task(task.id)))
+        .id(MenuRowItem.task(task.id))
     }
 }
 
@@ -570,21 +470,6 @@ private struct MenuHover: ViewModifier {
             .padding(.trailing, 8)
             .padding(.vertical, 7)
             .background(RoundedRectangle(cornerRadius: 8).fill(hovering || highlighted ? Focus.hover : .clear))
-            .onHover { hovering = $0 }
-    }
-}
-
-/// Indented task row under an expanded project, as `.sub` in the reference
-private struct SubRowHover: ViewModifier {
-    var highlighted = false
-    @State private var hovering = false
-
-    func body(content: Content) -> some View {
-        content
-            .padding(.leading, 26)
-            .padding(.trailing, 8)
-            .padding(.vertical, 3)
-            .background(RoundedRectangle(cornerRadius: 7).fill(hovering || highlighted ? Focus.hover : .clear))
             .onHover { hovering = $0 }
     }
 }

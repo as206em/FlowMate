@@ -66,7 +66,7 @@ private struct ProjectMilestonesSection: View {
             }
             VStack(spacing: 0) {
                 ForEach(milestones) { milestone in
-                    MilestoneSummaryRow(milestone: milestone) { model.openMilestone(milestone.id) }
+                    MilestoneSummaryRow(milestone: milestone) { model.openMilestone(milestone.id, from: .project(project.id)) }
                     FocusDivider()
                 }
                 HStack(spacing: 12) {

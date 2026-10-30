@@ -102,7 +102,7 @@ struct FirstProjectEmptyState: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: Focus.radiusPanel))
         .focusPanel()
-        .frame(maxWidth: 1000, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { DispatchQueue.main.async { focused = true } }
     }
 
@@ -126,7 +126,7 @@ struct TasksEmptyStateView: View {
         content
             .clipShape(RoundedRectangle(cornerRadius: Focus.radiusPanel))
             .focusPanel()
-            .frame(maxWidth: 1000, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
