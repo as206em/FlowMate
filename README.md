@@ -101,7 +101,7 @@ This creates `FlowMate.app`, signs it, and opens it. Move it to `/Applications` 
 
 `build-app.sh` quits any running FlowMate first.
 
-For development you can also use `swift build`, `swift run` and `swift test`. Launch at login only works from the app bundle. To try a build without touching your real tasks, point it at another data file: `FLOWMATE_WORKSPACE_FILE=/tmp/flowmate/workspace.json .build/debug/FlowMate`.
+For development you can also use `swift build`, `swift run` and `swift test`. Launch at login only works from the app bundle. To try a build without touching your real tasks, settings or logs, point it at another folder: `FLOWMATE_DATA_DIR=/tmp/flowmate .build/debug/FlowMate` (workspace.json, config.json and logs/ go there, and it doesn't ask for Accessibility at launch); `FLOWMATE_WORKSPACE_FILE=/tmp/flowmate/workspace.json` moves only the task data. Note that `build-app.sh` quits any running FlowMate and opens the new bundle on your real data.
 
 ## Installing on another Mac
 

@@ -8,7 +8,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         // The shortcut and copy/paste need Accessibility access; ask once at launch if it's missing
         Task { @MainActor in
-            AppState.promptForAccessibilityAccess()
+            // (not in a test copy running on other data, FLOWMATE_DATA_DIR)
+            if AppDataLocation.override == nil { AppState.promptForAccessibilityAccess() }
             // Timers that run through sleep or a locked screen ask whether that time counts
             SystemAwayMonitor.shared.start(store: TaskStore.shared)
             // The morning summary, reminders and timer prompts in Notification Center

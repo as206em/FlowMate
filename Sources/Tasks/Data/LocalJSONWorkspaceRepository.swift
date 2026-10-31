@@ -1,6 +1,7 @@
 import Foundation
 
-/// Stores the workspace as JSON at ~/Library/Application Support/FlowMate/workspace.json.
+/// Stores the workspace as JSON at ~/Library/Application Support/FlowMate/workspace.json
+/// (FLOWMATE_DATA_DIR or FLOWMATE_WORKSPACE_FILE move it for a test copy of the app).
 ///
 /// - Writes are atomic.
 /// - After every successful load the file is copied to workspace.json.bak (the last good file).
@@ -40,8 +41,8 @@ actor LocalJSONWorkspaceRepository: WorkspaceRepository {
         if let path = ProcessInfo.processInfo.environment[fileOverrideKey], !path.isEmpty {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
         }
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return appSupport.appendingPathComponent("FlowMate", isDirectory: true).appendingPathComponent("workspace.json")
+        // Application Support/FlowMate, or FLOWMATE_DATA_DIR when set
+        return AppDataLocation.directory.appendingPathComponent("workspace.json")
     }
 
     func load() async throws -> Workspace? {

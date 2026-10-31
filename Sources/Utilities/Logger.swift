@@ -35,9 +35,8 @@ final class Logger {
         dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         
-        // Create logs directory in Application Support
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        logDirectory = appSupport.appendingPathComponent("FlowMate/logs")
+        // Create logs directory in Application Support (or FLOWMATE_DATA_DIR, see AppDataLocation)
+        logDirectory = AppDataLocation.directory.appendingPathComponent("logs")
         
         // Create directory if it doesn't exist
         try? fileManager.createDirectory(at: logDirectory, withIntermediateDirectories: true)

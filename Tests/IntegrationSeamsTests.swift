@@ -451,3 +451,16 @@ final class IntegrationSeamsTests: XCTestCase {
         XCTAssertNil(MenuBarStatusItem.button(in: [decoy]))
     }
 }
+
+/// FLOWMATE_DATA_DIR moves every file FlowMate writes; without it nothing changes.
+final class AppDataLocationTests: XCTestCase {
+    func testOverrideMovesTheDataFolderAndDefaultIsUnchanged() {
+        let normal = AppDataLocation.directory(environment: [:])
+        XCTAssertEqual(normal.lastPathComponent, "FlowMate")
+        XCTAssertTrue(normal.path.hasSuffix("Library/Application Support/FlowMate"))
+        XCTAssertEqual(AppDataLocation.directory(environment: ["FLOWMATE_DATA_DIR": "  "]), normal)
+        XCTAssertEqual(AppDataLocation.directory(environment: ["FLOWMATE_DATA_DIR": "/tmp/fm-qa"]).path, "/tmp/fm-qa")
+        XCTAssertEqual(AppDataLocation.directory(environment: ["FLOWMATE_DATA_DIR": "~/fm"]).path,
+                       (NSHomeDirectory() as NSString).appendingPathComponent("fm"))
+    }
+}

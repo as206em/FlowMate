@@ -57,10 +57,9 @@ class ConfigurationManager: ObservableObject {
     
     // MARK: - Private Methods
     
+    /// Application Support/FlowMate, or FLOWMATE_DATA_DIR when set (AppDataLocation)
     public static var configDirectory: URL {
-        let urls = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-        let appSupport = urls[0]
-        return appSupport.appendingPathComponent("FlowMate")
+        AppDataLocation.directory
     }
     
     /// The built-in proofreading instructions (used by "Reset to Default")
