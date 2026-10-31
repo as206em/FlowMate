@@ -209,12 +209,18 @@ private extension View {
 /// What one table row shows.
 struct TaskTableCell: View {
     let row: TaskTableRow
+    /// Rows that size to their content report their height here (the composer grows when it opens)
+    var onHeight: ((CGFloat) -> Void)?
 
     static let sidePadding: CGFloat = 28
 
     var body: some View {
         content
             .padding(.horizontal, Self.sidePadding)
+            .background(GeometryReader { proxy in
+                Color.clear.preference(key: CellHeightKey.self, value: proxy.size.height)
+            })
+            .onPreferenceChange(CellHeightKey.self) { onHeight?($0) }
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -243,6 +249,11 @@ struct TaskTableCell: View {
                 .padding(.top, 6)
         }
     }
+}
+
+private struct CellHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 private struct GroupHeaderRow: View {
@@ -282,15 +293,7 @@ private struct GroupHeaderRow: View {
 // MARK: - AppKit views
 
 /// Hosts one row's SwiftUI content (group headers, empty text, the composer).
-final class RowHostingView: NSHostingView<AnyView> {
-    /// Called when the SwiftUI content's ideal size changes (the composer opening, say)
-    var onContentSizeChange: (() -> Void)?
-
-    override func invalidateIntrinsicContentSize() {
-        super.invalidateIntrinsicContentSize()
-        onContentSizeChange?()
-    }
-}
+final class RowHostingView: NSHostingView<AnyView> {}
 
 final class RowCell: NSView {
     let hosting: RowHostingView
@@ -562,27 +565,18 @@ struct NativeTaskTable: NSViewRepresentable {
 
         private func configure(_ cell: RowCell, row: TaskTableRow, index: Int) {
             guard let store, let model else { return }
-            let root = AnyView(
-                TaskTableCell(row: row)
+            let rowId = row.id
+            let cellView = TaskTableCell(row: row, onHeight: row.measuresHeight ? { [weak self] height in
+                self?.record(height: height, rowId: rowId)
+            } : nil)
+            cell.hosting.sizingOptions = []
+            cell.hosting.rootView = AnyView(
+                cellView
                     .environmentObject(store)
                     .environmentObject(model)
                     .environment(\.taskColumnLayout, layout)
-                    .id(row.id)
+                    .id(rowId)
             )
-            let hosting = cell.hosting
-            hosting.sizingOptions = row.measuresHeight ? [.intrinsicContentSize] : []
-            hosting.rootView = root
-
-            let rowId = row.id
-            if row.measuresHeight {
-                hosting.onContentSizeChange = { [weak self, weak hosting] in
-                    guard let self, let hosting else { return }
-                    self.remeasure(rowId: rowId, hosting: hosting)
-                }
-                remeasure(rowId: rowId, hosting: hosting)
-            } else {
-                hosting.onContentSizeChange = nil
-            }
         }
 
         private var hoverUpdatePending = false
@@ -620,10 +614,10 @@ struct NativeTaskTable: NSViewRepresentable {
             }
         }
 
-        /// Records the content's height; the table re-lays out on the next turn of the run loop
-        /// (never from inside a delegate callback).
-        private func remeasure(rowId: String, hosting: RowHostingView) {
-            let height = ceil(hosting.fittingSize.height)
+        /// Records a row's content height; the table re-lays out on the next turn of the run loop
+        /// (never from inside SwiftUI's update or a delegate callback).
+        private func record(height: CGFloat, rowId: String) {
+            let height = ceil(height)
             guard height > 1, abs(height - (measured[rowId] ?? -1)) > 0.5 else { return }
             measured[rowId] = height
             DispatchQueue.main.async { [weak self] in
