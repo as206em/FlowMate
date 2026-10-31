@@ -60,18 +60,23 @@ struct TasksRootView: View {
             }
             notices
             LongRunBanner()
-            ScrollViewReader { proxy in
-                ScrollView {
-                    content
-                        .padding(.top, model.showsFilterBar ? 16 : 24)
-                        .padding(.horizontal, 28)
-                        .padding(.bottom, 72)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-                .onChange(of: model.selectedTaskId) { id in
-                    // Keep the keyboard selection on screen
-                    guard let id, !model.isPanelOpen else { return }
-                    withAnimation(Focus.hoverAnimation) { proxy.scrollTo(id) }
+            if usesNativeTable {
+                // List and Sprints scroll inside their own native table (rows are recycled)
+                nativeTableContent
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        content
+                            .padding(.top, model.showsFilterBar ? 16 : 24)
+                            .padding(.horizontal, 28)
+                            .padding(.bottom, 72)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                    .onChange(of: model.selectedTaskId) { id in
+                        // Keep the keyboard selection on screen
+                        guard let id, !model.isPanelOpen else { return }
+                        withAnimation(Focus.hoverAnimation) { proxy.scrollTo(id) }
+                    }
                 }
             }
         }
@@ -134,6 +139,30 @@ struct TasksRootView: View {
     /// No projects at all (only All projects can be on screen): the "Create your first project" state.
     private var showsFirstProject: Bool {
         store.isLoaded && store.projects.isEmpty && model.scope.projectId == nil
+    }
+
+    /// List, and Sprints of a project: views drawn by the native table
+    private var usesNativeTable: Bool {
+        guard !showsFirstProject else { return false }
+        switch model.effectiveTab {
+        case .list: return true
+        case .sprints: return model.scope.projectId.flatMap { store.project($0) } != nil
+        case .board, .milestones: return false
+        }
+    }
+
+    @ViewBuilder
+    private var nativeTableContent: some View {
+        if model.effectiveTab == .sprints, let project = model.scope.projectId.flatMap({ store.project($0) }) {
+            VStack(alignment: .leading, spacing: 0) {
+                SprintHeader(project: project)
+                    .padding(.top, 24)
+                    .padding(.horizontal, TaskTableCell.sidePadding)
+                SprintPlanView(projectId: project.id)
+            }
+        } else {
+            TaskListView()
+        }
     }
 
     @ViewBuilder

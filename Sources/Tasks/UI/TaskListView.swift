@@ -10,6 +10,9 @@ struct TaskListView: View {
     var body: some View {
         if let reason = model.listEmptyReason(store) {
             TasksEmptyStateView(reason: reason)
+                .padding(.top, model.showsFilterBar ? 16 : 24)
+                .padding(.horizontal, TaskTableCell.sidePadding)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
             table
         }
@@ -19,29 +22,36 @@ struct TaskListView: View {
         let groups = model.listGroups(store)
         let filtering = !model.filter.isEmpty
         let hidden = model.hiddenClosedCount(store)
+        let firstOpen = groups.first(where: \.acceptsDrop)?.id
+        let showProject = model.scope.projectId == nil
+        var builder = TaskTableBuilder()
+        builder.spacer("top", 6)
+        for (index, group) in groups.enumerated() {
+            builder.group(
+                key: group.id,
+                title: group.title,
+                hint: group.hint,
+                colorHex: group.colorHex,
+                tasks: group.tasks,
+                emptyText: emptyText(group, filtering: filtering),
+                showProject: showProject,
+                drop: group.acceptsDrop ? .group(group.value, reorder: model.sort.isManual) : nil,
+                composerIsDefault: group.id == firstOpen,
+                open: !model.isCollapsed(group.id),
+                gap: index == 0 ? 0 : 22,
+                display: RowDisplay.maker(store: store, model: model)
+            )
+        }
+        builder.spacer("bottom", 72)
         return TaskTable(
-            showProject: model.scope.projectId == nil,
+            showProject: showProject,
             excluding: excluded,
             sort: Binding(get: { model.sort }, set: { model.sort = $0 }),
-            caption: hidden > 0 ? "\(hidden) \(hidden == 1 ? "task" : "tasks") from past sprints hidden. Filter by Sprint › Past sprints to show them." : ""
-        ) {
-            let firstOpen = groups.first(where: \.acceptsDrop)?.id
-            VStack(alignment: .leading, spacing: 22) {
-                ForEach(groups) { group in
-                    TaskGroupSection(
-                        key: group.id,
-                        title: group.title,
-                        hint: group.hint,
-                        colorHex: group.colorHex,
-                        tasks: group.tasks,
-                        emptyText: emptyText(group, filtering: filtering),
-                        drop: group.acceptsDrop ? .group(group.value, reorder: model.sort.isManual) : nil,
-                        composerIsDefault: group.id == firstOpen
-                    )
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+            caption: hidden > 0 ? "\(hidden) \(hidden == 1 ? "task" : "tasks") from past sprints hidden. Filter by Sprint › Past sprints to show them." : "",
+            rows: builder.rows,
+            drops: builder.drops
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     /// The grouped-by column repeats the group header, so it's hidden (Project stays: its tile helps).
@@ -77,60 +87,68 @@ struct TaskListView: View {
 /// Sprints view (project scope): Active, Next and Backlog. Drag rows between groups.
 struct SprintPlanView: View {
     @EnvironmentObject private var store: TaskStore
+    @EnvironmentObject private var model: TasksViewModel
     let projectId: UUID
 
     var body: some View {
         let sprint = store.project(projectId)?.sprint
+        var builder = TaskTableBuilder()
+        builder.spacer("top", 6)
+        group(&builder, .active, title: "\(sprint?.name ?? "Sprint") · active", hint: sprint?.dateRange ?? "",
+              empty: "Nothing in this sprint yet. Drag tasks here from Next or Backlog, or add one with the New task field.", gap: 0)
+        group(&builder, .next, title: "\(sprint?.nextName ?? "Next sprint") · next", hint: sprint?.nextDateRange ?? "",
+              empty: "Nothing planned for the next sprint. Drag tasks here to line them up.", gap: 22)
+        group(&builder, .backlog, title: "Backlog", hint: "",
+              empty: "No ideas parked for later. Drag tasks here, or pick Backlog on the New task field's sprint chip.", gap: 22)
+        pastSprints(&builder)
+        builder.spacer("bottom", 72)
         // Manual order only: rows are dragged between and within groups here, so headers don't sort
-        TaskTable(
+        return TaskTable(
             showProject: false,
             excluding: [.sprint],
-            caption: "Drag tasks between the active sprint, the next sprint and the backlog."
-        ) {
-            VStack(alignment: .leading, spacing: 22) {
-                group(.active, title: "\(sprint?.name ?? "Sprint") · active", hint: sprint?.dateRange ?? "",
-                      empty: "Nothing in this sprint yet. Drag tasks here from Next or Backlog, or add one with the New task field.")
-                group(.next, title: "\(sprint?.nextName ?? "Next sprint") · next", hint: sprint?.nextDateRange ?? "",
-                      empty: "Nothing planned for the next sprint. Drag tasks here to line them up.")
-                group(.backlog, title: "Backlog", hint: "",
-                      empty: "No ideas parked for later. Drag tasks here, or pick Backlog on the New task field's sprint chip.")
-                pastSprints
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+            caption: "Drag tasks between the active sprint, the next sprint and the backlog.",
+            rows: builder.rows,
+            drops: builder.drops
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     /// Completed sprints, newest first, collapsed until opened: "Sprint 3 · Oct 12 – Oct 25 · 8 of 10 done".
-    @ViewBuilder
-    private var pastSprints: some View {
+    private func pastSprints(_ builder: inout TaskTableBuilder) {
         let past = store.pastSprints(projectId)
-        if !past.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                FocusCaption(text: "Past sprints").padding(.horizontal, 4).padding(.top, 10)
-                ForEach(past) { sprint in
-                    TaskGroupSection(
-                        key: TasksViewModel.pastSprintGroupKey(sprint),
-                        title: sprint.name,
-                        hint: [sprint.summary, sprint.goal.isEmpty ? nil : sprint.goal].compactMap { $0 }.joined(separator: " · "),
-                        tasks: store.tasks(of: sprint),
-                        emptyText: "No tasks were in this sprint.",
-                        showProject: false
-                    )
-                }
-            }
+        guard !past.isEmpty else { return }
+        builder.sectionTitle("Past sprints")
+        for sprint in past {
+            let key = TasksViewModel.pastSprintGroupKey(sprint)
+            builder.group(
+                key: key,
+                title: sprint.name,
+                hint: [sprint.summary, sprint.goal.isEmpty ? nil : sprint.goal].compactMap { $0 }.joined(separator: " · "),
+                tasks: store.tasks(of: sprint),
+                emptyText: "No tasks were in this sprint.",
+                showProject: false,
+                drop: nil,
+                open: !model.isCollapsed(key),
+                gap: 12,
+                display: RowDisplay.maker(store: store, model: model)
+            )
         }
     }
 
-    private func group(_ slot: SprintSlot, title: String, hint: String, empty: String) -> some View {
-        TaskGroupSection(
-            key: TasksViewModel.sprintGroupKey(slot),
+    private func group(_ builder: inout TaskTableBuilder, _ slot: SprintSlot, title: String, hint: String, empty: String, gap: CGFloat) {
+        let key = TasksViewModel.sprintGroupKey(slot)
+        builder.group(
+            key: key,
             title: title,
             hint: hint,
             tasks: store.sprintTasks(projectId: projectId, slot: slot),
             emptyText: empty,
             showProject: false,
             drop: .slot(slot),
-            composerIsDefault: slot == .active
+            composerIsDefault: slot == .active,
+            open: !model.isCollapsed(key),
+            gap: gap,
+            display: RowDisplay.maker(store: store, model: model)
         )
     }
 }
@@ -143,88 +161,9 @@ enum TaskGroupDrop: Equatable {
     case group(TaskGroupValue, reorder: Bool)
 }
 
-/// A collapsible group header over a panel of task rows. With `drop`, rows can be dragged in.
-struct TaskGroupSection: View {
-    @EnvironmentObject private var store: TaskStore
-    @EnvironmentObject private var model: TasksViewModel
-
-    let key: String
-    let title: String
-    var hint = ""
-    var colorHex: UInt32?
-    let tasks: [TaskItem]
-    let emptyText: String
-    var showProject: Bool?
-    var drop: TaskGroupDrop?
-    /// ⌘N opens this group's New task composer
-    var composerIsDefault = false
-
-    private var composerKey: String { "composer-" + key }
-
-    var body: some View {
-        let open = !model.isCollapsed(key)
-        let targeted = drop != nil && model.dropTarget == key
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(Focus.hoverAnimation) { model.toggleGroup(key) }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrowtriangle.right.fill")
-                        .font(.system(size: 8))
-                        .foregroundColor(Focus.text3)
-                        .rotationEffect(.degrees(open ? 90 : 0))
-                        .frame(width: 10)
-                    if let colorHex {
-                        FocusProjectTile(name: title, colorHex: colorHex)
-                    }
-                    Text(title).font(Focus.groupTitle).foregroundColor(Focus.text).lineLimit(1)
-                    Text("\(tasks.count)").font(Focus.row.monospacedDigit()).foregroundColor(Focus.text3)
-                    if !hint.isEmpty {
-                        Text(hint).font(Focus.meta).foregroundColor(Focus.text3).lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 4)
-                .padding(.top, 4)
-                .padding(.bottom, 8)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityValue(open ? "Expanded" : "Collapsed")
-
-            if open {
-                VStack(spacing: 0) {
-                    if tasks.isEmpty {
-                        Text(emptyText)
-                            .font(Focus.body)
-                            .foregroundColor(Focus.text3)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(16)
-                    }
-                    ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
-                        if index > 0 { FocusDivider() }
-                        row(task)
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: Focus.radiusPanel))
-                .focusPanel()
-
-                // Outside the clipped panel, so its suggestion menu can hang below it
-                if let drop {
-                    TaskComposer(key: composerKey, preset: Self.preset(drop), isDefault: composerIsDefault, groupName: title)
-                        .padding(.top, 6)
-                }
-            }
-        }
-        .overlay(
-            RoundedRectangle(cornerRadius: Focus.radiusPanel)
-                .strokeBorder(targeted ? Focus.text3 : .clear, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                .padding(-4)
-        )
-        .modifier(GroupDrop(key: key, drop: drop))
-        .zIndex(model.activeComposer == composerKey ? 1 : 0)
-    }
-
+/// What dropping a task on a group does. The group UI itself is built by TaskTableBuilder
+/// and drawn by NativeTaskTable.
+enum TaskGroupSection {
     /// The value a task added to the group gets
     static func preset(_ drop: TaskGroupDrop) -> TaskGroupValue {
         switch drop {
@@ -233,22 +172,7 @@ struct TaskGroupSection: View {
         }
     }
 
-    @ViewBuilder
-    private func row(_ task: TaskItem) -> some View {
-        let row = TaskRow(task: task, showProject: showProject ?? (model.scope.projectId == nil))
-            .id(task.id)
-        if let drop {
-            row
-                .taskDraggable(task, model: model)
-                .onDrop(of: [.plainText], delegate: TaskDropDelegate(target: key, model: model) { id in
-                    guard id != task.id else { return }
-                    Self.perform(drop, id: id, before: task.id, store: store)
-                })
-        } else {
-            row
-        }
-    }
-
+    @MainActor
     static func perform(_ drop: TaskGroupDrop, id: UUID, before: UUID?, store: TaskStore) {
         switch drop {
         case let .slot(slot):
@@ -257,147 +181,29 @@ struct TaskGroupSection: View {
             store.moveTask(id, to: value, before: before, reorder: reorder)
         }
     }
-
-    /// Drop on the group itself (header or empty space) appends to it.
-    private struct GroupDrop: ViewModifier {
-        @EnvironmentObject private var store: TaskStore
-        @EnvironmentObject private var model: TasksViewModel
-        let key: String
-        let drop: TaskGroupDrop?
-
-        func body(content: Content) -> some View {
-            if let drop {
-                content
-                    .contentShape(Rectangle())
-                    .onDrop(of: [.plainText], delegate: TaskDropDelegate(target: key, model: model) { id in
-                        TaskGroupSection.perform(drop, id: id, before: nil, store: store)
-                    })
-            } else {
-                content
-            }
-        }
-    }
 }
 
-/// A 46pt task row laid out in the table's columns (TaskColumns.swift): status, project, title with
-/// subtask count, milestone, sprint, due, priority, expected/live time and the timer ring.
-/// Empty cells show "–". Milestone, sprint, due, priority and expected open a small editor on click;
-/// a double-click on the title renames in place. A click anywhere else on the row opens the task
-/// (⌘ or ⇧ click selects instead).
-struct TaskRow: View {
-    @EnvironmentObject private var store: TaskStore
-    @EnvironmentObject private var model: TasksViewModel
-    @Environment(\.taskColumnLayout) private var tableLayout
-    let task: TaskItem
-    let showProject: Bool
-
-    @State private var renaming = false
-
-    var body: some View {
-        let layout = tableLayout ?? TaskColumnLayout.make(showProject: showProject, width: 1000)
-        FocusRow(highlighted: store.isRunning(task.id), selected: model.isSelected(task.id)) {
-            TaskColumnCells(layout: layout) { column in
-                cell(column)
-            }
+extension RowDisplay {
+    /// Looks up everything a row shows that isn't on the task itself. The lookups are built once
+    /// per table rebuild, not once per task.
+    @MainActor
+    static func maker(store: TaskStore, model: TasksViewModel) -> (TaskItem) -> RowDisplay {
+        let projects = Dictionary(store.projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let milestones = Dictionary(store.workspace.milestones.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        let running = store.workspace.runningTimers
+        let selected = model.selectedTaskIds
+        return { task in
+            let project = projects[task.projectId]
+            return RowDisplay(
+                projectName: project?.name,
+                projectColorHex: project?.colorHex,
+                milestoneName: task.milestoneId.flatMap { milestones[$0] },
+                sprintLabel: store.sprintLabel(for: task),
+                dueLabel: task.dueDate.map { TaskDates.dueLabel($0) },
+                dueIsRisk: store.isOverdue(task) || store.isDueToday(task),
+                runningSince: running[task.id],
+                selected: selected.contains(task.id)
+            )
         }
-        .contentShape(Rectangle())
-        .onTapGesture { model.clickTitle(task.id, store: store) }
-        .focusPointerCursor()
-        .contextMenu { TaskContextMenu(task: task, rename: { renaming = true }) }
-    }
-
-    @ViewBuilder
-    private func cell(_ column: TaskColumn) -> some View {
-        switch column {
-        case .status:
-            TaskStatusButton(task: task)
-        case .project:
-            if let project = store.project(of: task) {
-                HStack(spacing: 7) {
-                    FocusProjectTile(name: project.name, colorHex: project.colorHex)
-                    metaText(project.name)
-                }
-                .help(project.name)
-            } else {
-                TaskEmptyCell()
-            }
-        case .title:
-            if renaming {
-                TaskInlineTitleField(task: task) { renaming = false }
-            } else {
-                HStack(spacing: 10) {
-                    TaskTitleButton(task: task, rename: { renaming = true }) { model.clickTitle(task.id, store: store) }
-                        .layoutPriority(1)
-                    SubtaskCount(task: task)
-                }
-            }
-        case .milestone:
-            TaskEditableCell(help: "Change milestone") {
-                if let milestone = store.milestone(of: task) {
-                    metaText(milestone.name)
-                } else {
-                    TaskEmptyCell()
-                }
-            } editor: { close in
-                TaskMilestoneEditor(task: task, close: close)
-            }
-        case .sprint:
-            if task.sprintSlot == .closed {
-                metaText(store.sprintLabel(for: task))
-            } else {
-                TaskEditableCell(help: "Change sprint") {
-                    metaText(store.sprintLabel(for: task))
-                } editor: { close in
-                    TaskSprintEditor(task: task, close: close)
-                }
-            }
-        case .due:
-            TaskEditableCell(help: "Change due date") {
-                if let due = task.dueDate {
-                    if task.isDone {
-                        metaText(TaskDates.dueLabel(due))
-                    } else {
-                        TaskDueTag(task: task, showIcon: false)
-                    }
-                } else {
-                    TaskEmptyCell()
-                }
-            } editor: { close in
-                TaskDueEditor(task: task, close: close)
-            }
-        case .priority:
-            TaskEditableCell(help: "Change priority") {
-                HStack(spacing: 7) {
-                    FocusPriorityBars(level: task.priority.focusLevel)
-                    metaText(task.priority.title)
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(task.priority.title) priority")
-            } editor: { close in
-                TaskPriorityEditor(task: task, close: close)
-            }
-        case .time:
-            // Click the clock (or the estimate) to fix the time spent or change the expected time
-            TaskEditableCell(help: "Change time spent or expected time") {
-                TaskTimeText(task: task).frame(maxWidth: .infinity, alignment: .trailing)
-            } editor: { close in
-                TaskTimeEditor(task: task, close: close)
-            }
-        case .timer:
-            if task.isDone {
-                Color.clear.frame(width: 32, height: 32)
-            } else {
-                TaskTimerButton(task: task)
-            }
-        }
-    }
-
-    private func metaText(_ text: String) -> some View {
-        Text(text)
-            .font(Focus.meta)
-            .foregroundColor(Focus.text3)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .help(text)
     }
 }

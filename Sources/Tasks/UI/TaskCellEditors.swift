@@ -3,22 +3,6 @@ import SwiftUI
 // Small editors that open from a list cell or a card chip, so quick changes don't need the panel:
 // due date (with presets), priority, expected time, milestone and sprint.
 
-/// A list cell that opens its editor in a popover on click.
-struct TaskEditableCell<Label: View, Editor: View>: View {
-    let help: String
-    @ViewBuilder let label: () -> Label
-    @ViewBuilder let editor: (_ close: @escaping () -> Void) -> Editor
-
-    @State private var open = false
-
-    var body: some View {
-        FocusCellButton(help: help, action: { open = true }, label: label)
-            .popover(isPresented: $open, arrowEdge: .bottom) {
-                editor { open = false }
-            }
-    }
-}
-
 /// Today, Tomorrow, Next week and Clear above a calendar.
 struct TaskDueEditor: View {
     @EnvironmentObject private var store: TaskStore
@@ -423,43 +407,3 @@ struct TaskMilestoneChip: View {
     }
 }
 
-/// Inline title editor for a list row (double-click a title): Enter or clicking away saves, Esc cancels.
-struct TaskInlineTitleField: View {
-    @EnvironmentObject private var store: TaskStore
-    let task: TaskItem
-    let done: () -> Void
-
-    @State private var draft = ""
-    @State private var finished = false
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        TextField("Task title", text: $draft)
-            .textFieldStyle(.plain)
-            .font(Focus.row)
-            .foregroundColor(Focus.text)
-            .focused($focused)
-            .padding(.horizontal, 6)
-            .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: Focus.radiusTag).fill(Focus.raised))
-            .overlay(RoundedRectangle(cornerRadius: Focus.radiusTag).strokeBorder(Focus.lineStrong, lineWidth: 1))
-            .padding(.leading, -6)
-            .onSubmit { finish(save: true) }
-            .onExitCommand { finish(save: false) }
-            .onChange(of: focused) { isFocused in if !isFocused { finish(save: true) } }
-            .onAppear {
-                draft = task.title
-                DispatchQueue.main.async { focused = true }
-            }
-            .accessibilityLabel("Task title")
-    }
-
-    private func finish(save: Bool) {
-        guard !finished else { return }
-        finished = true
-        if save, draft.trimmingCharacters(in: .whitespacesAndNewlines) != task.title {
-            store.renameTaskOnce(task.id, draft)
-        }
-        done()
-    }
-}

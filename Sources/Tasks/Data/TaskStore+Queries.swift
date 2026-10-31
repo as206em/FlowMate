@@ -171,6 +171,16 @@ extension TaskStore {
 }
 
 enum TaskDates {
+    // DateFormatters are expensive to create, and a list label is formatted for every task
+    private static func makeFormatter(_ format: String) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = format
+        return formatter
+    }
+    private static let sameYearFormatter = makeFormatter("MMM d")
+    private static let otherYearFormatter = makeFormatter("MMM d, yyyy")
+
     static func isBeforeToday(_ date: Date, now: Date = Date()) -> Bool {
         date < Calendar.current.startOfDay(for: now)
     }
@@ -185,9 +195,6 @@ enum TaskDates {
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
             return "Yesterday"
         }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = calendar.isDate(date, equalTo: now, toGranularity: .year) ? "MMM d" : "MMM d, yyyy"
-        return formatter.string(from: date)
+        return (calendar.isDate(date, equalTo: now, toGranularity: .year) ? sameYearFormatter : otherYearFormatter).string(from: date)
     }
 }

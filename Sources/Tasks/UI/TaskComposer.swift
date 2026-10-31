@@ -12,6 +12,7 @@ import SwiftUI
 struct TaskComposer: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
+    @Environment(\.composerReservesMenuSpace) private var reservesMenuSpace
     /// The group it belongs to; only one composer is open at a time
     let key: String
     /// What tasks added here get from the group
@@ -57,6 +58,7 @@ struct TaskComposer: View {
                 .clipShape(RoundedRectangle(cornerRadius: Focus.radiusCard))
                 .shadow(color: .black.opacity(0.06), radius: 8, y: 3)
                 .overlay(alignment: .topLeading) { suggestionMenu(target) }
+                .padding(.bottom, menuSpace)
                 .background(ComposerKeyMonitor(isActive: true, handle: handleKey, outsideClick: close))
                 .transition(.opacity)
             } else {
@@ -75,6 +77,11 @@ struct TaskComposer: View {
     }
 
     private var isActive: Bool { model.activeComposer == key }
+
+    /// In the native table the menu can't hang over the next rows, so the row grows to hold it
+    private var menuSpace: CGFloat {
+        reservesMenuSpace && !suggestions.isEmpty ? CGFloat(min(suggestions.count, 12)) * 34 + 70 : 0
+    }
 
     /// Opens this composer (closing any other) with the group's values filled in
     private func open() {

@@ -3,7 +3,7 @@ import SwiftUI
 // The list's column layout: a sticky header and rows that share one set of column widths,
 // so every value sits at the same x on every row.
 //
-//   TaskTable(showProject:, sort:) { groups of TaskRow }
+//   TaskTable(showProject:, sort:, rows:, drops:)
 //
 // TaskTable measures the width, picks the columns that fit (TaskColumnLayout), pins the
 // header and hands the layout to the rows through the environment. Rows lay out their cells
@@ -171,62 +171,44 @@ struct TaskColumnHeaderRow: View {
 }
 
 /// A table of task rows with a sticky column header. Measures its width, picks the columns
-/// and shares them with every TaskRow inside through the environment.
-struct TaskTable<Content: View>: View {
+/// and shares them with every TaskRow inside through the environment. The rows live in a native
+/// NSTableView (NativeTaskTable.swift) that only keeps the visible ones.
+struct TaskTable: View {
+    @EnvironmentObject private var store: TaskStore
+    @EnvironmentObject private var model: TasksViewModel
     let showProject: Bool
     var excluding: Set<TaskColumn> = []
     /// Clickable headers sort by this; nil for tables in manual (drag) order.
     var sort: Binding<TaskSort>?
-    /// Optional line above the header, e.g. a hint. It scrolls away; the header stays.
+    /// Optional line above the header, e.g. a hint.
     var caption: String = ""
-    @ViewBuilder let content: () -> Content
-
-    @State private var width: CGFloat = 0
+    let rows: [TaskTableRow]
+    let drops: [String: TaskGroupDrop]
 
     var body: some View {
-        let layout = TaskColumnLayout.make(
-            showProject: showProject,
-            excluding: excluding,
-            width: width > 0 ? width : 1000
-        )
-        VStack(alignment: .leading, spacing: 0) {
-            if !caption.isEmpty {
-                Text(caption)
-                    .font(Focus.meta)
-                    .foregroundColor(Focus.text3)
-                    .padding(.top, -8)
-                    .padding(.bottom, 10)
-            }
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    content()
-                        .padding(.top, 6)
-                } header: {
-                    TaskColumnHeaderRow(layout: layout, sort: sort)
-                        .background(Focus.canvas)
-                        .overlay(alignment: .bottom) { FocusDivider() }
+        let topPadding: CGFloat = model.showsFilterBar ? 16 : 24
+        GeometryReader { proxy in
+            let layout = TaskColumnLayout.make(
+                showProject: showProject,
+                excluding: excluding,
+                width: max(proxy.size.width - TaskTableCell.sidePadding * 2, 1)
+            )
+            VStack(alignment: .leading, spacing: 0) {
+                if !caption.isEmpty {
+                    Text(caption)
+                        .font(Focus.meta)
+                        .foregroundColor(Focus.text3)
+                        .padding(.horizontal, TaskTableCell.sidePadding)
+                        .padding(.top, topPadding)
+                        .padding(.bottom, 10)
                 }
+                TaskColumnHeaderRow(layout: layout, sort: sort)
+                    .background(Focus.canvas)
+                    .overlay(alignment: .bottom) { FocusDivider() }
+                    .padding(.horizontal, TaskTableCell.sidePadding)
+                    .padding(.top, caption.isEmpty ? topPadding : 0)
+                NativeTaskTable(rows: rows, drops: drops, layout: layout, store: store, model: model)
             }
         }
-        .environment(\.taskColumnLayout, layout)
-        .background(GeometryReader { proxy in
-            Color.clear.preference(key: TaskTableWidthKey.self, value: proxy.size.width)
-        })
-        .onPreferenceChange(TaskTableWidthKey.self) { width = $0 }
-    }
-}
-
-private struct TaskTableWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
-}
-
-/// "–" for an empty cell
-struct TaskEmptyCell: View {
-    var body: some View {
-        Text("–")
-            .font(Focus.meta)
-            .foregroundColor(Focus.text3)
-            .accessibilityLabel("None")
     }
 }
