@@ -42,13 +42,20 @@ extension TaskStore {
 
     /// Reads a quick-add line against the workspace. Tokens beat the box's own values
     /// (`milestoneId`, `sprintSlot`); `+project` moves the task (and drops a milestone given by the box).
-    func planQuickAdd(_ text: String, projectId: UUID, milestoneId: UUID? = nil, sprintSlot: SprintSlot = .active,
+    /// A project without sprints ignores sprint words (#next stays in the title, like any word it
+    /// doesn't know). Without a sprint the task goes to the project's default one.
+    func planQuickAdd(_ text: String, projectId: UUID, milestoneId: UUID? = nil, sprintSlot: SprintSlot? = nil,
                       now: Date = Date()) -> QuickAddPlan {
-        let input = QuickAddInput.parse(text, now: now)
+        var input = QuickAddInput.parse(text, now: now)
         var target = projectId
         var unmatchedProject: String?
         if let query = input.projectQuery {
             if let found = matchProject(query) { target = found.id } else { unmatchedProject = "+" + query }
+        }
+        var keptSlotWord: String?
+        if input.slot != nil, !usesSprints(target) {
+            keptSlotWord = input.slotWord
+            input.slot = nil
         }
         var draft = ComposerDraft()
         draft.projectId = target
@@ -82,6 +89,9 @@ extension TaskStore {
         if let query = input.statusQuery, draft.status == nil {
             title = ([title, "*" + query.replacingOccurrences(of: " ", with: "_")]).filter { !$0.isEmpty }.joined(separator: " ")
         }
+        if let word = keptSlotWord {
+            title = [title, word].filter { !$0.isEmpty }.joined(separator: " ")
+        }
         if unmatchedProject != nil, let query = input.projectQuery {
             title = ([title, "+" + query.replacingOccurrences(of: " ", with: "_")]).filter { !$0.isEmpty }.joined(separator: " ")
         }
@@ -98,7 +108,7 @@ extension TaskStore {
         _ text: String,
         projectId: UUID,
         milestoneId: UUID? = nil,
-        sprintSlot: SprintSlot = .active,
+        sprintSlot: SprintSlot? = nil,
         now: Date = Date()
     ) -> QuickAddOutcome? {
         guard project(projectId) != nil else { return nil }
@@ -111,8 +121,9 @@ extension TaskStore {
     /// What a quick-add line will do, in words: ["High", "◆ Beta", "Due Fri", "1h 30m"], with
     /// "→ Atlas" first when `+project` sends it elsewhere.
     func quickAddPreview(_ text: String, projectId: UUID, now: Date = Date()) -> [String] {
-        let input = QuickAddInput.parse(text, now: now)
         let plan = planQuickAdd(text, projectId: projectId, now: now)
+        var input = QuickAddInput.parse(text, now: now)
+        if !usesSprints(plan.projectId) { input.slot = nil }
         var parts: [String] = []
         if plan.projectId != projectId, let name = project(plan.projectId)?.name { parts.append("→ " + name) }
         if let unmatched = plan.unmatchedProject { parts.append("No project “\(unmatched.dropFirst())”") }

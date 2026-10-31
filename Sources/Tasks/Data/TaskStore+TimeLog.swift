@@ -183,14 +183,14 @@ extension TaskStore {
     }
 
     /// The calendar day containing `date`.
-    static func dayInterval(_ date: Date, calendar: Calendar = .current) -> DateInterval {
+    nonisolated static func dayInterval(_ date: Date, calendar: Calendar = .current) -> DateInterval {
         let start = calendar.startOfDay(for: date)
         let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
         return DateInterval(start: start, end: end)
     }
 
     /// Whole days from `first` to `last`, both included (sprint dates are days).
-    static func days(_ first: Date, through last: Date, calendar: Calendar = .current) -> DateInterval {
+    nonisolated static func days(_ first: Date, through last: Date, calendar: Calendar = .current) -> DateInterval {
         let start = calendar.startOfDay(for: first)
         let end = dayInterval(max(first, last), calendar: calendar).end
         return DateInterval(start: start, end: max(start, end))

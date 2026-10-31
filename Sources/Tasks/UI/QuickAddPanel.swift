@@ -198,7 +198,7 @@ struct QuickAddBox: View {
                 // A +project word sends it elsewhere: the line names that project
                 let destination = store.quickAddTarget(model.text, projectId: target.id) ?? target
                 let preview = store.quickAddPreview(model.text, projectId: target.id).filter { !$0.hasPrefix("→ ") }
-                FocusProjectTile(name: destination.name, colorHex: destination.colorHex, size: 14)
+                FocusProjectTile(project: destination, size: 14)
                 Text(([destination.name] + preview).joined(separator: " · "))
                     .font(.system(size: 12))
                     .foregroundColor(Focus.text2)
@@ -221,7 +221,7 @@ struct QuickAddBox: View {
     private func projectChip(_ target: Project) -> some View {
         Button { pickingProject.toggle() } label: {
             HStack(spacing: 5) {
-                FocusProjectTile(name: target.name, colorHex: target.colorHex, size: 14)
+                FocusProjectTile(project: target, size: 14)
                 Text(target.name).font(.system(size: 12, weight: .medium)).foregroundColor(Focus.text2).lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundColor(Focus.text3)
             }
@@ -244,7 +244,7 @@ struct QuickAddBox: View {
                         pickingProject = false
                         focused = true
                     } label: {
-                        FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                        FocusProjectTile(project: project)
                         Text(project.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
                     }
                 }

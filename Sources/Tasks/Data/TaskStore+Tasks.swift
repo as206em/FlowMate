@@ -4,16 +4,17 @@ import Foundation
 extension TaskStore {
     // MARK: - Tasks
 
-    /// Quick add: active sprint, the project's first Not started status (or `status`, matched in
-    /// the project), medium priority, 60m expected, appended at the end (or, with `atTop`, placed
-    /// before every other task, so it heads its group in manual order).
+    /// Quick add: the project's default sprint (the active one unless set; always active without
+    /// sprints), the project's first Not started status (or `status`, matched in the project),
+    /// medium priority, the project's default expected time (60m unless set), appended at the end
+    /// (or, with `atTop`, placed before every other task, so it heads its group in manual order).
     /// Returns nil for a blank title or unknown project.
     @discardableResult
     func addTask(
         title: String,
         projectId: UUID,
         milestoneId: UUID? = nil,
-        sprintSlot: SprintSlot = .active,
+        sprintSlot: SprintSlot? = nil,
         status: WorkflowStatus? = nil,
         atTop: Bool = false,
         now: Date = Date()
@@ -22,9 +23,11 @@ extension TaskStore {
         guard !title.isEmpty, let project = project(projectId) else { return nil }
         let status = status.map { project.status($0.id) ?? WorkflowRules.remap($0, into: project.statuses) } ?? project.defaultStatus
         let validMilestone = milestoneId.flatMap { milestone($0)?.projectId == projectId ? $0 : nil }
-        let task = TaskItem(projectId: projectId, milestoneId: validMilestone, sprintSlot: sprintSlot,
+        // Without sprints every new task is current work; a past sprint never takes new tasks
+        let slot = project.usesSprints ? Project.cleanSlot(sprintSlot ?? project.defaultSprintSlot) : .active
+        let task = TaskItem(projectId: projectId, milestoneId: validMilestone, sprintSlot: slot,
                             status: status, priority: .medium, title: title,
-                            expectedMinutes: TaskItem.defaultExpectedMinutes,
+                            expectedMinutes: project.newTaskExpectedMinutes,
                             createdAt: now,
                             sortIndex: atTop ? (workspace.tasks.map(\.sortIndex).min() ?? 0) - 1
                                              : (workspace.tasks.map(\.sortIndex).max() ?? 0) + 1)

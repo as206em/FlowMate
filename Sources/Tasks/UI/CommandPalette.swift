@@ -191,7 +191,7 @@ private struct PaletteRow: View {
         case .today:
             Image(systemName: "sun.max").font(.system(size: 13, weight: .medium)).foregroundColor(Focus.text2)
         case let .project(id):
-            if let project = store.project(id) { FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 16) }
+            if let project = store.project(id) { FocusProjectTile(project: project, size: 16) }
         case let .milestone(id):
             if let milestone = store.milestone(id) { MilestoneIcon(milestone, size: 12) }
         case let .task(id):

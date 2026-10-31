@@ -17,7 +17,7 @@ struct MilestonePanel: View {
                         Rectangle().fill(Focus.hairline).frame(width: 1, height: 18).padding(.horizontal, 4)
                     }
                     if let project = store.project(milestone.projectId) {
-                        FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                        FocusProjectTile(project: project)
                         FocusCrumb(text: project.name, help: "Open project") { model.openProject(project.id) }
                         FocusCrumbSeparator()
                     }
@@ -153,7 +153,7 @@ private struct MilestoneInspector: View {
                     SidePanelProperty(label: "Project") {
                         Button { model.openProject(project.id) } label: {
                             HStack(spacing: 8) {
-                                FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                                FocusProjectTile(project: project)
                                 Text(project.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
                                 Spacer(minLength: 0)
                                 Image(systemName: "chevron.right")

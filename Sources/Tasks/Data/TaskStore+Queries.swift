@@ -53,17 +53,33 @@ extension TaskStore {
     /// Board column: active-sprint tasks with the given status. A milestone's board shows all of
     /// its tasks (any sprint or the backlog), leaving out only those closed with a past sprint.
     func boardTasks(in scope: TaskScope, status: WorkflowStatus) -> [TaskItem] {
-        tasks(in: scope).filter { Self.isOnBoard($0, in: scope) && $0.statusId == status.id }
+        let now = Date()
+        return tasks(in: scope).filter { isOnBoard($0, in: scope, now: now) && $0.statusId == status.id }
     }
 
     /// All projects board column: active-sprint tasks of a category, whatever their workflow.
     func boardTasks(in scope: TaskScope, category: StatusCategory) -> [TaskItem] {
-        tasks(in: scope).filter { Self.isOnBoard($0, in: scope) && $0.statusCategory == category }
+        let now = Date()
+        return tasks(in: scope).filter { isOnBoard($0, in: scope, now: now) && $0.statusCategory == category }
     }
 
-    /// Board shows the active sprint; a milestone's board shows every sprint and the backlog.
-    static func isOnBoard(_ task: TaskItem, in scope: TaskScope) -> Bool {
-        scope.isMilestone ? task.sprintSlot != .closed : task.sprintSlot == .active
+    /// Done and canceled cards of a project without sprints stay on its board this long.
+    nonisolated static let sprintlessClosedDays = 14
+
+    /// Board shows the active sprint; a milestone's board shows every sprint and the backlog. A
+    /// project without sprints shows every open task, and its done or canceled ones of the last
+    /// two weeks (it has no Complete sprint to clear them).
+    func isOnBoard(_ task: TaskItem, in scope: TaskScope, now: Date = Date()) -> Bool {
+        Self.isOnBoard(task, in: scope, usesSprints: usesSprints(task.projectId), now: now)
+    }
+
+    nonisolated static func isOnBoard(_ task: TaskItem, in scope: TaskScope, usesSprints: Bool = true, now: Date = Date()) -> Bool {
+        if scope.isMilestone { return task.sprintSlot != .closed }
+        if usesSprints { return task.sprintSlot == .active }
+        guard task.sprintSlot != .closed else { return false }
+        guard task.isClosed else { return true }
+        let cutoff = Calendar.current.date(byAdding: .day, value: -sprintlessClosedDays, to: Calendar.current.startOfDay(for: now)) ?? now
+        return (task.completedAt ?? task.updatedAt) >= cutoff
     }
 
     /// List group: all tasks in scope with the given status (closed sprints included).
@@ -167,8 +183,10 @@ extension TaskStore {
     }
 
     /// Label for a task's slot: "Sprint 14", "Sprint 15", "Backlog", or for a closed task the
-    /// past sprint it closed in ("Sprint 12"; "Closed sprint" for older data).
+    /// past sprint it closed in ("Sprint 12"; "Closed sprint" for older data). Empty for an open
+    /// task of a project without sprints.
     func sprintLabel(for task: TaskItem) -> String {
+        if task.sprintSlot != .closed, !usesSprints(task.projectId) { return "" }
         if task.sprintSlot == .closed, let number = task.closedSprintNumber { return "Sprint \(number)" }
         return sprintLabel(task.sprintSlot, projectId: task.projectId)
     }

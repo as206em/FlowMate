@@ -32,6 +32,7 @@ struct TaskListView: View {
                 title: group.title,
                 hint: group.hint,
                 colorHex: group.colorHex,
+                icon: group.icon,
                 statusKind: group.statusKind,
                 statusColorHex: group.statusColorHex,
                 tasks: group.tasks,
@@ -69,6 +70,8 @@ struct TaskListView: View {
         }
         // On a milestone's page every row has the same milestone
         if model.scope.isMilestone { columns.insert(.milestone) }
+        // A project without sprints has no sprint to show
+        if !model.scopeUsesSprints { columns.insert(.sprint) }
         return columns
     }
 
@@ -100,7 +103,9 @@ struct TaskListView: View {
     }
 }
 
-/// Sprints view (project scope): Active, Next and Backlog. Drag rows between groups.
+/// Sprints view (project scope): Active, Next and Backlog, each header with its task count and
+/// expected time against the sprint's capacity ("7 tasks · 11h of 20h"). Drag rows between groups;
+/// the numbers follow. Past sprints follow with their numbers and the velocity chart.
 struct SprintPlanView: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
@@ -129,17 +134,19 @@ struct SprintPlanView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
-    /// Completed sprints, newest first, collapsed until opened: "Sprint 3 · Oct 12 – Oct 25 · 8 of 10 done".
+    /// Completed sprints, newest first, collapsed until opened:
+    /// "Sprint 3 · 8 of 10 done · 18h planned · 21h tracked · Oct 12 – Oct 25", after the velocity chart.
     private func pastSprints(_ builder: inout TaskTableBuilder) {
         let past = store.pastSprints(projectId)
         guard !past.isEmpty else { return }
         builder.sectionTitle("Past sprints")
+        builder.velocity(projectId: projectId)
         for sprint in past {
             let key = TasksViewModel.pastSprintGroupKey(sprint)
             builder.group(
                 key: key,
                 title: sprint.name,
-                hint: [sprint.summary, sprint.goal.isEmpty ? nil : sprint.goal].compactMap { $0 }.joined(separator: " · "),
+                hint: [sprint.statsSummary, sprint.goal.isEmpty ? nil : sprint.goal].compactMap { $0 }.joined(separator: " · "),
                 tasks: store.tasks(of: sprint),
                 emptyText: "No tasks were in this sprint.",
                 showProject: false,
@@ -165,6 +172,7 @@ struct SprintPlanView: View {
             composerOnTop: model.isComposerPinned(TasksViewModel.listComposerKey(key)),
             open: !model.isCollapsed(key),
             gap: gap,
+            liveHint: .sprintLoad(projectId: projectId, slot: slot),
             display: RowDisplay.maker(store: store, model: model)
         )
     }
@@ -227,6 +235,7 @@ extension RowDisplay {
             return RowDisplay(
                 projectName: project?.name,
                 projectColorHex: project?.colorHex,
+                projectIcon: project?.icon,
                 milestoneName: task.milestoneId.flatMap { milestones[$0]?.name },
                 milestoneColorHex: task.milestoneId.flatMap { milestones[$0]?.colorHex },
                 sprintLabel: store.sprintLabel(for: task),

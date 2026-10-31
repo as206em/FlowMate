@@ -18,7 +18,7 @@ struct MilestoneHeaderTitle: View {
     var body: some View {
         HStack(spacing: 6) {
             if let project = store.project(milestone.projectId) {
-                FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                FocusProjectTile(project: project)
                 FocusCrumb(text: project.name, help: "Show \(project.name)") { model.select(.project(project.id)) }
                 FocusCrumbSeparator()
             }

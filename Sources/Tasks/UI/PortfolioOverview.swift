@@ -97,7 +97,7 @@ struct ProjectOverviewCard: View {
 
     private var titleRow: some View {
         HStack(spacing: 10) {
-            FocusProjectTile(name: card.project.name, colorHex: card.project.colorHex, size: 22)
+            FocusProjectTile(project: card.project, size: 22)
             Text(card.project.name)
                 .font(Focus.header)
                 .foregroundColor(Focus.text)
@@ -126,7 +126,7 @@ struct ProjectOverviewCard: View {
             FocusTimerRing(progress: 0, isRunning: false, size: 28, label: card.project.name) {}
                 .disabled(true)
                 .opacity(0.35)
-                .help("Nothing to start: plan a task in \(card.project.sprint.name)")
+                .help(card.project.usesSprints ? "Nothing to start: plan a task in \(card.project.sprint.name)" : "Nothing to start: add a task")
         }
     }
 
@@ -139,12 +139,12 @@ struct ProjectOverviewCard: View {
     private var sprintBlock: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
-                Image(systemName: "arrow.clockwise")
+                Image(systemName: card.project.usesSprints ? "arrow.clockwise" : "tray.full")
                     .font(.system(size: 10.5, weight: .semibold))
                     .foregroundColor(Focus.text3)
                 Text(card.sprintLine)
                     .font(Focus.meta)
-                    .foregroundColor(card.sprintDay.isOver ? Focus.progress : Focus.text2)
+                    .foregroundColor(card.project.usesSprints && card.sprintDay.isOver ? Focus.progress : Focus.text2)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Text(card.sprintPlanned == 0 ? "Nothing planned" : "\(card.sprintDone) of \(card.sprintPlanned) done")
@@ -154,7 +154,8 @@ struct ProjectOverviewCard: View {
                     .fixedSize()
             }
             FocusProgressBar(fraction: card.sprintPlanned == 0 ? 0 : Double(card.sprintDone) / Double(card.sprintPlanned))
-                .help(card.sprintDay.isOver ? "The sprint's last day has passed: complete it in Sprints" : card.project.sprint.dateRange)
+                .help(!card.project.usesSprints ? "Done of every task on the board (no sprints)"
+                      : card.sprintDay.isOver ? "The sprint's last day has passed: complete it in Sprints" : card.project.sprint.dateRange)
         }
     }
 
@@ -162,7 +163,7 @@ struct ProjectOverviewCard: View {
 
     private var stats: some View {
         HStack(alignment: .top, spacing: 0) {
-            stat(Self.hours(card.trackedInSprint), "this sprint")
+            if card.project.usesSprints { stat(Self.hours(card.trackedInSprint), "this sprint") }
             stat(Self.hours(card.trackedThisWeek), "this week")
             overdueStat
             stat("\(card.inProgressCount)", "in progress")

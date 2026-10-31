@@ -104,7 +104,7 @@ struct QuickPickOption: Identifiable, Equatable {
         case category(StatusCategory)
         case priority(TaskPriority)
         case milestone(UInt32?)
-        case project(name: String, colorHex: UInt32)
+        case project(name: String, colorHex: UInt32, icon: ProjectIcon?)
         case symbol(String)
     }
 
@@ -145,7 +145,10 @@ extension TasksViewModel {
     func presentQuickPicker(_ action: TaskQuickAction, ids: [UUID], store: TaskStore) -> Bool {
         var ids = store.existing(ids)
         // Closed tasks of a past sprint stay where they are
-        if action == .sprint { ids = ids.filter { store.task($0)?.sprintSlot != .closed } }
+        // and a project without sprints has none to pick
+        if action == .sprint {
+            ids = ids.filter { store.task($0)?.sprintSlot != .closed && store.task($0).map { store.usesSprints($0.projectId) } ?? false }
+        }
         guard !ids.isEmpty else { return false }
         if action == .project, store.projects.count < 2 { return false }
         let anchor: QuickPickerRequest.Anchor
@@ -264,7 +267,7 @@ extension TasksViewModel {
             return store.projects.map { project in
                 QuickPickOption(id: "project-\(project.id)", title: project.name,
                                 isCurrent: all({ $0.projectId }, equal: project.id),
-                                icon: .project(name: project.name, colorHex: project.colorHex), value: .project(project.id))
+                                icon: .project(name: project.name, colorHex: project.colorHex, icon: project.icon), value: .project(project.id))
             }
         }
     }

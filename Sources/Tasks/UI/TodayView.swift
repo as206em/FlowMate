@@ -179,7 +179,7 @@ struct TodayTrackedPanel: View {
         HStack(spacing: 14) {
             ForEach(plan.trackedByProject.prefix(6), id: \.projectId) { item in
                 HStack(spacing: 6) {
-                    FocusProjectTile(name: item.name, colorHex: item.colorHex, size: 14)
+                    FocusProjectTile(name: item.name, colorHex: item.colorHex, size: 14, icon: item.icon)
                     Text(item.name).font(Focus.meta).foregroundColor(Focus.text2).lineLimit(1)
                     Text(TodayFormat.duration(item.seconds)).font(Focus.meta.monospacedDigit()).foregroundColor(Focus.text3)
                 }

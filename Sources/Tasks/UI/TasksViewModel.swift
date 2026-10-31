@@ -192,37 +192,76 @@ final class TasksViewModel: ObservableObject {
         paletteRecents = defaults?.stringArray(forKey: Self.paletteRecentsKey) ?? []
     }
 
-    /// Sprints only exists in project scope, and a milestone's page has only Board and List;
-    /// fall back to List elsewhere.
-    var effectiveTab: Tab { Self.tab(tab, in: scope) }
+    /// Sprints only exists in project scope (of a project that uses sprints), and a milestone's
+    /// page has only Board and List; fall back to List elsewhere.
+    var effectiveTab: Tab { Self.tab(tab, in: scope, sprints: scopeUsesSprints) }
 
-    var tabs: [Tab] { Self.tabs(in: scope) }
+    var tabs: [Tab] { Self.tabs(in: scope, sprints: scopeUsesSprints) }
 
-    static func tabs(in scope: TaskScope) -> [Tab] {
+    static func tabs(in scope: TaskScope, sprints: Bool = true) -> [Tab] {
         switch scope {
         case .today: return []
         case .all: return [.overview, .board, .list, .milestones]
-        case .project: return [.board, .list, .sprints, .milestones]
+        case .project: return sprints ? [.board, .list, .sprints, .milestones] : [.board, .list, .milestones]
         case .milestone: return [.board, .list]
         }
     }
 
     /// The tab a scope can show for `tab` (List when it has no such tab).
-    static func tab(_ tab: Tab, in scope: TaskScope) -> Tab {
-        tabs(in: scope).contains(tab) ? tab : .list
+    static func tab(_ tab: Tab, in scope: TaskScope, sprints: Bool = true) -> Tab {
+        tabs(in: scope, sprints: sprints).contains(tab) ? tab : .list
+    }
+
+    // MARK: - Per-project settings the views follow
+
+    /// Projects planned without sprints (Project.usesSprints off): no Sprints tab, no sprint
+    /// filter, grouping or column. Kept in step with the store by TasksRootView (`syncProjects`).
+    @Published private(set) var sprintlessProjects: Set<UUID> = []
+    /// Projects that open on a view of their own choosing (Project.defaultView).
+    private(set) var defaultViews: [UUID: ProjectView] = [:]
+
+    /// Copies the per-project settings the view model needs from the store.
+    func syncProjects(_ store: TaskStore) {
+        let sprintless = Set(store.allProjects.filter { !$0.usesSprints }.map(\.id))
+        if sprintless != sprintlessProjects { sprintlessProjects = sprintless }
+        defaultViews = Dictionary(store.allProjects.compactMap { p in p.defaultView.map { (p.id, $0) } },
+                                  uniquingKeysWith: { a, _ in a })
+    }
+
+    /// The scope's project uses sprints (true outside a project, and on a milestone page).
+    var scopeUsesSprints: Bool {
+        guard let projectId = scope.projectId else { return true }
+        return !sprintlessProjects.contains(projectId)
+    }
+
+    /// Groupings the filter bar and palette offer: no Sprint for a project without sprints.
+    var availableGroupings: [TaskGrouping] {
+        TaskGrouping.available(in: scope).filter { $0 != .sprint || scopeUsesSprints }
+    }
+
+    static func tab(_ view: ProjectView) -> Tab {
+        switch view {
+        case .board: return .board
+        case .list: return .list
+        case .sprints: return .sprints
+        case .milestones: return .milestones
+        }
     }
 
     /// The filter bar shows on List and Board (Today has neither).
     var showsFilterBar: Bool { !scope.isToday && (effectiveTab == .list || effectiveTab == .board) }
 
     /// Shows a scope on the tab it was last used with (its filters are kept per scope too).
-    /// A scope never visited keeps the current tab.
+    /// A scope never visited keeps the current tab. A project with a default view set
+    /// (Project.defaultView) always opens on it, from anywhere (sidebar, menu bar, palette,
+    /// Overview); without one it opens on its last tab.
     func select(_ scope: TaskScope) {
         // A milestone page opens on List the first time: it lists every task of the milestone
-        let remembered = tabByScope[scope.key] ?? (scope.isMilestone ? .list : tab)
+        var remembered = tabByScope[scope.key] ?? (scope.isMilestone ? .list : tab)
+        if case let .project(id) = scope, let view = defaultViews[id] { remembered = Self.tab(view) }
         self.scope = scope
         // Today has no tabs: the tab stays for the next scope
-        if !scope.isToday { tab = Self.tab(remembered, in: scope) }
+        if !scope.isToday { tab = Self.tab(remembered, in: scope, sprints: scopeUsesSprints) }
         selectedTaskId = nil
         sidebarCursor = nil
         if case let .milestone(_, projectId) = scope { expandedProjects.insert(projectId) }
@@ -516,7 +555,18 @@ final class TasksViewModel: ObservableObject {
         set { options.sort = newValue }
     }
 
-    var grouping: TaskGrouping { options.effectiveGrouping(in: scope) }
+    /// The List's grouping (Status where Sprint isn't offered, in a project without sprints).
+    var grouping: TaskGrouping {
+        let grouping = options.effectiveGrouping(in: scope)
+        return grouping == .sprint && !scopeUsesSprints ? .status : grouping
+    }
+
+    /// The filters that apply here: a project without sprints ignores a Sprint filter.
+    private var appliedFilter: TaskFilter {
+        var filter = self.filter
+        if !scopeUsesSprints { filter.sprintSlots = [] }
+        return filter
+    }
 
     /// Resets search, chips, sort and grouping for this scope.
     func clearOptions() {
@@ -528,6 +578,7 @@ final class TasksViewModel: ObservableObject {
     /// List groups after filtering and sorting. Tasks of past (closed) sprints are hidden unless
     /// the Sprint filter asks for them.
     func listGroups(_ store: TaskStore, now: Date = Date()) -> [TaskGroup] {
+        let filter = appliedFilter
         var tasks = store.filtered(store.tasks(in: scope), by: filter, now: now)
         if !filter.sprintSlots.contains(.closed) { tasks.removeAll { $0.sprintSlot == .closed } }
         return store.groups(store.sorted(tasks, by: sort), by: grouping, in: scope)
@@ -535,6 +586,7 @@ final class TasksViewModel: ObservableObject {
 
     /// How many past-sprint tasks the List is hiding (for its caption).
     func hiddenClosedCount(_ store: TaskStore, now: Date = Date()) -> Int {
+        let filter = appliedFilter
         guard !filter.sprintSlots.contains(.closed) else { return 0 }
         return store.filtered(store.tasks(in: scope), by: filter, now: now).filter { $0.sprintSlot == .closed }.count
     }
@@ -543,7 +595,7 @@ final class TasksViewModel: ObservableObject {
     /// workflows differ) the categories, with Canceled only while an active-sprint task is canceled.
     func boardColumns(_ store: TaskStore) -> [TaskGroupValue] {
         if let statuses = store.statuses(in: scope) { return statuses.map { .status($0) } }
-        let active = store.tasks(in: scope).filter { $0.sprintSlot == .active }
+        let active = store.tasks(in: scope).filter { store.isOnBoard($0, in: scope) }
         return store.categoryColumns(for: active).map { .category($0) }
     }
 
@@ -567,12 +619,14 @@ final class TasksViewModel: ObservableObject {
     }
 
     /// Open tasks in the scope that Board leaves out because they sit in Next or Backlog
-    /// (narrowed by the same chips as the board).
+    /// (narrowed by the same chips as the board). Projects without sprints leave nothing out.
     func boardWaitingCount(_ store: TaskStore, now: Date = Date()) -> Int {
         var filter = self.filter
         filter.sprintSlots = []
         guard !scope.isMilestone else { return 0 }
-        let waiting = store.tasks(in: scope).filter { ($0.sprintSlot == .next || $0.sprintSlot == .backlog) && !$0.isClosed }
+        let waiting = store.tasks(in: scope).filter {
+            ($0.sprintSlot == .next || $0.sprintSlot == .backlog) && !$0.isClosed && store.usesSprints($0.projectId)
+        }
         return store.filtered(waiting, by: filter, now: now).count
     }
 
@@ -580,8 +634,8 @@ final class TasksViewModel: ObservableObject {
     /// nil while the board's empty state already explains it.
     func boardCaption(_ store: TaskStore, now: Date = Date()) -> String? {
         if case .sprintEmpty = boardEmptyReason(store, now: now) { return nil }
-        // A milestone's board isn't limited to the sprint
-        if scope.isMilestone { return nil }
+        // A milestone's board isn't limited to the sprint, nor a project without sprints
+        if scope.isMilestone || !scopeUsesSprints { return nil }
         let sprint: String
         if let projectId = scope.projectId {
             sprint = store.sprintName(projectId)
@@ -618,8 +672,9 @@ final class TasksViewModel: ObservableObject {
         chips.sprintSlots = []
         if !chips.isEmpty { return .noMatches }
         let all = store.tasks(in: scope)
-        if all.isEmpty || scope.isMilestone { return .noTasks }
-        return .sprintEmpty(waiting: all.filter { ($0.sprintSlot == .next || $0.sprintSlot == .backlog) && !$0.isClosed }.count)
+        if all.isEmpty || scope.isMilestone || !scopeUsesSprints { return .noTasks }
+        let waiting = all.filter { ($0.sprintSlot == .next || $0.sprintSlot == .backlog) && !$0.isClosed && store.usesSprints($0.projectId) }
+        return .sprintEmpty(waiting: waiting.count)
     }
 
     /// Sprint view groups (manual order, no filters).
@@ -986,7 +1041,7 @@ final class TasksViewModel: ObservableObject {
     /// The New task field: adds with tokens, selects the task, and says where it went with an Open
     /// button. `open` (⇧↵) opens the panel right away. Returns false when nothing was added.
     @discardableResult
-    func quickAdd(_ text: String, projectId: UUID, milestoneId: UUID?, slot: SprintSlot,
+    func quickAdd(_ text: String, projectId: UUID, milestoneId: UUID?, slot: SprintSlot? = nil,
                   open: Bool, store: TaskStore) -> Bool {
         guard let outcome = store.quickAddTask(text, projectId: projectId, milestoneId: milestoneId, sprintSlot: slot) else {
             return false

@@ -107,13 +107,14 @@ extension TaskStore {
 // Project-level timer helpers for the menu bar.
 extension TaskStore {
     /// The task a project's play button starts: the most recently touched started task (any
-    /// Started status), otherwise the top Not started task in the active sprint.
+    /// Started status), otherwise the top Not started task in the active sprint (any open task for
+    /// a project without sprints).
     func nextTaskToStart(projectId: UUID) -> TaskItem? {
         let tasks = tasks(of: projectId).filter { $0.sprintSlot != .closed }
         if let recent = tasks.filter({ $0.statusCategory == .started }).max(by: { $0.updatedAt < $1.updatedAt }) {
             return recent
         }
-        return tasks.first { $0.sprintSlot == .active && $0.statusCategory == .notStarted }
+        return tasks.first { isCurrentWork($0) && $0.statusCategory == .notStarted }
     }
 
     /// Starts the project's next task (see `nextTaskToStart`). Returns the started task's id.
@@ -124,8 +125,9 @@ extension TaskStore {
         return task.id
     }
 
-    /// Open tasks of the project's active sprint, plus anything of it that is running (menu bar expansion).
+    /// Open tasks of the project's active sprint (every open task without sprints), plus anything
+    /// of it that is running (menu bar expansion).
     func activeSprintTasks(projectId: UUID) -> [TaskItem] {
-        tasks(of: projectId).filter { ($0.sprintSlot == .active && !$0.isClosed) || isRunning($0.id) }
+        tasks(of: projectId).filter { (isCurrentWork($0) && !$0.isClosed) || isRunning($0.id) }
     }
 }

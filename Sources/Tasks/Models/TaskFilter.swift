@@ -157,6 +157,8 @@ struct TaskGroup: Identifiable, Equatable, Sendable {
     var hint: String = ""
     /// Project tile color for project and All-projects milestone groups
     var colorHex: UInt32?
+    /// Project groups: the project's icon on its tile
+    var icon: ProjectIcon?
     /// Status and category groups: the status icon to draw
     var statusKind: FocusStatusKind?
     var statusColorHex: UInt32?

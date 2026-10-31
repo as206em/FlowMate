@@ -385,7 +385,7 @@ private struct QuickPickRow: View {
             Image(systemName: color == nil ? "diamond" : "diamond.fill")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(color.map { Color(hex: $0) } ?? Focus.text3)
-        case let .project(name, colorHex): FocusProjectTile(name: name, colorHex: colorHex, size: 14)
+        case let .project(name, colorHex, icon): FocusProjectTile(name: name, colorHex: colorHex, size: 14, icon: icon)
         case let .symbol(name):
             Image(systemName: name).font(.system(size: 11, weight: .semibold)).foregroundColor(Focus.text3)
         }

@@ -14,7 +14,9 @@ struct TaskInspector: View {
                     property("Status", key: "S") { statusPicker }
                     property("Priority", key: "P, or 1–3") { priorityPicker }
                     property("Milestone", key: "M") { milestonePicker }
-                    property("Sprint", key: "R") { sprintPicker }
+                    if store.usesSprints(task.projectId) || task.sprintSlot == .closed {
+                        property("Sprint", key: "R") { sprintPicker }
+                    }
                     property("Due date", key: "D") { TaskDueDateField(task: task) }
                     if !task.isClosed {
                         property("Today") { TaskTodayField(task: task) }

@@ -21,8 +21,13 @@ struct TasksRootView: View {
             model.dropStaleIds(store)
         }
         .onChange(of: store.workspace.milestones.map(\.id)) { _ in model.dropStaleIds(store) }
+        // Sprints on or off and default views, which the tabs and filters follow
+        .onChange(of: store.workspace.projects) { _ in model.syncProjects(store) }
         // The restored scope (last launch) may name a project that's gone
-        .onAppear { if store.isLoaded { model.dropStaleIds(store) } }
+        .onAppear {
+            model.syncProjects(store)
+            if store.isLoaded { model.dropStaleIds(store) }
+        }
         .onChange(of: store.isLoaded) { loaded in if loaded { model.dropStaleIds(store) } }
         .sheet(isPresented: Binding(
             get: { model.completingSprintProjectId != nil },
@@ -216,7 +221,7 @@ struct TasksRootView: View {
     private var scopeContent: some View {
         let project = model.scope.projectId.flatMap { store.project($0) }
         VStack(alignment: .leading, spacing: 0) {
-            if let project, !model.scope.isMilestone, model.effectiveTab == .board || model.effectiveTab == .sprints {
+            if let project, project.usesSprints, !model.scope.isMilestone, model.effectiveTab == .board || model.effectiveTab == .sprints {
                 SprintHeader(project: project)
             }
             switch model.effectiveTab {

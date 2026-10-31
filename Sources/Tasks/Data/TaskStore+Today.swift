@@ -31,6 +31,7 @@ struct TodayPlan: Equatable {
         let projectId: UUID
         let name: String
         let colorHex: UInt32
+        var icon: ProjectIcon? = nil
         let seconds: TimeInterval
     }
 
@@ -105,7 +106,7 @@ extension TaskStore {
         plan.trackedByProject = trackedSecondsByProject(in: day, now: now)
             .compactMap { id, seconds -> TodayPlan.ProjectTime? in
                 guard let project = project(id), seconds >= 1 else { return nil }
-                return TodayPlan.ProjectTime(projectId: id, name: project.name, colorHex: project.colorHex, seconds: seconds)
+                return TodayPlan.ProjectTime(projectId: id, name: project.name, colorHex: project.colorHex, icon: project.icon, seconds: seconds)
             }
             .sorted { $0.seconds == $1.seconds ? $0.name < $1.name : $0.seconds > $1.seconds }
         return plan
@@ -123,7 +124,7 @@ extension TaskStore {
     }
 
     /// The menu bar's Up next: overdue, due today and pinned tasks, then the top not started tasks
-    /// of each project's active sprint (high priority first), leaving out what the menu already
+    /// of each project's active sprint (every open task without sprints; high priority first), leaving out what the menu already
     /// lists as in progress. At most `limit`.
     func upNext(limit: Int = 6, now: Date = Date(), calendar: Calendar = .current) -> [TaskItem] {
         let listed = menuInProgressTasks
@@ -137,7 +138,7 @@ extension TaskStore {
         add(open.filter { isDueToday($0, now: now) }.sorted(by: Self.byPriority))
         add(open.filter { isInFocus($0, now: now, calendar: calendar) }.sorted(by: Self.byFocusOrder))
         let projectOrder = Dictionary(projects.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
-        add(open.filter { $0.sprintSlot == .active && $0.statusCategory == .notStarted }.sorted { a, b in
+        add(open.filter { isCurrentWork($0) && $0.statusCategory == .notStarted }.sorted { a, b in
             if a.priority != b.priority { return a.priority.rank > b.priority.rank }
             let pa = projectOrder[a.projectId] ?? .max, pb = projectOrder[b.projectId] ?? .max
             return pa == pb ? a.sortIndex < b.sortIndex : pa < pb

@@ -141,7 +141,7 @@ struct TasksSidebar: View {
             if model.showingArchived {
                 ForEach(archived) { project in
                     FocusSidebarItem(selected: model.scope == .project(project.id), focused: model.sidebarCursor == .project(project.id), action: { model.clickSidebarProject(project.id) }) {
-                        FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                        FocusProjectTile(project: project)
                             .opacity(0.6)
                         Text(project.name)
                             .lineLimit(1)
@@ -166,7 +166,7 @@ struct TasksSidebar: View {
             ProjectRenameField(project: project) { renamingId = nil }
         } else {
             FocusSidebarItem(selected: model.scope == .project(project.id), focused: model.sidebarCursor == .project(project.id), action: { model.clickSidebarProject(project.id) }) {
-                FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                FocusProjectTile(project: project)
                 Text(project.name)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -555,7 +555,7 @@ private struct ProjectRenameField: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            FocusProjectTile(name: name.isEmpty ? project.name : name, colorHex: project.colorHex)
+            FocusProjectTile(name: name.isEmpty ? project.name : name, colorHex: project.colorHex, icon: project.icon)
             TextField("Project name", text: $name)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13.5, weight: .medium))

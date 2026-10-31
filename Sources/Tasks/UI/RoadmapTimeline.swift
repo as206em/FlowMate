@@ -196,7 +196,7 @@ private struct LaneHeader: View {
     var body: some View {
         Button { model.select(.project(project.id)) } label: {
             HStack(spacing: 9) {
-                FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                FocusProjectTile(project: project)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(project.name).font(Focus.rowStrong).foregroundColor(Focus.text).lineLimit(1)
                     Text(count == 0 ? "No open milestones" : "\(count) open")
@@ -549,7 +549,7 @@ private struct NoDateChip: View {
         Button { model.showMilestone(milestone.id, store: store) } label: {
             HStack(spacing: 7) {
                 if showProject, let project = store.project(milestone.projectId) {
-                    FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 16)
+                    FocusProjectTile(project: project, size: 16)
                 }
                 MilestoneIcon(milestone, size: 11)
                 Text(milestone.name).font(Focus.control).foregroundColor(Focus.text2).lineLimit(1)

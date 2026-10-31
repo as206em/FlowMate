@@ -77,9 +77,12 @@ enum PortfolioSort: String, CaseIterable, Identifiable, Sendable, TolerantString
 struct ProjectOverview: Identifiable, Equatable, Sendable {
     let project: Project
     let sprintDay: SprintDay
-    /// Active-sprint tasks done / planned (canceled ones left out)
+    /// Active-sprint tasks done / planned (canceled ones left out); without sprints, every task not
+    /// closed with a past sprint
     let sprintDone: Int
     let sprintPlanned: Int
+    /// Open tasks of the project (the "No sprints · 12 open" line)
+    var openCount = 0
     /// Seconds tracked on the project during the active sprint's dates, and this week
     let trackedInSprint: TimeInterval
     let trackedThisWeek: TimeInterval
@@ -106,9 +109,11 @@ struct ProjectOverview: Identifiable, Equatable, Sendable {
                                       untouchedDays: untouchedDays)
     }
 
-    /// "Sprint 14 · day 9 of 14", "Sprint 14 · starts Nov 2", "Sprint 14 · ended Oct 28"
+    /// "Sprint 14 · day 9 of 14", "Sprint 14 · starts Nov 2", "Sprint 14 · ended Oct 28";
+    /// "No sprints · 12 open" for a project without sprints
     var sprintLine: String {
-        PortfolioRules.sprintLine(project.sprint, day: sprintDay)
+        guard project.usesSprints else { return "No sprints · \(openCount) open" }
+        return PortfolioRules.sprintLine(project.sprint, day: sprintDay)
     }
 }
 
@@ -259,9 +264,9 @@ enum PortfolioRules {
 // MARK: - Store queries
 
 extension TaskStore {
-    /// The project's capacity in hours a week, used for milestone health. Projects have no
-    /// capacity of their own yet, so every project works at the default pace (4h a working day).
-    func weeklyCapacityHours(_ projectId: UUID) -> Double? { nil }
+    /// The project's capacity in hours a week (Project.weeklyCapacityHours), used for milestone
+    /// health; nil works at the default pace (4h a working day).
+    func weeklyCapacityHours(_ projectId: UUID) -> Double? { project(projectId)?.weeklyCapacityHours }
 
     /// Progress, remaining hours and health of a milestone as of `now`.
     func milestoneForecast(_ milestoneId: UUID, now: Date = Date(), calendar: Calendar = .current) -> MilestoneForecast? {
@@ -300,7 +305,7 @@ extension TaskStore {
     func projectOverview(_ projectId: UUID, now: Date = Date(), calendar: Calendar = .current) -> ProjectOverview? {
         guard let project = project(projectId) else { return nil }
         let tasks = workspace.tasks.filter { $0.projectId == projectId }
-        let sprint = tasks.filter { $0.sprintSlot == .active && !$0.isCanceled }
+        let sprint = tasks.filter { isCurrentWork($0) && !$0.isCanceled }
         let next = nextMilestone(of: projectId)
         let activity = lastActivity(projectId: projectId, now: now)
         let sprintRange = Self.days(project.sprint.startDate, through: project.sprint.endDate, calendar: calendar)
@@ -309,6 +314,7 @@ extension TaskStore {
             sprintDay: PortfolioRules.sprintDay(project.sprint, now: now, calendar: calendar),
             sprintDone: sprint.filter(\.isDone).count,
             sprintPlanned: sprint.count,
+            openCount: tasks.filter { !$0.isClosed }.count,
             trackedInSprint: trackedSeconds(.project(projectId), in: sprintRange, now: now),
             trackedThisWeek: trackedSeconds(.project(projectId), in: PortfolioRules.weekInterval(now, calendar: calendar), now: now),
             overdueCount: tasks.filter { isOverdue($0, now: now) }.count,

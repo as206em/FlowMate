@@ -16,6 +16,8 @@ import SwiftUI
 struct RowDisplay: Equatable {
     var projectName: String?
     var projectColorHex: UInt32?
+    /// The project's emoji or symbol in place of its letter
+    var projectIcon: ProjectIcon? = nil
     var milestoneName: String?
     /// The milestone's color: its chip is tinted with it
     var milestoneColorHex: UInt32?
@@ -352,8 +354,21 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         let color = Self.projectColor(hex)
         color.withAlphaComponent(0.18).setFill()
         NSBezierPath(roundedRect: tile, xRadius: size * 0.28, yRadius: size * 0.28).fill()
-        let letter = String(name.prefix(1)).uppercased()
-        drawText(letter, font: .systemFont(ofSize: size * 0.56, weight: .bold), color: color, in: tile, align: .center)
+        switch display.projectIcon {
+        case let .emoji(emoji)?:
+            drawText(emoji, font: .systemFont(ofSize: size * 0.68), color: Style.text3, in: tile, align: .center)
+        case let .symbol(symbol)?:
+            if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: size * 0.52, weight: .semibold).applying(.init(paletteColors: [color]))) {
+                let s = image.size
+                image.draw(in: NSRect(x: tile.midX - s.width / 2, y: tile.midY - s.height / 2, width: s.width, height: s.height))
+            } else {
+                fallthrough
+            }
+        default:
+            let letter = String(name.prefix(1)).uppercased()
+            drawText(letter, font: .systemFont(ofSize: size * 0.56, weight: .bold), color: color, in: tile, align: .center)
+        }
         let textX = tile.maxX + 7
         drawText(name, font: Style.meta, color: Style.text3,
                  in: NSRect(x: textX, y: cell.minY, width: max(0, cell.maxX - textX), height: cell.height))

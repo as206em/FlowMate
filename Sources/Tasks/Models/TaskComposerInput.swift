@@ -22,7 +22,9 @@ struct ComposerDraft: Equatable {
     var status: WorkflowStatus?
     /// Set by an All projects column or group: the first status of this category in the project
     var category: StatusCategory?
-    var slot: SprintSlot = .active
+    /// The sprint picked by the group, a #word or the chip; nil uses the project's default
+    /// (Project.newTaskSlot)
+    var slot: SprintSlot?
     var milestoneId: UUID?
     var priority: TaskPriority?
     var dueDate: Date?
@@ -52,7 +54,7 @@ struct ComposerDraft: Equatable {
 
     /// Anything besides the defaults (which keeps the composer open)
     var hasValues: Bool {
-        slot != .active || milestoneId != nil || priority != nil || dueDate != nil || expectedMinutes != nil
+        slot != nil || milestoneId != nil || priority != nil || dueDate != nil || expectedMinutes != nil
     }
 }
 
@@ -247,7 +249,8 @@ extension TaskStore {
         }
         switch trigger {
         case .sprint:
-            guard let projectId else { return [] }
+            // A project without sprints has nothing to pick
+            guard let projectId, usesSprints(projectId) else { return [] }
             let words: [SprintSlot: String] = [.active: "#now", .next: "#next", .backlog: "#backlog"]
             return SprintSlot.plannable
                 .filter { matches(sprintLabel($0, projectId: projectId)) || matches(words[$0] ?? "") }
@@ -289,7 +292,8 @@ extension TaskStore {
                 .init(id: "all-project", title: "Project", detail: "+", action: .trigger(.project)),
                 .init(id: "all-status", title: "Status", detail: "*", action: .trigger(.status)),
             ]
-            return all.filter { matches($0.title) }
+            let sprintless = projectId.map { !usesSprints($0) } ?? false
+            return all.filter { matches($0.title) && !(sprintless && $0.id == "all-sprint") }
         }
     }
 

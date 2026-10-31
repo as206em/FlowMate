@@ -99,12 +99,12 @@ struct TaskFilterBar: View {
 
     // MARK: - Chips
 
-    /// Dimensions offered here: Sprint isn't on Board (it shows the active sprint), Project only in
-    /// All projects, Milestone not on a milestone's page.
+    /// Dimensions offered here: Sprint isn't on Board (it shows the active sprint) nor in a project
+    /// without sprints, Project only in All projects, Milestone not on a milestone's page.
     private var dimensions: [Dimension] {
         Dimension.allCases.filter { dimension in
             switch dimension {
-            case .sprint: return model.effectiveTab != .board
+            case .sprint: return model.effectiveTab != .board && model.scopeUsesSprints
             case .project: return model.scope.projectId == nil && store.projects.count > 1
             // A milestone's page shows only its tasks
             case .milestone: return !model.scope.isMilestone
@@ -293,7 +293,7 @@ struct TaskFilterBar: View {
                     model.filter.milestones.formSymmetricDifference([milestone.id])
                 } label: {
                     if model.scope.projectId == nil, let project = store.project(milestone.projectId) {
-                        FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 14)
+                        FocusProjectTile(project: project, size: 14)
                     }
                     Image(systemName: "diamond.fill").font(.system(size: 9)).foregroundColor(Color(hex: milestone.colorHex))
                     Text(milestone.name).lineLimit(1)
@@ -322,7 +322,7 @@ struct TaskFilterBar: View {
         case .project:
             ForEach(store.projects) { project in
                 toggle(model.filter.projectIds.contains(project.id)) { model.filter.projectIds.formSymmetricDifference([project.id]) } label: {
-                    FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 14)
+                    FocusProjectTile(project: project, size: 14)
                     Text(project.name).lineLimit(1)
                 }
             }
@@ -349,7 +349,7 @@ struct TaskFilterBar: View {
             .popover(isPresented: binding(for: .group), arrowEdge: .bottom) {
                 FocusPopoverMenu(width: 200) {
                     FocusMenuSection(title: "Group by", first: true)
-                    ForEach(TaskGrouping.available(in: model.scope)) { grouping in
+                    ForEach(model.availableGroupings) { grouping in
                         FocusMenuItem(isSelected: grouping == model.grouping) {
                             model.options.grouping = grouping
                             openMenu = nil

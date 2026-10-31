@@ -12,9 +12,12 @@ enum MenuNavigation {
         TasksWindow.show(openTask: id)
     }
 
-    /// Opens the project on its own last tab with its own filters (both kept per project).
+    /// Opens the project on its default view (Project.defaultView), else its own last tab, with its
+    /// own filters (both kept per project).
     static func openProject(_ id: UUID, focus: TasksViewModel.FocusRequest.Field? = nil) {
         MenuBarPanel.close()
+        // The window may not have been open yet to keep these in step
+        TasksWindow.viewModel.syncProjects(TaskStore.shared)
         TasksWindow.viewModel.select(.project(id))
         TasksWindow.show()
         if let focus { TasksWindow.viewModel.requestFocus(focus) }
@@ -124,7 +127,7 @@ struct MenuSearchField: View {
     private func targetChip(_ target: Project) -> some View {
         Button { pickingTarget.toggle() } label: {
             HStack(spacing: 5) {
-                FocusProjectTile(name: target.name, colorHex: target.colorHex, size: 14)
+                FocusProjectTile(project: target, size: 14)
                 Text(target.name)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(Focus.text2)
@@ -152,7 +155,7 @@ struct MenuSearchField: View {
                         setTarget(project.id)
                         pickingTarget = false
                     } label: {
-                        FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                        FocusProjectTile(project: project)
                         Text(project.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
                     }
                 }
@@ -274,7 +277,7 @@ struct MenuSearchResults: View {
                 FocusCaption(text: "Projects").padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 2)
                 ForEach(projects) { project in
                     MenuItemRow(highlighted: highlight == .project(project.id), action: { activate(.project(project.id)) }) {
-                        FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 20)
+                        FocusProjectTile(project: project, size: 20)
                         Text(project.name).font(Focus.rowStrong).foregroundColor(Focus.text).lineLimit(1)
                         Spacer(minLength: 4)
                         Text("\(store.openCount(project.id))")
@@ -478,7 +481,9 @@ struct MenuInProgressSection: View {
         if store.isOverdue(task), let due = task.dueDate { return ("Overdue · " + TaskDates.dueLabel(due), true) }
         if store.isDueToday(task) { return ("Due today", true) }
         if store.isInFocus(task) { return ("Today", false) }
-        return (store.sprintLabel(for: task), false)
+        let sprint = store.sprintLabel(for: task)
+        // A project without sprints: its name says where the task is from
+        return (sprint.isEmpty ? (store.project(task.projectId)?.name ?? "") : sprint, false)
     }
 
     private func upNextRow(_ task: TaskItem) -> some View {
@@ -494,7 +499,7 @@ struct MenuInProgressSection: View {
                         .lineLimit(1)
                     HStack(spacing: 5) {
                         if let project {
-                            FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 12)
+                            FocusProjectTile(project: project, size: 12)
                             Text(project.name).lineLimit(1)
                             Text("·")
                         }
@@ -587,7 +592,7 @@ struct MenuInProgressSection: View {
                         .lineLimit(1)
                     HStack(spacing: 5) {
                         if let project {
-                            FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 12)
+                            FocusProjectTile(project: project, size: 12)
                             Text(project.name).lineLimit(1)
                         }
                     }

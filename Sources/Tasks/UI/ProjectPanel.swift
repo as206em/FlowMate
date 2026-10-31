@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The project side panel, opened from the sidebar, the header title or a breadcrumb.
-/// Left: name, Markdown description, the milestones and the workflow (statuses). Right: color, target date, the sprint
-/// (number, start, length, goal), then Show tasks, Archive and Delete.
+/// Left: name, Markdown description, the milestones and the workflow (statuses). Right: color, icon,
+/// target date, the sprint (plan in sprints, hours per week, number, start, length, goal), the
+/// defaults (view it opens on, new tasks' time and sprint), then Show tasks, Archive and Delete.
 /// TasksRootView supplies the frame, scrim, slide-in and Esc handling, as for the task panel.
 struct ProjectPanel: View {
     @EnvironmentObject private var store: TaskStore
@@ -13,7 +14,7 @@ struct ProjectPanel: View {
         if let project = store.project(projectId) {
             VStack(spacing: 0) {
                 SidePanelHeader(closeLabel: "Close project", close: { model.closePanel() }) {
-                    FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                    FocusProjectTile(project: project)
                     FocusCrumbCurrent(text: project.name)
                     if project.isArchived { FocusTag(text: "Archived") }
                 }
@@ -126,7 +127,7 @@ struct MilestoneSummaryRow: View {
                         .lineLimit(1)
                     if showProject, let project = store.project(milestone.projectId) {
                         HStack(spacing: 6) {
-                            FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 14)
+                            FocusProjectTile(project: project, size: 14)
                             Text(project.name).font(Focus.meta).foregroundColor(Focus.text3).lineLimit(1)
                         }
                     }
@@ -206,6 +207,11 @@ private struct ProjectInspector: View {
                 FocusColorSwatches(selection: project.colorHex) { store.setProjectColor(project.id, colorHex: $0) }
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                FocusCaption(text: "Icon")
+                ProjectIconButton(project: project)
+            }
+
             VStack(spacing: 6) {
                 SidePanelProperty(label: "Target date") {
                     DateField(
@@ -217,6 +223,8 @@ private struct ProjectInspector: View {
             }
 
             sprintSection
+
+            ProjectDefaultsSection(project: project)
 
             VStack(alignment: .leading, spacing: 2) {
                 Button {
@@ -254,6 +262,15 @@ private struct ProjectInspector: View {
         .projectDeleteAlert(Binding(get: { confirmingDelete ? project : nil }, set: { if $0 == nil { confirmingDelete = false } }))
     }
 
+    private var capacityHint: String {
+        guard let weekly = project.weeklyCapacityHours else {
+            return "Not set: milestone forecasts assume 4h a working day."
+        }
+        guard project.usesSprints else { return "\(SprintPlanRules.hoursText(weekly / 5)) a working day for milestone forecasts." }
+        let total = weekly * Double(project.sprint.lengthWeeks)
+        return "\(SprintPlanRules.hoursText(total)) per \(project.sprint.lengthLabel) sprint."
+    }
+
     private var summary: some View {
         let open = store.openCount(project.id)
         let total = store.tasks(of: project.id).count
@@ -267,11 +284,36 @@ private struct ProjectInspector: View {
         }
     }
 
-    /// Sprint number, start, length and goal. Changing the start or length moves the end and the next sprint.
+    /// Sprints on or off, the weekly capacity, then the sprint's number, start, length and goal.
+    /// Changing the start or length moves the end and the next sprint.
     private var sprintSection: some View {
         let sprint = project.sprint
         return VStack(alignment: .leading, spacing: 6) {
             FocusCaption(text: "Sprint").padding(.top, 12)
+            Toggle(isOn: Binding(get: { project.usesSprints }, set: { on in
+                store.setUsesSprints(project.id, on)
+                model.showUndoToast(on ? "Sprints on · \(project.sprint.name) starts today" : "Sprints off", store: store)
+            })) {
+                Text("Plan in sprints").font(Focus.body).foregroundColor(Focus.text)
+            }
+            .toggleStyle(.focus)
+            .frame(minHeight: 34)
+            .accessibilityLabel("Plan in sprints")
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Hours per week on this project").font(Focus.meta).foregroundColor(Focus.text3)
+                CapacityField(project: project)
+                Text(capacityHint)
+                    .font(.system(size: 12))
+                    .foregroundColor(Focus.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.bottom, 4)
+            if !project.usesSprints {
+                Text("Board shows every open task. Turning sprints on starts \(sprint.name) today with the work in progress; the other open tasks wait in the backlog.")
+                    .font(.system(size: 12))
+                    .foregroundColor(Focus.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
             SidePanelProperty(label: "Number") {
                 FocusStepper(value: sprint.number, label: "Sprint number") {
                     store.setSprintNumber(projectId: project.id, number: $0)
@@ -313,6 +355,7 @@ private struct ProjectInspector: View {
                 }
             }
             .padding(.top, 6)
+            }
         }
         .padding(.top, 4)
         .overlay(alignment: .top) { FocusDivider() }

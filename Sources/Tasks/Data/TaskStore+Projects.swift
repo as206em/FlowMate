@@ -230,7 +230,8 @@ extension TaskStore {
     /// - Unfinished active tasks follow `unfinished`: stay for the new sprint, go to the backlog,
     ///   or close with the old sprint.
     /// - Next-sprint tasks become active.
-    /// - The sprint is kept in `pastSprints` with its dates, goal and tasks.
+    /// - The sprint is kept in `pastSprints` with its dates, goal and tasks, and its numbers:
+    ///   planned and done expected time, time tracked in its dates and the capacity it had.
     /// - The new sprint gets the next number, starts on the day you complete it (so dates never
     ///   drift), keeps the project's length, and takes `nextGoal`.
     func completeSprint(projectId: UUID, unfinished: UnfinishedSprintTasks = .moveToNextSprint,
@@ -243,11 +244,13 @@ extension TaskStore {
                     pauseTimer(task.id, now: now)
                 }
             }
-            completeSprintStep(projectId: projectId, unfinished: unfinished, nextGoal: nextGoal, now: now)
+            let stats = completionStats(projectId: projectId, now: now)
+            completeSprintStep(projectId: projectId, unfinished: unfinished, nextGoal: nextGoal, stats: stats, now: now)
         }
     }
 
-    private func completeSprintStep(projectId: UUID, unfinished: UnfinishedSprintTasks, nextGoal: String, now: Date) {
+    private func completeSprintStep(projectId: UUID, unfinished: UnfinishedSprintTasks, nextGoal: String,
+                                    stats: (planned: Int, done: Int, tracked: TimeInterval, capacity: Double?), now: Date) {
         mutate("Complete sprint") { ws in
             guard let p = ws.projects.firstIndex(where: { $0.id == projectId }) else { return }
             let old = ws.projects[p].sprint
@@ -289,7 +292,9 @@ extension TaskStore {
             ws.projects[p].pastSprints.append(PastSprint(
                 number: old.number, startDate: old.startDate, endDate: end,
                 goal: old.goal.trimmingCharacters(in: .whitespacesAndNewlines),
-                taskIds: sprintTasks, doneTaskIds: doneTasks, completedAt: now
+                taskIds: sprintTasks, doneTaskIds: doneTasks, completedAt: now,
+                plannedMinutes: stats.planned, doneMinutes: stats.done, trackedSeconds: stats.tracked,
+                capacityHours: stats.capacity
             ))
             var sprint = old
             sprint.number += 1

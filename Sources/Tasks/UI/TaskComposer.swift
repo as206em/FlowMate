@@ -21,6 +21,9 @@ struct TaskComposer: View {
     var isDefault = false
     /// "New task in To do"
     var groupName = ""
+    /// A Board column: tasks go to the active sprint (the board shows it) unless a word or the
+    /// chip says otherwise, whatever the project's default sprint
+    var onBoard = false
 
     @State private var title = ""
     @State private var draft = ComposerDraft()
@@ -101,6 +104,7 @@ struct TaskComposer: View {
 
     private func applyPreset() {
         draft.apply(preset: preset, in: model.scope)
+        if onBoard, draft.slot == nil, !model.scope.isMilestone { draft.slot = .active }
     }
 
     // MARK: - State
@@ -152,7 +156,7 @@ struct TaskComposer: View {
         FlowRow(spacing: 6) {
             if showsProjectButton {
                 ComposerPropertyButton(tint: .neutral, isSet: true, isOpen: binding(.project)) {
-                    FocusProjectTile(name: target.name, colorHex: target.colorHex, size: 14)
+                    FocusProjectTile(project: target, size: 14)
                     Text(target.name)
                 } popover: {
                     FocusPopoverMenu(width: 220, maxHeight: 360) {
@@ -161,7 +165,7 @@ struct TaskComposer: View {
                                 setProject(project.id)
                                 closePicker()
                             } label: {
-                                FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                                FocusProjectTile(project: project)
                                 Text(project.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
                             }
                         }
@@ -189,13 +193,16 @@ struct TaskComposer: View {
                 }
             }
 
-            ComposerPropertyButton(tint: draft.slot == .active ? .neutral : .sprint, isSet: true, isOpen: binding(.sprint)) {
+            // A project without sprints has no sprint chip
+            if target.usesSprints {
+            let slot = draft.slot ?? target.newTaskSlot
+            ComposerPropertyButton(tint: slot == .active ? .neutral : .sprint, isSet: true, isOpen: binding(.sprint)) {
                 Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .semibold))
-                Text(store.sprintLabel(draft.slot, projectId: target.id))
+                Text(store.sprintLabel(slot, projectId: target.id))
             } popover: {
                 FocusPopoverMenu(width: 210) {
                     ForEach(SprintSlot.plannable) { slot in
-                        FocusMenuItem(isSelected: slot == draft.slot) {
+                        FocusMenuItem(isSelected: slot == (draft.slot ?? target.newTaskSlot)) {
                             draft.slot = slot
                             closePicker()
                         } label: {
@@ -206,6 +213,7 @@ struct TaskComposer: View {
                         }
                     }
                 }
+            }
             }
 
             let milestone = draft.milestoneId.flatMap { store.milestone($0) }
@@ -258,7 +266,8 @@ struct TaskComposer: View {
 
             ComposerPropertyButton(tint: .time, isSet: draft.expectedMinutes != nil, isOpen: binding(.time)) {
                 Image(systemName: "clock").font(.system(size: 10, weight: .semibold))
-                Text(draft.expectedMinutes.map { Focus.durationString(minutes: $0) + " expected" } ?? "Expected time")
+                Text(draft.expectedMinutes.map { Focus.durationString(minutes: $0) + " expected" }
+                     ?? target.defaultExpectedMinutes.map { Focus.durationString(minutes: $0) + " expected" } ?? "Expected time")
             } popover: {
                 ComposerTimeChoices(minutes: draft.expectedMinutes) { minutes in
                     draft.expectedMinutes = minutes
@@ -405,6 +414,8 @@ struct TaskComposer: View {
         case let .milestone(name): return store.matchMilestone(name, projectId: target.id) != nil
         case let .project(name): return store.matchProject(name) != nil
         case let .status(name): return store.matchStatus(name, projectId: (targetProject ?? target).id) != nil
+        // A project without sprints leaves #next and the like in the title
+        case .slot: return (targetProject ?? target).usesSprints
         default: return true
         }
     }

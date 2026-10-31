@@ -40,13 +40,16 @@ struct TaskDetailPanel: View {
     private func header(_ task: TaskItem) -> some View {
         SidePanelHeader(closeLabel: "Close task", close: { model.closePanel() }, stepper: stepper) {
             if let project = store.project(of: task) {
-                FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                FocusProjectTile(project: project)
                 FocusCrumb(text: project.name, help: "Open project") { model.openProject(project.id) }
                 FocusCrumbSeparator()
             }
             TaskMilestoneCrumb(task: task)
-            FocusCrumbSeparator()
-            TaskSprintCrumb(task: task)
+            // A project without sprints has no sprint to show (a task closed in a past one still does)
+            if store.usesSprints(task.projectId) || task.sprintSlot == .closed {
+                FocusCrumbSeparator()
+                TaskSprintCrumb(task: task)
+            }
         }
     }
 }

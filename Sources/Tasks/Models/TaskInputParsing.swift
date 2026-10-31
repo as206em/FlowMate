@@ -262,6 +262,8 @@ struct QuickAddInput: Equatable, Sendable {
     var expectedMinutes: Int?
     var projectQuery: String?
     var slot: SprintSlot?
+    /// The word that set `slot` as typed ("#next"), to put back for a project without sprints
+    var slotWord: String?
     var statusQuery: String?
 
     var hasTokens: Bool {
@@ -279,7 +281,9 @@ struct QuickAddInput: Equatable, Sendable {
             case let .due(date)?: result.dueDate = date
             case let .minutes(minutes)?: result.expectedMinutes = minutes
             case let .project(name)?: result.projectQuery = name
-            case let .slot(slot)?: result.slot = slot
+            case let .slot(slot)?:
+                result.slot = slot
+                result.slotWord = word
             case let .status(name)?: result.statusQuery = name
             case nil: kept.append(word)
             }

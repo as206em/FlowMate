@@ -71,7 +71,7 @@ struct MilestonesView: View {
     private func sectionHeader(_ project: Project, count: Int) -> some View {
         Button { model.select(.project(project.id)) } label: {
             HStack(spacing: 8) {
-                FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                FocusProjectTile(project: project)
                 Text(project.name).font(Focus.groupTitle).foregroundColor(Focus.text).lineLimit(1)
                 Text("\(count)").font(Focus.row.monospacedDigit()).foregroundColor(Focus.text3)
                 Spacer(minLength: 0)
@@ -188,7 +188,7 @@ private struct NewMilestoneRow: View {
             if model.scope.projectId == nil, let target {
                 Button { pickingProject = true } label: {
                     HStack(spacing: 6) {
-                        FocusProjectTile(name: target.name, colorHex: target.colorHex, size: 16)
+                        FocusProjectTile(project: target, size: 16)
                         Text(target.name).font(Focus.meta).foregroundColor(Focus.text2).lineLimit(1)
                         Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundColor(Focus.text3)
                     }
@@ -207,7 +207,7 @@ private struct NewMilestoneRow: View {
                                 chosenProjectId = project.id
                                 pickingProject = false
                             } label: {
-                                FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                                FocusProjectTile(project: project)
                                 Text(project.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
                             }
                         }

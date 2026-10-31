@@ -28,6 +28,8 @@ struct GroupHeaderInfo: Equatable {
     let title: String
     let hint: String
     let colorHex: UInt32?
+    /// A project group's icon on its tile
+    var icon: ProjectIcon? = nil
     /// Status groups: the status icon (and its color; nil for a category's signal color)
     var statusKind: FocusStatusKind? = nil
     var statusColorHex: UInt32? = nil
@@ -60,6 +62,15 @@ enum GroupHeaderAction: Equatable {
 enum GroupLiveHint: Equatable {
     /// "Planned 5h 30m": what's left of the tasks pinned to Today
     case todayPlanned
+    /// Sprints view: "7 tasks · 11h of 20h · 5h left", amber near the capacity, red over it.
+    /// Replaces the header's count.
+    case sprintLoad(projectId: UUID, slot: SprintSlot)
+
+    /// The hint says how many tasks itself
+    var includesCount: Bool {
+        if case .sprintLoad = self { return true }
+        return false
+    }
 }
 
 struct TaskRowInfo: Equatable {
@@ -80,6 +91,8 @@ enum TaskTableRow: Equatable, Identifiable {
     case composer(group: String, preset: TaskGroupValue, isDefault: Bool, title: String)
     /// Today's "Tracked today" panel: the total and a bar per project (drawn live)
     case trackedToday
+    /// Sprints view: the velocity chart of the project's recent sprints
+    case velocity(projectId: UUID)
 
     var id: String {
         switch self {
@@ -90,6 +103,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case let .empty(group, _): return "e-" + group
         case let .composer(group, _, _, _): return "c-" + group
         case .trackedToday: return "tracked-today"
+        case let .velocity(projectId): return "velocity-\(projectId.uuidString)"
         }
     }
 
@@ -100,7 +114,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case let .task(info): return info.group
         case let .empty(group, _): return group
         case let .composer(group, _, _, _): return group
-        case .spacer, .sectionTitle, .trackedToday: return nil
+        case .spacer, .sectionTitle, .trackedToday, .velocity: return nil
         }
     }
 
@@ -122,6 +136,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case .empty: return 52
         case .composer: return 44
         case .trackedToday: return 120
+        case .velocity: return 200
         }
     }
 }
@@ -137,6 +152,10 @@ struct TaskTableBuilder {
         rows.append(.trackedToday)
     }
 
+    mutating func velocity(projectId: UUID) {
+        rows.append(.velocity(projectId: projectId))
+    }
+
     mutating func spacer(_ id: String, _ height: CGFloat) {
         rows.append(.spacer(id: id, height: height))
     }
@@ -150,6 +169,7 @@ struct TaskTableBuilder {
         title: String,
         hint: String = "",
         colorHex: UInt32? = nil,
+        icon: ProjectIcon? = nil,
         statusKind: FocusStatusKind? = nil,
         statusColorHex: UInt32? = nil,
         tasks: [TaskItem],
@@ -167,7 +187,7 @@ struct TaskTableBuilder {
         display: (TaskItem) -> RowDisplay
     ) {
         rows.append(.groupHeader(GroupHeaderInfo(
-            key: key, title: title, hint: hint, colorHex: colorHex, statusKind: statusKind,
+            key: key, title: title, hint: hint, colorHex: colorHex, icon: icon, statusKind: statusKind,
             statusColorHex: statusColorHex, count: tasks.count, open: open, gap: gap,
             actions: actions, liveHint: liveHint, risk: risk
         )))
@@ -295,6 +315,19 @@ struct TaskTableCell: View {
                 .padding(.top, 6)
         case .trackedToday:
             TodayTrackedPanel()
+        case let .velocity(projectId):
+            SprintVelocityPanel(projectId: projectId)
+        }
+    }
+}
+
+/// The plan's color against capacity: amber from 90%, red past it.
+enum CapacityColors {
+    static func color(_ level: CapacityLevel) -> Color {
+        switch level {
+        case .under: return Focus.text3
+        case .near: return Focus.progress
+        case .over: return Focus.risk
         }
     }
 }
@@ -345,9 +378,30 @@ private struct GroupHeaderRow: View {
                     .foregroundColor(Focus.text3)
                     .lineLimit(1)
             }
+        case let .sprintLoad(projectId, slot)?:
+            LiveTime { now in
+                let load = store.slotLoad(projectId: projectId, slot: slot, now: now)
+                Text(load.label)
+                    .font(Focus.meta.monospacedDigit())
+                    .foregroundColor(Self.color(load.level))
+                    .lineLimit(1)
+                    .help(Self.help(load))
+                    .accessibilityLabel(load.label + (load.level == .over ? ", over capacity" : ""))
+            }
         case nil:
             EmptyView()
         }
+    }
+
+    static func color(_ level: CapacityLevel) -> Color { CapacityColors.color(level) }
+
+    private static func help(_ load: SprintSlotLoad) -> String {
+        guard let capacity = load.capacityMinutes else {
+            return "Expected time of the tasks here. Set hours per week in the project's settings to compare it with your capacity."
+        }
+        let over = load.plannedMinutes - capacity
+        if over > 0 { return "\(Focus.durationString(minutes: over)) more than this sprint's capacity" }
+        return "\(Focus.durationString(minutes: capacity - load.plannedMinutes)) of capacity free"
     }
 
     private var toggle: some View {
@@ -361,13 +415,15 @@ private struct GroupHeaderRow: View {
                     .rotationEffect(.degrees(info.open ? 90 : 0))
                     .frame(width: 10)
                 if let colorHex = info.colorHex {
-                    FocusProjectTile(name: info.title, colorHex: colorHex)
+                    FocusProjectTile(name: info.title, colorHex: colorHex, icon: info.icon)
                 }
                 if let kind = info.statusKind {
                     FocusStatusIcon(kind: kind, color: info.statusColorHex.map { Color(hex: $0) }, size: 15)
                 }
                 Text(info.title).font(Focus.groupTitle).foregroundColor(info.risk ? Focus.risk : Focus.text).lineLimit(1)
-                Text("\(info.count)").font(Focus.row.monospacedDigit()).foregroundColor(Focus.text3)
+                if info.liveHint?.includesCount != true {
+                    Text("\(info.count)").font(Focus.row.monospacedDigit()).foregroundColor(Focus.text3)
+                }
                 liveHint
                 if !info.hint.isEmpty {
                     Text(info.hint).font(Focus.meta).foregroundColor(Focus.text3).lineLimit(1)
@@ -804,7 +860,7 @@ struct NativeTaskTable: NSViewRepresentable {
                 return header(info.key)
             case let .empty(group, _), let .composer(group, _, _, _):
                 return header(group)
-            case .spacer, .sectionTitle, .trackedToday:
+            case .spacer, .sectionTitle, .trackedToday, .velocity:
                 // Gap between groups: the group just above it
                 guard let group = rows[..<proposed].last(where: { $0.group != nil })?.group else { return nil }
                 return header(group)

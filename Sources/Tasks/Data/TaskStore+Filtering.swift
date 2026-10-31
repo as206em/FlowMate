@@ -76,7 +76,11 @@ extension TaskStore {
             return TaskPriority.ordered.map { p in group(.priority(p), p.title) { $0.priority == p } }
         case .project:
             let projects = scope.projectId.flatMap { project($0) }.map { [$0] } ?? self.projects
-            return projects.map { p in group(.project(p.id), p.name, color: p.colorHex) { $0.projectId == p.id } }
+            return projects.map { p in
+                var g = group(.project(p.id), p.name, color: p.colorHex) { $0.projectId == p.id }
+                g.icon = p.icon
+                return g
+            }
         case .milestone:
             let inScope = milestones(in: scope)
             var result = inScope.map { m -> TaskGroup in

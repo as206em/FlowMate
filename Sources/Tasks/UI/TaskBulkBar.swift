@@ -22,7 +22,9 @@ struct TaskBulkBar: View {
             menuButton("Status", .status, help: "Change the status (S)") { statusMenu(ids) }
             menuButton("Priority", .priority, help: "Set the priority (P, or 1–3)") { priorityMenu }
             menuButton("Milestone", .milestone, help: "Set the milestone (M)") { milestoneMenu(ids) }
-            menuButton("Sprint", .sprint, help: "Move to a sprint (R)") { sprintMenu(ids) }
+            if ids.contains(where: { store.task($0).map { store.usesSprints($0.projectId) } ?? false }) {
+                menuButton("Sprint", .sprint, help: "Move to a sprint (R)") { sprintMenu(ids) }
+            }
             menuButton("Due", .due, help: "Set the due date (D)") { dueMenu }
             if store.projects.count > 1 {
                 menuButton("Move to", .project, help: "Move to another project (⇧M)") { projectMenu }
@@ -186,7 +188,7 @@ struct TaskBulkBar: View {
                     model.bulk({ "\(tasks($0)) moved to \(project.name)" }, store: store) { store.setProject($0, project.id) }
                     done()
                 } label: {
-                    FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 14)
+                    FocusProjectTile(project: project, size: 14)
                     Text(project.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
                 }
             }

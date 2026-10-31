@@ -260,15 +260,36 @@ struct FocusProjectTile: View {
     let name: String
     let colorHex: UInt32
     var size: CGFloat = 18
+    /// The project's own icon in place of the letter: an emoji on the tile, or an SF Symbol in the
+    /// project color. The letter stays the fallback.
+    var icon: ProjectIcon? = nil
 
     var body: some View {
         let color = Color(hex: colorHex)
-        Text(String(name.prefix(1)).uppercased())
-            .font(.system(size: size * 0.56, weight: .bold))
-            .foregroundColor(color)
-            .frame(width: size, height: size)
-            .background(RoundedRectangle(cornerRadius: size * 0.28).fill(color.opacity(0.18)))
-            .accessibilityHidden(true)
+        Group {
+            switch icon {
+            case let .emoji(emoji)?:
+                Text(emoji).font(.system(size: size * 0.7))
+            case let .symbol(symbol)? where NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil:
+                Image(systemName: symbol)
+                    .font(.system(size: size * 0.54, weight: .semibold))
+                    .foregroundColor(color)
+            default:
+                Text(String(name.prefix(1)).uppercased())
+                    .font(.system(size: size * 0.56, weight: .bold))
+                    .foregroundColor(color)
+            }
+        }
+        .frame(width: size, height: size)
+        .background(RoundedRectangle(cornerRadius: size * 0.28).fill(color.opacity(0.18)))
+        .accessibilityHidden(true)
+    }
+}
+
+extension FocusProjectTile {
+    /// The project's tile: its icon, or its first letter.
+    init(project: Project, size: CGFloat = 18) {
+        self.init(name: project.name, colorHex: project.colorHex, size: size, icon: project.icon)
     }
 }
 

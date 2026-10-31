@@ -18,7 +18,12 @@ struct Workspace: Codable, Equatable, Sendable {
     /// 8: a color per milestone (Milestone.colorHex). Older milestones get one by walking the
     ///    palette within each project, skipping the project's own color.
     /// 9: tasks pinned to Today (TaskItem.focusDate, focusIndex). Older tasks decode as not pinned.
-    static let currentSchemaVersion = 9
+    /// 10: sprint capacity and per-project settings (Project.weeklyCapacityHours, usesSprints,
+    ///     defaultView, defaultExpectedMinutes, defaultSprintSlot, icon), and numbers on each past
+    ///     sprint (planned, done and tracked time, capacity). Older projects decode with sprints on
+    ///     and no settings; older past sprints get their numbers worked out from the tasks and the
+    ///     time log as they are now, marked approximate (addPastSprintStats).
+    static let currentSchemaVersion = 10
 
     var schemaVersion: Int
     var projects: [Project]
@@ -72,6 +77,8 @@ struct Workspace: Codable, Equatable, Sendable {
         //    imported entry; normalizeCompletion dates closed tasks by their last update.
         // 8: milestones decode without a color; assignMilestoneColors (below) gives each one.
         // 9: tasks decode with no focusDate (not pinned to Today); nothing to convert.
+        // 10: past sprints get their numbers after the time log is reconciled (below).
+        let addStats = ws.schemaVersion < 10
         ws.schemaVersion = Workspace.currentSchemaVersion
 
         let projectIds = Set(ws.projects.map(\.id))
@@ -90,7 +97,33 @@ struct Workspace: Codable, Equatable, Sendable {
         ws.normalizeCompletion()
         ws.reconcileTrackedTime(now: now)
         ws.assignMilestoneColors()
+        if addStats { ws.addPastSprintStats() }
         return ws
+    }
+
+    /// Schema 10: numbers for past sprints closed before they were stored. Planned is the expected
+    /// time of the sprint's tasks (canceled ones left out), done that of its done tasks, both as the
+    /// tasks are now; tracked is the time log inside the sprint's dates for the project's tasks and
+    /// the sprint's own. Capacity is unknown. All marked approximate.
+    mutating func addPastSprintStats(calendar: Calendar = .current) {
+        let tasksById = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for p in projects.indices where !projects[p].pastSprints.isEmpty {
+            let projectId = projects[p].id
+            let projectTasks = Set(tasks.filter { $0.projectId == projectId }.map(\.id))
+            for s in projects[p].pastSprints.indices {
+                var sprint = projects[p].pastSprints[s]
+                let planned = sprint.taskIds.compactMap { tasksById[$0] }.filter { !$0.isCanceled }
+                sprint.plannedMinutes = planned.reduce(0) { $0 + $1.expectedMinutes }
+                sprint.doneMinutes = sprint.doneTaskIds.compactMap { tasksById[$0] }.reduce(0) { $0 + $1.expectedMinutes }
+                let ids = projectTasks.union(sprint.taskIds)
+                let range = TaskStore.days(sprint.startDate, through: sprint.endDate, calendar: calendar)
+                sprint.trackedSeconds = timeEntries.filter { ids.contains($0.taskId) }
+                    .reduce(0) { $0 + TimeEntry.overlap($1.start, $1.end, range) }
+                sprint.capacityHours = nil
+                sprint.isApproximate = true
+                projects[p].pastSprints[s] = sprint
+            }
+        }
     }
 
     /// Gives every milestone without a color one: per project, in stored order, the palette color

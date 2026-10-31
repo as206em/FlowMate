@@ -127,7 +127,11 @@ extension TasksViewModel {
         commands += projects.filter { $0.id != scope.projectId }.map { .newMilestone($0.id) }
         let targets = paletteTargets.filter { store.task($0) != nil }
         if !targets.isEmpty {
-            commands += TaskQuickAction.allCases.filter { $0 != .project || projects.count > 1 }.map(PaletteCommand.quickAction)
+            // "Move to sprint…" only when a target's project uses sprints
+            let sprints = targets.contains { store.task($0).map { store.usesSprints($0.projectId) } ?? false }
+            commands += TaskQuickAction.allCases
+                .filter { ($0 != .project || projects.count > 1) && ($0 != .sprint || sprints) }
+                .map(PaletteCommand.quickAction)
             commands += [.toggleDone, .toggleToday]
             if targets.count == 1 { commands.append(.toggleTimer) }
             commands += [.duplicate, .delete]
@@ -135,12 +139,13 @@ extension TasksViewModel {
         if store.hasRunningTimers { commands.append(.pauseAllTimers) }
         if !scope.isToday {
             commands.append(.showOverdue)
-            commands += TaskGrouping.available(in: scope).filter { $0 != grouping || effectiveTab != .list }.map(PaletteCommand.groupBy)
+            commands += availableGroupings.filter { $0 != grouping || effectiveTab != .list }.map(PaletteCommand.groupBy)
         }
         if !(scope == .all && effectiveTab == .overview) { commands.append(.goToOverview) }
         // Overview has its own command ("Go to Overview"), which works from any scope
         commands += tabs.filter { ($0 != effectiveTab || scope.isToday) && $0 != .overview }.map(PaletteCommand.switchTab)
-        if let projectId = scope.projectId, !scope.isMilestone, store.project(projectId)?.isArchived == false {
+        if let projectId = scope.projectId, !scope.isMilestone, let project = store.project(projectId),
+           !project.isArchived, project.usesSprints {
             commands.append(.completeSprint(projectId))
         }
         commands += projects.map { .toggleMilestones($0.id) }

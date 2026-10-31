@@ -59,7 +59,7 @@ private struct ProjectTitleButton: View {
     var body: some View {
         Button { model.openProject(project.id) } label: {
             HStack(spacing: 10) {
-                FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                FocusProjectTile(project: project)
                 Text(project.name)
                     .font(Focus.header)
                     .foregroundColor(Focus.text)
@@ -84,7 +84,8 @@ private struct ProjectTitleButton: View {
 }
 
 /// Sprint line above Board and Sprints in project scope: name, dates (click to change the start and
-/// length), goal (click to edit), Complete sprint (opens CompleteSprintSheet).
+/// length), goal (click to edit), the plan against capacity ("Planned 11h of 20h · tracked 6h",
+/// amber near it, red over it), Complete sprint (opens CompleteSprintSheet).
 struct SprintHeader: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
@@ -134,6 +135,17 @@ struct SprintHeader: View {
                 .help("Edit sprint goal")
             }
             Spacer(minLength: 12)
+            LiveTime { now in
+                let line = store.sprintPlanLine(projectId: project.id, now: now)
+                Text(line.text)
+                    .font(Focus.meta.monospacedDigit())
+                    .foregroundColor(CapacityColors.color(line.level))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .help(project.weeklyCapacityHours == nil
+                          ? "Expected time of the active sprint's tasks, and time tracked in its dates. Set hours per week in the project's settings to see the capacity."
+                          : "Expected time of the active sprint's tasks against \(SprintPlanRules.hoursText(project.weeklyCapacityHours ?? 0)) a week, and time tracked in its dates")
+            }
             Button("Complete sprint") { model.completingSprintProjectId = project.id }
                 .buttonStyle(.focus())
         }
@@ -201,6 +213,8 @@ struct CompleteSprintSheet: View {
         let done = active.filter(\.isClosed).count
         let open = active.count - done
         let next = store.sprintTasks(projectId: project.id, slot: .next).count
+        let velocity = store.recentVelocityMinutes(projectId: project.id, includingActive: true)
+        let nextPlan = store.nextSprintPlanMinutes(projectId: project.id, unfinished: unfinished)
         let today = Calendar.current.startOfDay(for: Date())
         let newEnd = SprintState.day(today, adding: sprint.lengthInDays - 1)
 
@@ -231,6 +245,8 @@ struct CompleteSprintSheet: View {
                 .padding(.horizontal, -10)
             }
 
+            planNote(velocity: velocity, nextPlan: nextPlan)
+
             FocusLabeled(
                 label: "Goal for \(sprint.nextName)",
                 hint: "\(sprint.nextName) starts today and runs to \(SprintState.shortDate(newEnd)) (\(sprint.lengthLabel))."
@@ -257,6 +273,50 @@ struct CompleteSprintSheet: View {
         .background(Focus.canvas)
         .focusLight()
         .onAppear { DispatchQueue.main.async { goalFocused = true } }
+    }
+
+    /// "Recent velocity ~16h per sprint. Sprint 15 starts with 22h planned." with a warning when
+    /// that's more than the velocity (or the capacity).
+    @ViewBuilder
+    private func planNote(velocity: Int?, nextPlan: Int) -> some View {
+        let name = project.sprint.nextName
+        let capacity = SprintPlanRules.capacityMinutes(weeklyHours: project.weeklyCapacityHours, weeks: project.sprint.lengthWeeks)
+        let overVelocity = velocity.map { nextPlan > $0 } ?? false
+        let overCapacity = capacity.map { nextPlan > $0 } ?? false
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: overVelocity || overCapacity ? "exclamationmark.triangle.fill" : "speedometer")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(overVelocity || overCapacity ? Focus.progress : Focus.text3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(velocity.map { "Recent velocity ~\(Focus.durationString(minutes: $0)) per sprint." }
+                     ?? "No velocity yet: it shows once a sprint has done tasks.")
+                    .font(Focus.body).foregroundColor(Focus.text2)
+                Text(planText(name: name, nextPlan: nextPlan, velocity: velocity, capacity: capacity,
+                              overVelocity: overVelocity, overCapacity: overCapacity))
+                    .font(Focus.meta)
+                    .foregroundColor(overVelocity || overCapacity ? Color(hex: 0x8A5300) : Focus.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Focus.radiusCard).fill(overVelocity || overCapacity ? Focus.progressTint.fill : Focus.sidebar))
+        .overlay(RoundedRectangle(cornerRadius: Focus.radiusCard).strokeBorder(overVelocity || overCapacity ? Focus.progressTint.border : Focus.hairline, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func planText(name: String, nextPlan: Int, velocity: Int?, capacity: Int?, overVelocity: Bool, overCapacity: Bool) -> String {
+        let plan = "\(name) starts with \(Focus.durationString(minutes: nextPlan)) planned"
+        if overVelocity, let velocity {
+            return plan + ", \(Focus.durationString(minutes: nextPlan - velocity)) more than you usually finish. Consider moving some to the backlog."
+        }
+        if overCapacity, let capacity {
+            return plan + ", over its \(Focus.durationString(minutes: capacity)) capacity."
+        }
+        if let velocity, nextPlan < velocity {
+            return plan + ": room for about \(Focus.durationString(minutes: velocity - nextPlan)) more."
+        }
+        return plan + "."
     }
 
     private func line(_ text: String) -> some View {

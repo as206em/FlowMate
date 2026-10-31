@@ -89,7 +89,7 @@ struct BoardView: View {
             VStack(spacing: 8) {
                 // ⌘N opens it here, above the cards, so it's on screen however long the column is
                 if model.isComposerPinned(Self.composerKey(value)) {
-                    TaskComposer(key: Self.composerKey(value), preset: value, isDefault: isDefault, groupName: title)
+                    TaskComposer(key: Self.composerKey(value), preset: value, isDefault: isDefault, groupName: title, onBoard: true)
                         .id(Self.composerKey(value))
                 }
                 ForEach(tasks) { task in
@@ -113,7 +113,7 @@ struct BoardView: View {
                         )
                 }
                 if !model.isComposerPinned(Self.composerKey(value)) {
-                    TaskComposer(key: Self.composerKey(value), preset: value, isDefault: isDefault, groupName: title)
+                    TaskComposer(key: Self.composerKey(value), preset: value, isDefault: isDefault, groupName: title, onBoard: true)
                 }
             }
             Spacer(minLength: 0)
@@ -182,7 +182,7 @@ struct TaskCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 7) {
                 if let project {
-                    FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                    FocusProjectTile(project: project)
                 }
                 if showProject, let project {
                     Text(project.name)
