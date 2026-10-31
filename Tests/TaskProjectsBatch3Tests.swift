@@ -341,8 +341,9 @@ final class TaskProjectsBatch3Tests: XCTestCase {
         model.openMilestone(m)
 
         model.showTasks(ofMilestone: store.milestone(m)!)
-        XCTAssertEqual(model.scope, .project(pid))
+        XCTAssertEqual(model.scope, .milestone(m, projectId: pid), "Show tasks opens the milestone's page")
         XCTAssertEqual(model.tab, .list)
+        XCTAssertTrue(model.filter.isEmpty, "the page needs no filter chip")
         XCTAssertFalse(model.isPanelOpen)
         XCTAssertEqual(model.listGroups(store).flatMap(\.tasks).map(\.id), [a])
     }

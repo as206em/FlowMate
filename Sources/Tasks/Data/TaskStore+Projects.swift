@@ -114,8 +114,10 @@ extension TaskStore {
     @discardableResult
     func addMilestone(projectId: UUID, name: String, dueDate: Date? = nil) -> UUID? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, project(projectId) != nil else { return nil }
-        let milestone = Milestone(projectId: projectId, name: name, dueDate: dueDate)
+        guard !name.isEmpty, let project = project(projectId) else { return nil }
+        let used = workspace.milestones.filter { $0.projectId == projectId }.map(\.colorHex)
+        let milestone = Milestone(projectId: projectId, name: name, dueDate: dueDate,
+                                  colorHex: Milestone.nextColor(projectColor: project.colorHex, used: used))
         mutate("Add milestone") { $0.milestones.append(milestone) }
         return milestone.id
     }
@@ -126,6 +128,14 @@ extension TaskStore {
         mutate("Rename milestone") { ws in
             guard let i = ws.milestones.firstIndex(where: { $0.id == id }) else { return }
             ws.milestones[i].name = name
+        }
+    }
+
+    func setMilestoneColor(_ id: UUID, colorHex: UInt32) {
+        guard colorHex != Milestone.unsetColor else { return }
+        mutate("Change milestone color") { ws in
+            guard let i = ws.milestones.firstIndex(where: { $0.id == id }) else { return }
+            ws.milestones[i].colorHex = colorHex
         }
     }
 

@@ -68,7 +68,7 @@ struct BoardView: View {
         }
     }
 
-    static func composerKey(_ column: TaskGroupValue) -> String { "composer-board-\(column.key)" }
+    static func composerKey(_ column: TaskGroupValue) -> String { TasksViewModel.boardComposerKey(column) }
 
     private func column(_ value: TaskGroupValue, isDefault: Bool) -> some View {
         let tasks = model.boardTasks(store, column: value)
@@ -87,8 +87,13 @@ struct BoardView: View {
             .padding(.bottom, 12)
 
             VStack(spacing: 8) {
+                // ⌘N opens it here, above the cards, so it's on screen however long the column is
+                if model.isComposerPinned(Self.composerKey(value)) {
+                    TaskComposer(key: Self.composerKey(value), preset: value, isDefault: isDefault, groupName: title)
+                        .id(Self.composerKey(value))
+                }
                 ForEach(tasks) { task in
-                    TaskCard(task: task, showProject: model.scope.projectId == nil)
+                    TaskCard(task: task, showProject: model.scope.projectId == nil, showMilestone: !model.scope.isMilestone)
                         .id(task.id)
                         .taskDraggable(task, model: model)
                         .onDrop(of: [.plainText], delegate: TaskDropDelegate(target: key, model: model) { id in
@@ -107,7 +112,9 @@ struct BoardView: View {
                                 .strokeBorder(Focus.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                         )
                 }
-                TaskComposer(key: Self.composerKey(value), preset: value, isDefault: isDefault, groupName: title)
+                if !model.isComposerPinned(Self.composerKey(value)) {
+                    TaskComposer(key: Self.composerKey(value), preset: value, isDefault: isDefault, groupName: title)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -163,12 +170,14 @@ struct TaskCard: View {
     @EnvironmentObject private var model: TasksViewModel
     let task: TaskItem
     let showProject: Bool
+    var showMilestone = true
 
     @State private var hovering = false
 
     var body: some View {
         let running = store.isRunning(task.id)
         let selected = model.isSelected(task.id)
+        let flashing = model.flashTaskId == task.id
         let project = store.project(of: task)
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 7) {
@@ -183,9 +192,12 @@ struct TaskCard: View {
                         .layoutPriority(-1)
                     Text("·").font(.system(size: 12)).foregroundColor(Focus.text3)
                 }
-                // Click to set the milestone
-                TaskMilestoneChip(task: task)
-                    .padding(.leading, showProject ? -4 : -5)
+                // Click to set the milestone. Without one the chip waits for the pointer; on a
+                // milestone's page every card has the same one, so it's left out.
+                if showMilestone, task.milestoneId != nil || hovering {
+                    TaskMilestoneChip(task: task)
+                        .padding(.leading, showProject ? -2 : -3)
+                }
                 Spacer(minLength: 0)
                 FocusPriorityBars(level: task.priority.focusLevel)
                     .accessibilityLabel("\(task.priority.title) priority")
@@ -207,6 +219,9 @@ struct TaskCard: View {
             RoundedRectangle(cornerRadius: Focus.radiusCard)
                 .fill(Focus.raised)
                 .overlay(RoundedRectangle(cornerRadius: Focus.radiusCard).fill(running ? Focus.liveSoft : .clear))
+                // Just added from the composer at the top
+                .overlay(RoundedRectangle(cornerRadius: Focus.radiusCard).fill(Focus.justAdded).opacity(flashing ? 1 : 0))
+                .animation(.easeOut(duration: 0.6), value: flashing)
         )
         .overlay(
             RoundedRectangle(cornerRadius: Focus.radiusCard)

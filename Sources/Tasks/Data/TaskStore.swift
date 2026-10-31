@@ -3,13 +3,60 @@ import Combine
 import Foundation
 
 /// Which tasks a view shows: every project, or one.
+/// Which tasks a view shows: every project, one project, or one milestone's tasks (the
+/// milestone page). A milestone scope carries its project (milestones never change project), so
+/// everything that works inside one project (its workflow, its sprint) works on the page too.
 enum TaskScope: Hashable, Sendable {
     case all
     case project(UUID)
+    case milestone(UUID, projectId: UUID)
 
+    /// The project on screen: the project, or the milestone's project. nil in All projects.
     var projectId: UUID? {
-        if case let .project(id) = self { return id }
+        switch self {
+        case .all: return nil
+        case let .project(id): return id
+        case let .milestone(_, projectId): return projectId
+        }
+    }
+
+    /// The milestone on screen (the milestone page), else nil.
+    var milestoneId: UUID? {
+        if case let .milestone(id, _) = self { return id }
         return nil
+    }
+
+    var isMilestone: Bool { milestoneId != nil }
+
+    /// Remembered tabs and filters are kept under this key ("all", a project id, "milestone-<id>").
+    var key: String {
+        switch self {
+        case .all: return "all"
+        case let .project(id): return id.uuidString
+        case let .milestone(id, _): return "milestone-\(id.uuidString)"
+        }
+    }
+
+    /// The scope as saved between launches. A milestone keeps its project ("milestone-<id>@<project>")
+    /// so it can be restored before the data has loaded.
+    var storageKey: String {
+        if case let .milestone(id, projectId) = self { return "milestone-\(id.uuidString)@\(projectId.uuidString)" }
+        return key
+    }
+
+    init?(storageKey: String) {
+        if storageKey == "all" {
+            self = .all
+        } else if let id = UUID(uuidString: storageKey) {
+            self = .project(id)
+        } else if storageKey.hasPrefix("milestone-") {
+            let parts = storageKey.dropFirst("milestone-".count).split(separator: "@")
+            guard parts.count == 2, let id = UUID(uuidString: String(parts[0])),
+                  let projectId = UUID(uuidString: String(parts[1])) else { return nil }
+            self = .milestone(id, projectId: projectId)
+        } else {
+            return nil
+        }
     }
 }
 
@@ -77,6 +124,7 @@ final class TaskStore: ObservableObject {
         var workspace = workspace
         workspace.normalizeCompletion()
         workspace.reconcileTrackedTime()
+        workspace.assignMilestoneColors()
         self.workspace = workspace
         self.saveDelay = saveDelay
         ticker.setActive(!workspace.runningTimers.isEmpty)
@@ -249,6 +297,7 @@ final class TaskStore: ObservableObject {
         copy.normalizeStatuses()
         copy.normalizeCompletion()
         copy.normalizeTime()
+        copy.assignMilestoneColors()
         guard copy != workspace else { return }
         let before = workspace
         workspace = copy

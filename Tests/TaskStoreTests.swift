@@ -41,6 +41,8 @@ final class TaskStoreTests: XCTestCase {
         ws.reconcileTrackedTime(now: t0)
         ws.runningTimers[ws.tasks[1].id] = t0.addingTimeInterval(0.25)
         ws.milestones.append(Milestone(projectId: pid, name: "Undated"))
+        // Loading gives a milestone without a color one; give it the color it would get
+        ws.assignMilestoneColors()
         try await repo.save(ws)
 
         let loaded = try await repo.load()

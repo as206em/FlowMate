@@ -207,12 +207,21 @@ struct TasksSidebar: View {
                 .focused($newProjectFocused)
                 .onExitCommand { newProjectFocused = false }
                 .onSubmit {
-                    guard let id = store.addProject(name: newProjectName) else { return }
+                    // ↵ adds and says so (Open shows it); ⇧↵ adds, shows it and opens its panel
+                    let open = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false
+                    guard model.addProject(newProjectName, open: open, store: store) != nil else { return }
                     newProjectName = ""
-                    model.select(.project(id))
-                    model.tab = .board
+                    if open {
+                        newProjectFocused = false
+                    } else {
+                        DispatchQueue.main.async { newProjectFocused = true }
+                    }
                 }
                 .accessibilityLabel("New project name")
+                .accessibilityHint("Return adds it. Shift-Return adds it and opens its settings.")
+            if newProjectFocused, !newProjectName.isEmpty {
+                FocusKey(text: "⇧↵ open")
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -259,7 +268,8 @@ private struct SidebarDisclosure: View {
     }
 }
 
-/// A project's milestones under its sidebar row: diamond, name and "done/total". Click to open.
+/// A project's milestones under its sidebar row: diamond in its color, name and "done/total".
+/// A click shows the milestone's page (again for its panel); the last row adds one.
 private struct SidebarMilestones: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
@@ -268,27 +278,80 @@ private struct SidebarMilestones: View {
     var body: some View {
         let milestones = store.milestones(of: project.id)
         VStack(alignment: .leading, spacing: 0) {
-            if milestones.isEmpty {
-                Button { model.openProject(project.id) } label: {
-                    Text("No milestones · Add one")
-                        .font(Focus.meta)
-                        .foregroundColor(Focus.text3)
-                        .padding(.leading, 36)
-                        .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
             ForEach(milestones) { milestone in
+                let onScreen = model.scope.milestoneId == milestone.id
                 SidebarMilestoneRow(milestone: milestone,
-                                    selected: model.openDetail == .milestone(milestone.id)
-                                        || model.dropTarget == SidebarMilestoneDrop.key(milestone.id)) {
-                    model.openMilestone(milestone.id)
+                                    selected: onScreen || model.dropTarget == SidebarMilestoneDrop.key(milestone.id)) {
+                    model.clickSidebarMilestone(milestone.id, store: store)
                 }
+                .help(onScreen ? "Click again for milestone details" : milestone.name)
                 .onDrop(of: [.plainText], delegate: SidebarMilestoneDrop(milestone: milestone, store: store, model: model))
+                .contextMenu {
+                    Button("Show tasks") { model.showMilestone(milestone.id, store: store) }
+                    Button("Milestone details…") { model.openMilestone(milestone.id) }
+                    Menu("Color") {
+                        ForEach(Milestone.palette, id: \.self) { hex in
+                            Button {
+                                store.setMilestoneColor(milestone.id, colorHex: hex)
+                            } label: {
+                                if hex == milestone.colorHex {
+                                    Label(Focus.colorName(hex), systemImage: "checkmark")
+                                } else {
+                                    Text(Focus.colorName(hex))
+                                }
+                            }
+                        }
+                    }
+                    if milestone.isCompleted {
+                        Button("Reopen") { store.reopenMilestone(milestone.id) }
+                    } else {
+                        Button("Mark complete") {
+                            store.completeMilestone(milestone.id)
+                            model.showUndoToast("Milestone completed", store: store)
+                        }
+                    }
+                }
             }
+            SidebarNewMilestoneField(project: project)
         }
         .padding(.bottom, 4)
+    }
+}
+
+/// "Add milestone" under a project's milestones. ↵ adds it (with an Open toast), ⇧↵ adds it and
+/// shows its page.
+private struct SidebarNewMilestoneField: View {
+    @EnvironmentObject private var store: TaskStore
+    @EnvironmentObject private var model: TasksViewModel
+    let project: Project
+
+    @State private var name = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "plus")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(Focus.text3)
+                .frame(width: 16)
+            TextField("Add milestone", text: $name)
+                .textFieldStyle(.plain)
+                .font(Focus.meta)
+                .focused($focused)
+                .onExitCommand { name = ""; focused = false }
+                .onSubmit {
+                    let open = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false
+                    guard model.addMilestone(name, projectId: project.id, open: open, store: store) != nil else { return }
+                    name = ""
+                    if !open { DispatchQueue.main.async { focused = true } }
+                }
+                .accessibilityLabel("New milestone in \(project.name)")
+                .accessibilityHint("Return adds it. Shift-Return adds it and shows its page.")
+        }
+        .padding(.leading, 26)
+        .padding(.trailing, 8)
+        .frame(height: 26)
+        .background(RoundedRectangle(cornerRadius: Focus.radiusControl).strokeBorder(focused ? Focus.lineStrong : .clear, lineWidth: 1))
     }
 }
 
@@ -304,7 +367,7 @@ private struct SidebarMilestoneRow: View {
         let progress = store.milestoneProgress(milestone.id)
         Button(action: action) {
             HStack(spacing: 8) {
-                MilestoneIcon(completed: milestone.isCompleted, size: 10)
+                MilestoneIcon(milestone, size: 10)
                 Text(milestone.name)
                     .font(Focus.meta)
                     .foregroundColor(milestone.isCompleted ? Focus.text3 : (hovering || selected ? Focus.text : Focus.text2))

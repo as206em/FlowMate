@@ -25,14 +25,36 @@ final class TasksViewModel: ObservableObject {
         let id = UUID()
     }
 
+    /// What a toast's Open button opens.
+    enum OpenTarget: Equatable {
+        /// The task panel
+        case task(UUID)
+        /// The project on screen
+        case project(UUID)
+        /// The milestone's page
+        case milestone(UUID)
+    }
+
     /// The bottom toast ("Task deleted · Undo").
     struct Toast: Identifiable, Equatable {
         let id = UUID()
         let message: String
         /// The undo step the toast's Undo button reverts; nil hides the button.
         var undoId: UUID?
-        /// A task the toast's Open button opens ("Added to Atlas · Open"). Used when there's no Undo.
-        var openTaskId: UUID?
+        /// What the toast's Open button opens ("Added to Atlas · Open"). Used when there's no Undo.
+        var open: OpenTarget?
+
+        init(message: String, undoId: UUID? = nil, openTaskId: UUID? = nil, open: OpenTarget? = nil) {
+            self.message = message
+            self.undoId = undoId
+            self.open = open ?? openTaskId.map { .task($0) }
+        }
+
+        /// The task the Open button opens, if it opens a task.
+        var openTaskId: UUID? {
+            if case let .task(id)? = open { return id }
+            return nil
+        }
     }
 
     /// A project or milestone side panel (the task panel uses `openTaskId`). Only one panel is open at a time.
@@ -51,7 +73,7 @@ final class TasksViewModel: ObservableObject {
             if tab != oldValue { saveWindowState() }
         }
     }
-    /// The last tab used per scope ("all" or a project id).
+    /// The last tab used per scope ("all", a project id or "milestone-<id>").
     private(set) var tabByScope: [String: Tab] = [:]
     /// The task shown in the side panel, or nil when it's closed.
     @Published var openTaskId: UUID?
@@ -94,7 +116,16 @@ final class TasksViewModel: ObservableObject {
     @Published var dropTarget: String?
     @Published var focusRequest: FocusRequest?
     /// The New task composer that's open (its group's key); nil when all show their ＋ button
-    @Published var activeComposer: String?
+    @Published var activeComposer: String? {
+        didSet { if activeComposer != pinnedComposer { pinnedComposer = nil } }
+    }
+    /// The composer ⌘N opened at the top of its group (the first group or column of the view)
+    /// instead of after its last task. Tasks added there go first. Back to the bottom once it closes.
+    @Published private(set) var pinnedComposer: String?
+    /// A task just added from the pinned composer: the view scrolls to it and highlights it briefly.
+    @Published private(set) var flashTaskId: UUID?
+    /// A task opened with ⇧↵ from the composer: its panel starts with the description being written.
+    var describeTaskId: UUID?
     @Published var toast: Toast?
     /// The keyboard shortcuts popover (⌘/ or the ? button)
     @Published var showingShortcuts = false
@@ -120,13 +151,23 @@ final class TasksViewModel: ObservableObject {
         restoreWindowState()
     }
 
-    /// Sprints only exists in project scope; fall back to List elsewhere.
-    var effectiveTab: Tab {
-        tab == .sprints && scope.projectId == nil ? .list : tab
+    /// Sprints only exists in project scope, and a milestone's page has only Board and List;
+    /// fall back to List elsewhere.
+    var effectiveTab: Tab { Self.tab(tab, in: scope) }
+
+    var tabs: [Tab] { Self.tabs(in: scope) }
+
+    static func tabs(in scope: TaskScope) -> [Tab] {
+        switch scope {
+        case .all: return [.board, .list, .milestones]
+        case .project: return Tab.allCases
+        case .milestone: return [.board, .list]
+        }
     }
 
-    var tabs: [Tab] {
-        scope.projectId == nil ? [.board, .list, .milestones] : Tab.allCases
+    /// The tab a scope can show for `tab` (List when it has no such tab).
+    static func tab(_ tab: Tab, in scope: TaskScope) -> Tab {
+        tabs(in: scope).contains(tab) ? tab : .list
     }
 
     /// The filter bar shows on List and Board.
@@ -135,11 +176,29 @@ final class TasksViewModel: ObservableObject {
     /// Shows a scope on the tab it was last used with (its filters are kept per scope too).
     /// A scope never visited keeps the current tab.
     func select(_ scope: TaskScope) {
-        let remembered = tabByScope[Self.scopeKey(scope)] ?? tab
+        // A milestone page opens on List the first time: it lists every task of the milestone
+        let remembered = tabByScope[scope.key] ?? (scope.isMilestone ? .list : tab)
         self.scope = scope
-        tab = scope.projectId == nil && remembered == .sprints ? .list : remembered
+        tab = Self.tab(remembered, in: scope)
         selectedTaskId = nil
+        if case let .milestone(_, projectId) = scope { expandedProjects.insert(projectId) }
         closePanel()
+    }
+
+    /// Shows a milestone's page: its tasks on Board and List, with its progress and time above.
+    func showMilestone(_ id: UUID, store: TaskStore) {
+        guard let scope = store.scope(ofMilestone: id) else { return }
+        select(scope)
+    }
+
+    /// A click on a sidebar milestone: shows its page, or, when it's already on screen, opens its
+    /// panel (like a second click on a project).
+    func clickSidebarMilestone(_ id: UUID, store: TaskStore) {
+        if scope.milestoneId == id, openDetail != .milestone(id) {
+            openMilestone(id)
+        } else {
+            showMilestone(id, store: store)
+        }
     }
 
     /// A click on a sidebar project: shows it, or, when it's already on screen, opens its panel
@@ -210,19 +269,43 @@ final class TasksViewModel: ObservableObject {
 
     var isPanelOpen: Bool { openTaskId != nil || openDetail != nil }
 
-    /// List with only this milestone's tasks: the project's scope, the List tab and a Milestone filter.
+    /// "Show tasks" in a milestone panel or menu: the milestone's page.
     func showTasks(ofMilestone milestone: Milestone) {
-        select(.project(milestone.projectId))
-        tab = .list
-        var filter = TaskFilter()
-        filter.milestones = [milestone.id]
-        self.filter = filter
+        select(.milestone(milestone.id, projectId: milestone.projectId))
     }
 
     /// Opens the project in the main view (Sprints tab) from a past-sprint link or the panel.
     func showSprints(of projectId: UUID) {
         select(.project(projectId))
         tab = .sprints
+    }
+
+    /// The sidebar's items top to bottom: All projects, each project, and the milestones listed
+    /// under the projects that show them (⌥⌘↑ / ⌥⌘↓ walk this order).
+    func sidebarScopes(_ store: TaskStore) -> [TaskScope] {
+        var result: [TaskScope] = [.all]
+        for project in store.projects {
+            result.append(.project(project.id))
+            if isProjectExpanded(project.id) {
+                result += store.milestones(of: project.id).map { .milestone($0.id, projectId: project.id) }
+            }
+        }
+        if showingArchived { result += store.archivedProjects.map { .project($0.id) } }
+        return result
+    }
+
+    /// Selects the sidebar item `offset` rows from the one on screen. False at either end.
+    @discardableResult
+    func stepSidebar(_ offset: Int, store: TaskStore) -> Bool {
+        let scopes = sidebarScopes(store)
+        guard let index = scopes.firstIndex(of: scope) else {
+            guard let first = scopes.first else { return false }
+            select(first)
+            return true
+        }
+        guard scopes.indices.contains(index + offset) else { return false }
+        select(scopes[index + offset])
+        return true
     }
 
     func isProjectExpanded(_ id: UUID) -> Bool { expandedProjects.contains(id) }
@@ -354,9 +437,9 @@ final class TasksViewModel: ObservableObject {
 
     // MARK: - Filters, sort and grouping
 
-    private var scopeKey: String { Self.scopeKey(scope) }
+    private var scopeKey: String { scope.key }
 
-    static func scopeKey(_ scope: TaskScope) -> String { scope.projectId?.uuidString ?? "all" }
+    static func scopeKey(_ scope: TaskScope) -> String { scope.key }
 
     /// The current scope's filters, sort and grouping.
     var options: TaskViewOptions {
@@ -429,6 +512,7 @@ final class TasksViewModel: ObservableObject {
     func boardWaitingCount(_ store: TaskStore, now: Date = Date()) -> Int {
         var filter = self.filter
         filter.sprintSlots = []
+        guard !scope.isMilestone else { return 0 }
         let waiting = store.tasks(in: scope).filter { ($0.sprintSlot == .next || $0.sprintSlot == .backlog) && !$0.isClosed }
         return store.filtered(waiting, by: filter, now: now).count
     }
@@ -437,6 +521,8 @@ final class TasksViewModel: ObservableObject {
     /// nil while the board's empty state already explains it.
     func boardCaption(_ store: TaskStore, now: Date = Date()) -> String? {
         if case .sprintEmpty = boardEmptyReason(store, now: now) { return nil }
+        // A milestone's board isn't limited to the sprint
+        if scope.isMilestone { return nil }
         let sprint: String
         if let projectId = scope.projectId {
             sprint = store.sprintName(projectId)
@@ -473,7 +559,7 @@ final class TasksViewModel: ObservableObject {
         chips.sprintSlots = []
         if !chips.isEmpty { return .noMatches }
         let all = store.tasks(in: scope)
-        if all.isEmpty { return .noTasks }
+        if all.isEmpty || scope.isMilestone { return .noTasks }
         return .sprintEmpty(waiting: all.filter { ($0.sprintSlot == .next || $0.sprintSlot == .backlog) && !$0.isClosed }.count)
     }
 
@@ -600,7 +686,12 @@ final class TasksViewModel: ObservableObject {
         default:
             break
         }
-        if let id = scope.projectId, store.project(id) == nil { select(.all) }
+        if let id = scope.projectId, store.project(id) == nil {
+            select(.all)
+        } else if case let .milestone(id, projectId) = scope, store.milestone(id)?.projectId != projectId {
+            // The milestone on screen was deleted: back to its project
+            select(.project(projectId))
+        }
         forgetDeletedScopes(store)
     }
 
@@ -649,7 +740,7 @@ final class TasksViewModel: ObservableObject {
         var options = optionsByScope
         for key in options.keys { options[key]?.filter.query = "" }
         return WindowState(
-            scope: scopeKey,
+            scope: scope.storageKey,
             tabs: tabByScope.mapValues(\.rawValue),
             options: options.filter { $0.value != .standard },
             collapsed: collapsedGroups.sorted(),
@@ -672,16 +763,17 @@ final class TasksViewModel: ObservableObject {
         optionsByScope = state.options
         if let collapsed = state.collapsed { collapsedGroups = Set(collapsed) }
         expandedProjects = Set(state.expanded.compactMap(UUID.init(uuidString:)))
-        let restoredScope: TaskScope = UUID(uuidString: state.scope).map { .project($0) } ?? .all
+        let restoredScope = TaskScope(storageKey: state.scope) ?? .all
         scope = restoredScope
-        let remembered = tabByScope[Self.scopeKey(restoredScope)] ?? .board
-        tab = restoredScope.projectId == nil && remembered == .sprints ? .list : remembered
+        let remembered = tabByScope[restoredScope.key] ?? (restoredScope.isMilestone ? .list : .board)
+        tab = Self.tab(remembered, in: restoredScope)
     }
 
     /// Drops remembered tabs and filters of projects that no longer exist (once data has loaded).
     private func forgetDeletedScopes(_ store: TaskStore) {
         guard store.isLoaded else { return }
-        let alive = Set(store.allProjects.map(\.id.uuidString) + ["all"])
+        let alive = Set(store.allProjects.map(\.id.uuidString) + ["all"]
+                        + store.workspace.milestones.map { TaskScope.milestone($0.id, projectId: $0.projectId).key })
         let tabs = tabByScope.filter { alive.contains($0.key) }
         if tabs != tabByScope { tabByScope = tabs; saveWindowState() }
         let options = optionsByScope.filter { alive.contains($0.key) }
@@ -694,7 +786,7 @@ final class TasksViewModel: ObservableObject {
 
     /// Archives and goes back to All projects if it was the one on screen; Undo brings it back.
     func archiveProject(_ id: UUID, store: TaskStore) {
-        if scope == .project(id) { select(.all) }
+        if scope.projectId == id { select(.all) }
         if openDetail == .project(id) { closePanel() }
         if let open = openTaskId, store.task(open)?.projectId == id { closeTask() }
         store.archiveProject(id)
@@ -709,7 +801,7 @@ final class TasksViewModel: ObservableObject {
     }
 
     func deleteProject(_ id: UUID, store: TaskStore) {
-        if scope == .project(id) { select(.all) }
+        if scope.projectId == id { select(.all) }
         if let open = openTaskId, store.task(open)?.projectId == id { closeTask() }
         if openDetail == .project(id) { closePanel() }
         if case let .milestone(mid) = openDetail, store.milestone(mid)?.projectId == id { closePanel() }
@@ -731,6 +823,7 @@ final class TasksViewModel: ObservableObject {
 
     func deleteMilestone(_ id: UUID, store: TaskStore) {
         if openDetail == .milestone(id) { closePanel() }
+        if case let .milestone(mid, projectId) = scope, mid == id { select(.project(projectId)) }
         store.deleteMilestone(id)
         showUndoToast("Milestone deleted", store: store)
     }
@@ -831,9 +924,108 @@ final class TasksViewModel: ObservableObject {
         return true
     }
 
-    func openFromToast() {
-        guard let id = toast?.openTaskId else { return }
+    func openFromToast(_ store: TaskStore) {
+        guard let target = toast?.open else { return }
         dismissToast()
+        open(target, store: store)
+    }
+
+    func open(_ target: OpenTarget, store: TaskStore) {
+        switch target {
+        case let .task(id): openTask(id)
+        case let .project(id): select(.project(id))
+        case let .milestone(id): showMilestone(id, store: store)
+        }
+    }
+
+    /// Whether the toast's Open still has something to open.
+    func canOpen(_ target: OpenTarget, store: TaskStore) -> Bool {
+        switch target {
+        case let .task(id): return store.task(id) != nil
+        case let .project(id): return store.project(id) != nil
+        case let .milestone(id): return store.milestone(id) != nil
+        }
+    }
+
+    // MARK: - New projects and milestones
+
+    /// The New project field. ↵ adds it and says so ("Added Atlas · Open"); ⇧↵ (`open`) adds it,
+    /// shows it and opens its panel. Returns the new project, nil for a blank name.
+    @discardableResult
+    func addProject(_ name: String, open: Bool, store: TaskStore) -> UUID? {
+        guard let id = store.addProject(name: name) else { return nil }
+        if open {
+            select(.project(id))
+            openProject(id)
+        } else {
+            show(Toast(message: "Added \(store.project(id)?.name ?? "project")", open: .project(id)))
+        }
+        return id
+    }
+
+    /// The New milestone fields (sidebar, Milestones tab, project panel). ↵ adds it and says so
+    /// ("Added Beta · Open"); ⇧↵ (`open`) adds it and shows its page.
+    @discardableResult
+    func addMilestone(_ name: String, projectId: UUID, open: Bool, store: TaskStore) -> UUID? {
+        guard let id = store.addMilestone(projectId: projectId, name: name) else { return nil }
+        if open {
+            showMilestone(id, store: store)
+        } else {
+            show(Toast(message: "Added \(store.milestone(id)?.name ?? "milestone")", open: .milestone(id)))
+        }
+        return id
+    }
+
+    // MARK: - ⌘N: the composer at the top
+
+    /// The composer ⌘N opens: the first group of the List (or the first column of the Board, the
+    /// active sprint in Sprints). Its group is opened if it was collapsed.
+    func defaultComposerKey(_ store: TaskStore) -> String? {
+        switch effectiveTab {
+        case .list:
+            guard let group = listGroups(store).first(where: \.acceptsDrop) else { return nil }
+            return Self.listComposerKey(group.id)
+        case .board:
+            return boardColumns(store).first.map { Self.boardComposerKey($0) }
+        case .sprints:
+            return scope.projectId == nil ? nil : Self.listComposerKey(Self.sprintGroupKey(.active))
+        case .milestones:
+            return nil
+        }
+    }
+
+    static func listComposerKey(_ group: String) -> String { "composer-" + group }
+    static func boardComposerKey(_ column: TaskGroupValue) -> String { "composer-board-\(column.key)" }
+
+    /// ⌘N: opens the default composer pinned at the top of its group, so it's on screen however
+    /// long the group is.
+    func startNewTask(_ store: TaskStore) {
+        closePanel()
+        if effectiveTab == .milestones { tab = .list }
+        if let key = defaultComposerKey(store) {
+            let group = String(key.dropFirst("composer-".count))
+            if effectiveTab != .board, isCollapsed(group) { toggleGroup(group) }
+            activeComposer = key
+            pinnedComposer = key
+        }
+        requestFocus(.newTask)
+    }
+
+    /// Whether this group's composer sits at the top (⌘N) instead of after its tasks.
+    func isComposerPinned(_ key: String) -> Bool { pinnedComposer == key }
+
+    /// A task added from the pinned composer: scroll to it and highlight it for a moment.
+    func flash(_ id: UUID) {
+        flashTaskId = id
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            if self?.flashTaskId == id { self?.flashTaskId = nil }
+        }
+    }
+
+    /// ⇧↵ in the composer: opens the new task with its description ready to write.
+    func openNewTask(_ id: UUID) {
+        describeTaskId = id
         openTask(id)
     }
 

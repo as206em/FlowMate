@@ -17,6 +17,8 @@ struct RowDisplay: Equatable {
     var projectName: String?
     var projectColorHex: UInt32?
     var milestoneName: String?
+    /// The milestone's color: its chip is tinted with it
+    var milestoneColorHex: UInt32?
     var sprintLabel: String
     var dueLabel: String?
     var dueIsRisk: Bool
@@ -27,6 +29,8 @@ struct RowDisplay: Equatable {
     /// The task's status in its project's workflow, and the one a click on the circle moves to
     var status: WorkflowStatus = .todo
     var nextStatusName: String = ""
+    /// Just added from the composer at the top: a brief wash
+    var flashing = false
 }
 
 final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
@@ -95,6 +99,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         static let done = NSColor(Focus.done)
         static let progress = NSColor(Focus.progress)
         static let ringTrack = NSColor(Focus.ringTrack)
+        static let justAdded = NSColor(Focus.justAdded)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -118,6 +123,10 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             inner.fill()
         } else if hovered {
             Style.hover.setFill()
+            inner.fill()
+        }
+        if display.flashing {
+            Style.justAdded.setFill()
             inner.fill()
         }
         if display.selected {
@@ -170,7 +179,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             case .status: drawStatus(display.status, in: cell)
             case .project: drawProject(display, in: cell)
             case .title: if !isRenaming { drawTitle(task, display, in: cell) }
-            case .milestone: drawMeta(display.milestoneName, in: cell)
+            case .milestone: drawMilestone(display, in: cell)
             case .sprint: drawMeta(display.sprintLabel, in: cell)
             case .due: drawDue(task, display, in: cell)
             case .priority: drawPriority(task.priority, in: cell)
@@ -225,6 +234,41 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
     private func drawMeta(_ text: String?, in cell: NSRect) {
         guard let text, !text.isEmpty else { return drawEmpty(in: cell) }
         drawText(text, font: Style.meta, color: Style.text3, in: cell)
+    }
+
+    /// A chip tinted with the milestone's color: ◆ and the name.
+    private func drawMilestone(_ display: RowDisplay, in cell: NSRect) {
+        guard let name = display.milestoneName, !name.isEmpty else { return drawEmpty(in: cell) }
+        guard let hex = display.milestoneColorHex else { return drawMeta(name, in: cell) }
+        let color = Self.projectColor(hex)
+        let textColor = Self.darkened(hex)
+        let font = Style.tag
+        let pad: CGFloat = 6, diamond: CGFloat = 7, gap: CGFloat = 5
+        let chipWidth = min(cell.width, pad + diamond + gap + textWidth(name, font: font) + pad)
+        let chip = NSRect(x: cell.minX - 2, y: cell.midY - 10, width: chipWidth, height: 20)
+        color.withAlphaComponent(0.10).setFill()
+        NSBezierPath(roundedRect: chip, xRadius: Focus.radiusTag, yRadius: Focus.radiusTag).fill()
+        let d = NSBezierPath()
+        let cx = chip.minX + pad + diamond / 2, cy = chip.midY
+        d.move(to: NSPoint(x: cx, y: cy - diamond / 2 - 0.5))
+        d.line(to: NSPoint(x: cx + diamond / 2, y: cy))
+        d.line(to: NSPoint(x: cx, y: cy + diamond / 2 + 0.5))
+        d.line(to: NSPoint(x: cx - diamond / 2, y: cy))
+        d.close()
+        color.setFill()
+        d.fill()
+        let textX = chip.minX + pad + diamond + gap
+        drawText(name, font: font, color: textColor,
+                 in: NSRect(x: textX, y: cell.minY, width: max(0, chip.maxX - pad - textX + 1), height: cell.height))
+    }
+
+    private static var darkenedColors: [UInt32: NSColor] = [:]
+
+    private static func darkened(_ hex: UInt32) -> NSColor {
+        if let color = darkenedColors[hex] { return color }
+        let color = NSColor(Color(hex: hex, darkenedBy: 0.35))
+        darkenedColors[hex] = color
+        return color
     }
 
     private func drawStatus(_ status: WorkflowStatus, in cell: NSRect) {

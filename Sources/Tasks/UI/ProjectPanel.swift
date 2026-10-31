@@ -81,11 +81,17 @@ private struct ProjectMilestonesSection: View {
                         .foregroundColor(Focus.text)
                         .focused($addFocused)
                         .onSubmit {
-                            guard store.addMilestone(projectId: project.id, name: newName) != nil else { return }
+                            // ↵ adds it with an Open toast; ⇧↵ adds it and shows its page
+                            let open = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false
+                            guard model.addMilestone(newName, projectId: project.id, open: open, store: store) != nil else { return }
                             newName = ""
-                            addFocused = true
+                            if !open { addFocused = true }
                         }
                         .accessibilityLabel("New milestone name")
+                        .accessibilityHint("Return adds it. Shift-Return adds it and shows its page.")
+                    if addFocused, !newName.isEmpty {
+                        FocusKey(text: "⇧↵ add and open")
+                    }
                 }
                 .padding(.leading, 14)
                 .padding(.trailing, 10)
@@ -112,7 +118,7 @@ struct MilestoneSummaryRow: View {
         let progress = store.milestoneProgress(milestone.id)
         Button(action: open) {
             HStack(spacing: 12) {
-                MilestoneIcon(completed: milestone.isCompleted)
+                MilestoneIcon(milestone)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(milestone.name)
                         .font(Focus.row)
@@ -160,17 +166,25 @@ struct MilestoneSummaryRow: View {
     }
 }
 
-/// ◆ for an open milestone, a check in a diamond's place once it's complete.
+/// ◆ in the milestone's color for an open milestone, a check in a diamond's place once it's complete.
 struct MilestoneIcon: View {
     var completed = false
+    var colorHex: UInt32?
     var size: CGFloat = 13
 
     var body: some View {
-        Image(systemName: completed ? "checkmark.diamond.fill" : "diamond")
+        Image(systemName: completed ? "checkmark.diamond.fill" : (colorHex == nil ? "diamond" : "diamond.fill"))
             .font(.system(size: size, weight: .semibold))
-            .foregroundColor(completed ? Focus.done : Focus.text3)
+            .foregroundColor(colorHex.map { Color(hex: $0) } ?? (completed ? Focus.done : Focus.text3))
+            .opacity(completed && colorHex != nil ? 0.7 : 1)
             .frame(width: 16)
             .accessibilityHidden(true)
+    }
+}
+
+extension MilestoneIcon {
+    init(_ milestone: Milestone, size: CGFloat = 13) {
+        self.init(completed: milestone.isCompleted, colorHex: milestone.colorHex, size: size)
     }
 }
 

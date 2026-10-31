@@ -122,6 +122,7 @@ struct TaskTableBuilder {
         showProject: Bool,
         drop: TaskGroupDrop?,
         composerIsDefault: Bool = false,
+        composerOnTop: Bool = false,
         open: Bool,
         gap: CGFloat,
         display: (TaskItem) -> RowDisplay
@@ -132,6 +133,11 @@ struct TaskTableBuilder {
         )))
         if let drop { drops[key] = drop }
         guard open else { return }
+        let composer = drop.map {
+            TaskTableRow.composer(group: key, preset: TaskGroupSection.preset($0), isDefault: composerIsDefault, title: title)
+        }
+        // ⌘N pins the composer above the group's tasks, so it's on screen however long the group is
+        if composerOnTop, let composer { rows.append(composer) }
         if tasks.isEmpty {
             rows.append(.empty(group: key, text: emptyText))
         }
@@ -145,14 +151,7 @@ struct TaskTableBuilder {
             }
             rows.append(.task(TaskRowInfo(task: task, group: key, position: position, showProject: showProject, display: display(task))))
         }
-        if let drop {
-            rows.append(.composer(
-                group: key,
-                preset: TaskGroupSection.preset(drop),
-                isDefault: composerIsDefault,
-                title: title
-            ))
-        }
+        if !composerOnTop, let composer { rows.append(composer) }
     }
 }
 
@@ -250,7 +249,7 @@ struct TaskTableCell: View {
                 .padding(16)
                 .panelSlice(.only)
         case let .composer(group, preset, isDefault, title):
-            TaskComposer(key: "composer-" + group, preset: preset, isDefault: isDefault, groupName: title)
+            TaskComposer(key: TasksViewModel.listComposerKey(group), preset: preset, isDefault: isDefault, groupName: title)
                 .environment(\.composerReservesMenuSpace, true)
                 .padding(.top, 6)
         }
@@ -421,6 +420,7 @@ struct NativeTaskTable: NSViewRepresentable {
         /// Measured heights of rows that size to their content, by row id
         private var measured: [String: CGFloat] = [:]
         private var revealedTaskId: UUID?
+        private var revealedFlashId: UUID?
         private var handledFocusRequest: UUID?
         private var tickerSubscription: AnyCancellable?
         private let controller = TaskRowController()
@@ -509,9 +509,28 @@ struct NativeTaskTable: NSViewRepresentable {
                let index = rows.firstIndex(where: { if case .composer(_, _, true, _) = $0 { return true } else { return false } }) {
                 handledFocusRequest = request.id
                 table.scrollRowToVisible(index)
+                // Pinned under its group's header: show the header too (once the composer has its height)
+                if index > 0, case .groupHeader = rows[index - 1] {
+                    let reveal: @MainActor @Sendable () -> Void = { [weak table] in
+                        guard let table, let clip = table.enclosingScrollView?.contentView else { return }
+                        let header = table.rect(ofRow: index - 1)
+                        guard header.minY < clip.bounds.minY else { return }
+                        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: max(0, header.minY)))
+                        table.enclosingScrollView?.reflectScrolledClipView(clip)
+                    }
+                    reveal()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: reveal)
+                }
             } else if model.focusRequest == nil {
                 handledFocusRequest = nil
             }
+
+            // A task just added from the composer at the top
+            if let id = model.flashTaskId, id != revealedFlashId,
+               let index = rows.firstIndex(where: { if case let .task(info) = $0 { return info.task.id == id } else { return false } }) {
+                table.scrollRowToVisible(index)
+            }
+            revealedFlashId = model.flashTaskId
         }
 
         // MARK: Data source and delegate
@@ -562,7 +581,7 @@ struct NativeTaskTable: NSViewRepresentable {
         /// so it must not stay the active composer.
         func tableView(_ tableView: NSTableView, didRemove rowView: NSTableRowView, forRow row: Int) {
             guard rows.indices.contains(row), case let .composer(group, _, _, _) = rows[row] else { return }
-            let key = "composer-" + group
+            let key = TasksViewModel.listComposerKey(group)
             DispatchQueue.main.async { [weak self] in
                 guard let model = self?.model, model.activeComposer == key else { return }
                 // Still on screen after a reload: keep it

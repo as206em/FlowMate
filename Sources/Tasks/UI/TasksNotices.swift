@@ -110,7 +110,7 @@ struct FirstProjectEmptyState: View {
         guard let id = store.addProject(name: name) else { return }
         name = ""
         model.select(.project(id))
-        model.requestFocus(.newTask)
+        model.startNewTask(store)
     }
 }
 
@@ -132,17 +132,18 @@ struct TasksEmptyStateView: View {
     @ViewBuilder
     private var content: some View {
         let project = model.scope.projectId.flatMap { store.project($0) }
+        let milestone = model.scope.milestoneId.flatMap { store.milestone($0) }
         switch reason {
         case .noTasks:
             let hidden = board ? 0 : model.hiddenClosedCount(store)
             FocusEmptyState(
                 systemImage: "checklist",
-                title: project.map { "No tasks in \($0.name) yet" } ?? "No tasks yet",
+                title: (milestone?.name ?? project?.name).map { "No tasks in \($0) yet" } ?? "No tasks yet",
                 message: hidden > 0
                     ? "\(TaskStore.taskCount(hidden)) from past sprints are hidden. Add a new task with the field above, or show the past ones."
                     : "Add one with the New task field above. Tokens like !high, due:fri and ~90m set the details as you type.",
                 actionTitle: "New task",
-                action: { model.requestFocus(.newTask) },
+                action: { model.startNewTask(store) },
                 secondaryTitle: hidden > 0 ? "Show past sprints" : nil,
                 secondaryAction: { model.filter.sprintSlots.insert(.closed) }
             )
@@ -170,7 +171,7 @@ struct TasksEmptyStateView: View {
                     actionTitle: "Plan in Sprints",
                     action: { model.tab = .sprints },
                     secondaryTitle: "New task",
-                    secondaryAction: { model.requestFocus(.newTask) }
+                    secondaryAction: { model.startNewTask(store) }
                 )
             } else {
                 FocusEmptyState(
@@ -180,7 +181,7 @@ struct TasksEmptyStateView: View {
                     actionTitle: "Open List",
                     action: { model.tab = .list },
                     secondaryTitle: "New task",
-                    secondaryAction: { model.requestFocus(.newTask) }
+                    secondaryAction: { model.startNewTask(store) }
                 )
             }
         }

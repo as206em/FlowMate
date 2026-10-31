@@ -5,7 +5,8 @@ extension TaskStore {
     // MARK: - Tasks
 
     /// Quick add: active sprint, the project's first Not started status (or `status`, matched in
-    /// the project), medium priority, 60m expected, appended at the end.
+    /// the project), medium priority, 60m expected, appended at the end (or, with `atTop`, placed
+    /// before every other task, so it heads its group in manual order).
     /// Returns nil for a blank title or unknown project.
     @discardableResult
     func addTask(
@@ -14,6 +15,7 @@ extension TaskStore {
         milestoneId: UUID? = nil,
         sprintSlot: SprintSlot = .active,
         status: WorkflowStatus? = nil,
+        atTop: Bool = false,
         now: Date = Date()
     ) -> UUID? {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -23,7 +25,9 @@ extension TaskStore {
         let task = TaskItem(projectId: projectId, milestoneId: validMilestone, sprintSlot: sprintSlot,
                             status: status, priority: .medium, title: title,
                             expectedMinutes: TaskItem.defaultExpectedMinutes,
-                            createdAt: now, sortIndex: (workspace.tasks.map(\.sortIndex).max() ?? 0) + 1)
+                            createdAt: now,
+                            sortIndex: atTop ? (workspace.tasks.map(\.sortIndex).min() ?? 0) - 1
+                                             : (workspace.tasks.map(\.sortIndex).max() ?? 0) + 1)
         mutate("Add task") { $0.tasks.append(task) }
         return task.id
     }

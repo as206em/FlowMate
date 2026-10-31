@@ -121,7 +121,7 @@ struct TaskBulkBar: View {
                         model.bulk({ "\(tasks($0)) added to \(milestone.name)" }, store: store) { store.setMilestone($0, milestone.id) }
                         done()
                     } label: {
-                        Image(systemName: "diamond.fill").font(.system(size: 10)).foregroundColor(Focus.text3)
+                        Image(systemName: "diamond.fill").font(.system(size: 10)).foregroundColor(Color(hex: milestone.colorHex))
                         Text(milestone.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
                     }
                 }

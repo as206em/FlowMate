@@ -41,7 +41,7 @@ final class TimeLogTests: XCTestCase {
          "preferences": {}}
         """
         let ws = try LocalJSONWorkspaceRepository.makeDecoder().decode(Workspace.self, from: Data(json.utf8)).migrated()
-        XCTAssertEqual(ws.schemaVersion, 7)
+        XCTAssertEqual(ws.schemaVersion, 8)
         XCTAssertEqual(ws.tasks.first { $0.id == a }?.spentSeconds ?? 0, 5400, accuracy: 0.001, "totals unchanged")
         XCTAssertEqual(ws.tasks.first { $0.id == b }?.spentSeconds, 0)
         XCTAssertEqual(ws.tasks.first { $0.id == c }?.spentSeconds ?? 0, 90.5, accuracy: 0.001)

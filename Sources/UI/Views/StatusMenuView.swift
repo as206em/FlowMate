@@ -169,6 +169,8 @@ struct StatusMenuView: View {
             addTask()
         case .project(let id):
             MenuNavigation.openProject(id)
+        case .milestone(let id):
+            MenuNavigation.openMilestone(id)
         case .task(let id):
             MenuNavigation.openTask(id)
         }

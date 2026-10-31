@@ -15,7 +15,9 @@ struct Workspace: Codable, Equatable, Sendable {
     /// 7: a time log (timeEntries: timer sessions, time added by hand) and TaskItem.completedAt.
     ///    Time tracked before becomes one `imported` entry per task, so totals don't change; tasks
     ///    already done or canceled get their last update as completion date.
-    static let currentSchemaVersion = 7
+    /// 8: a color per milestone (Milestone.colorHex). Older milestones get one by walking the
+    ///    palette within each project, skipping the project's own color.
+    static let currentSchemaVersion = 8
 
     var schemaVersion: Int
     var projects: [Project]
@@ -67,6 +69,7 @@ struct Workspace: Codable, Equatable, Sendable {
         // 6: projects decode the Simple workflow and tasks their old status under the same id.
         // 7: no time entries yet: reconcileTrackedTime (below) turns each task's total into one
         //    imported entry; normalizeCompletion dates closed tasks by their last update.
+        // 8: milestones decode without a color; assignMilestoneColors (below) gives each one.
         ws.schemaVersion = Workspace.currentSchemaVersion
 
         let projectIds = Set(ws.projects.map(\.id))
@@ -84,7 +87,23 @@ struct Workspace: Codable, Equatable, Sendable {
         ws.normalizeStatuses()
         ws.normalizeCompletion()
         ws.reconcileTrackedTime(now: now)
+        ws.assignMilestoneColors()
         return ws
+    }
+
+    /// Gives every milestone without a color one: per project, in stored order, the palette color
+    /// its milestones use least (never the project's own color while others are free).
+    mutating func assignMilestoneColors() {
+        guard milestones.contains(where: { $0.colorHex == Milestone.unsetColor }) else { return }
+        let projectColors = Dictionary(projects.map { ($0.id, $0.colorHex) }, uniquingKeysWith: { a, _ in a })
+        var used: [UUID: [UInt32]] = [:]
+        for m in milestones where m.colorHex != Milestone.unsetColor { used[m.projectId, default: []].append(m.colorHex) }
+        for i in milestones.indices where milestones[i].colorHex == Milestone.unsetColor {
+            let projectId = milestones[i].projectId
+            let hex = Milestone.nextColor(projectColor: projectColors[projectId], used: used[projectId] ?? [])
+            milestones[i].colorHex = hex
+            used[projectId, default: []].append(hex)
+        }
     }
 
     // Running timers are stored as {"<uuid>": "<date>"} so the JSON stays readable.

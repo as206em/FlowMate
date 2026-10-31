@@ -324,7 +324,7 @@ struct FocusMilestoneChoices: View {
             }
             ForEach(store.milestones(of: projectId).filter { !$0.isCompleted || $0.id == selection }) { milestone in
                 FocusMenuItem(isSelected: milestone.id == selection) { choose(milestone.id) } label: {
-                    Image(systemName: "diamond.fill").font(.system(size: 10)).foregroundColor(Focus.text3)
+                    Image(systemName: "diamond.fill").font(.system(size: 10)).foregroundColor(Color(hex: milestone.colorHex))
                     Text(milestone.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if let due = milestone.dueDate {
@@ -383,17 +383,19 @@ struct TaskMilestoneChip: View {
 
     var body: some View {
         let milestone = store.milestone(of: task)
+        let tint = milestone.map { Focus.colorTint($0.colorHex) }
         Button { open = true } label: {
             HStack(spacing: 4) {
                 Image(systemName: milestone == nil ? "diamond" : "diamond.fill")
                     .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(tint?.icon ?? Focus.text3)
                 Text(milestone?.name ?? "Milestone").lineLimit(1)
             }
             .font(.system(size: 12))
-            .foregroundColor(milestone == nil ? Focus.text3 : Focus.text2)
-            .padding(.horizontal, 5)
+            .foregroundColor(tint?.text ?? Focus.text3)
+            .padding(.horizontal, 6)
             .frame(height: 20)
-            .background(RoundedRectangle(cornerRadius: Focus.radiusTag).fill(hovering ? Focus.hover : .clear))
+            .background(RoundedRectangle(cornerRadius: Focus.radiusTag).fill(tint.map { hovering ? $0.border : $0.fill } ?? (hovering ? Focus.hover : .clear)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -406,4 +408,3 @@ struct TaskMilestoneChip: View {
         }
     }
 }
-

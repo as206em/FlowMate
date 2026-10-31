@@ -20,6 +20,7 @@ struct TasksShortcutsHelp: View {
             Shortcut(label: "New project", keys: ["⇧", "⌘", "N"]),
             Shortcut(label: "Search", keys: ["⌘", "F"]),
             Shortcut(label: "Board, List, Sprints, Milestones", keys: ["⌘", "1–4"]),
+            Shortcut(label: "Previous or next in the sidebar", keys: ["⌥", "⌘", "↑↓"]),
         ]),
         Section(title: "Selection", shortcuts: [
             Shortcut(label: "Move up or down", keys: ["↑", "↓"]),
@@ -41,6 +42,7 @@ struct TasksShortcutsHelp: View {
         ]),
         Section(title: "New task", shortcuts: [
             Shortcut(label: "Add and open", keys: ["⇧", "↵"]),
+            Shortcut(label: "New project or milestone: add and open", keys: ["⇧", "↵"]),
             Shortcut(label: "Expected time", keys: ["2h", "90m"]),
             Shortcut(label: "Sprint", keys: ["#next", "#backlog"]),
             Shortcut(label: "Milestone", keys: ["@beta"]),

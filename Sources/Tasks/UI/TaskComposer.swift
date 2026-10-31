@@ -100,20 +100,12 @@ struct TaskComposer: View {
     }
 
     private func applyPreset() {
-        switch preset {
-        case let .status(status)?: draft.status = status
-        case let .category(category)?: draft.category = category
-        case let .sprint(slot)?: if slot != .closed { draft.slot = slot }
-        case let .milestone(id)?: draft.milestoneId = id
-        case let .priority(priority)?: draft.priority = priority
-        case let .project(id)?: draft.projectId = id
-        case nil: break
-        }
+        draft.apply(preset: preset, in: model.scope)
     }
 
     // MARK: - State
 
-    /// The draft's project, else the project on screen, else the last one used
+    /// The draft's project, else the project on screen (a milestone page's project), else the last one used
     private var targetProject: Project? {
         if let id = draft.projectId, let project = store.project(id), !project.isArchived { return project }
         if let id = model.scope.projectId { return store.project(id) }
@@ -199,6 +191,7 @@ struct TaskComposer: View {
             let milestone = draft.milestoneId.flatMap { store.milestone($0) }
             ComposerPropertyButton(tint: .milestone, isSet: milestone != nil, isOpen: binding(.milestone)) {
                 Image(systemName: milestone == nil ? "diamond" : "diamond.fill").font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(milestone.map { Color(hex: $0.colorHex) })
                 Text(milestone?.name ?? "Milestone")
             } popover: {
                 FocusMilestoneChoices(projectId: target.id, selection: draft.milestoneId, newName: $newMilestoneName) { id in
@@ -427,6 +420,8 @@ struct TaskComposer: View {
         result.tokens.forEach { apply($0, target: target) }
         let name = result.text.trimmingCharacters(in: .whitespaces)
         let projectId = targetProject?.id ?? target.id
+        // Pinned at the top by ⌘N: the task goes first in its group, right under the composer
+        draft.atTop = model.isComposerPinned(key)
         guard !name.isEmpty, let id = store.addTask(title: name, draft: draft, projectId: projectId) else {
             title = result.text
             return
@@ -441,9 +436,11 @@ struct TaskComposer: View {
             added = nil
             focused = false
             model.activeComposer = nil
-            model.openTask(id)
+            // The panel opens with the description ready to write
+            model.openNewTask(id)
         } else {
             added = Added(title: name, taskId: id)
+            model.flash(id)
         }
     }
 }

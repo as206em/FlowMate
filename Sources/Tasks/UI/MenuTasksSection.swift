@@ -20,6 +20,13 @@ enum MenuNavigation {
         if let focus { TasksWindow.viewModel.requestFocus(focus) }
     }
 
+    /// Opens the milestone's page (its own last tab and filters).
+    static func openMilestone(_ id: UUID) {
+        MenuBarPanel.close()
+        TasksWindow.viewModel.showMilestone(id, store: TaskStore.shared)
+        TasksWindow.show()
+    }
+
     static func openApp(focus: TasksViewModel.FocusRequest.Field? = nil) {
         MenuBarPanel.close()
         TasksWindow.show()
@@ -207,6 +214,7 @@ struct MenuSearchResults: View {
     var body: some View {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let projects = results.projects.compactMap { store.project($0) }
+        let milestones = results.milestones.compactMap { store.milestone($0) }
         let tasks = results.tasks.compactMap { store.task($0) }
 
         VStack(alignment: .leading, spacing: 2) {
@@ -252,6 +260,26 @@ struct MenuSearchResults: View {
                 }
             }
 
+            if !milestones.isEmpty {
+                FocusCaption(text: "Milestones").padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 2)
+                ForEach(milestones) { milestone in
+                    MenuItemRow(highlighted: highlight == .milestone(milestone.id), action: { activate(.milestone(milestone.id)) }) {
+                        MilestoneIcon(milestone, size: 12).frame(width: 20)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(milestone.name).font(.system(size: 13)).foregroundColor(Focus.text).lineLimit(1)
+                            Text(store.project(milestone.projectId)?.name ?? "")
+                                .font(.system(size: 11.5))
+                                .foregroundColor(Focus.text3)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 4)
+                        Text(store.milestoneProgress(milestone.id).short)
+                            .font(.system(size: 12).monospacedDigit())
+                            .foregroundColor(Focus.text3)
+                    }
+                }
+            }
+
             if !tasks.isEmpty {
                 FocusCaption(text: "Tasks").padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 2)
                 ForEach(tasks) { task in
@@ -276,7 +304,7 @@ struct MenuSearchResults: View {
                 }
             }
 
-            if projects.isEmpty && tasks.isEmpty {
+            if projects.isEmpty && milestones.isEmpty && tasks.isEmpty {
                 Text(target == nil
                      ? "No matches. Create a project in FlowMate to add tasks."
                      : "No matches. Press ⌘↵ to add it as a task.")

@@ -201,7 +201,10 @@ private struct TaskDetailBody: View {
                 placeholder: Self.placeholder,
                 onChange: { store.setNotes(task.id, $0) },
                 onToggleLine: { store.toggleNotesChecklist(task.id, line: $0) },
-                onEscape: { model.closePanel() }
+                onEscape: { model.closePanel() },
+                // Just added with ⇧↵: straight on to the description
+                startsWriting: model.describeTaskId == task.id,
+                onStartedWriting: { if model.describeTaskId == task.id { model.describeTaskId = nil } }
             )
             SubtasksSection(task: task)
             TaskTimeLogSection(task: task)
@@ -259,6 +262,9 @@ struct MarkdownDescriptionSection: View {
     let onEscape: () -> Void
     /// Height of the empty editor and preview
     var minHeight: CGFloat = 250
+    /// Opens in Write with the editor focused (a task just added with ⇧↵)
+    var startsWriting = false
+    var onStartedWriting: () -> Void = {}
 
     @State private var writing = false
     @State private var editorFocused = false
@@ -311,6 +317,12 @@ struct MarkdownDescriptionSection: View {
                 RoundedRectangle(cornerRadius: Focus.radiusPanel)
                     .strokeBorder(writing && editorFocused ? Focus.lineStrong : Focus.hairline, lineWidth: 1)
             )
+        }
+        .onAppear {
+            // The editor focuses itself when it appears
+            guard startsWriting else { return }
+            writing = true
+            onStartedWriting()
         }
     }
 

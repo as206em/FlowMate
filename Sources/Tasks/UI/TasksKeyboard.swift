@@ -10,6 +10,8 @@ enum TasksShortcut: Equatable, CaseIterable {
     case selectPrevious, selectNext, open, toggleTimer
     case extendUp, extendDown, selectAll
     case previousTask, nextTask
+    /// ⌥⌘↑ / ⌥⌘↓: the sidebar item above or below (All projects, projects, listed milestones)
+    case previousScope, nextScope
     case delete, duplicate
     case help, clearSelection
 
@@ -98,6 +100,12 @@ enum TasksShortcut: Equatable, CaseIterable {
             case downArrowKey: return .extendDown
             default: return nil
             }
+        case [.command, .option]:
+            switch keyCode {
+            case upArrowKey: return .previousScope
+            case downArrowKey: return .nextScope
+            default: return nil
+            }
         case [.command, .shift]:
             switch key {
             case "z": return .redo
@@ -124,10 +132,8 @@ extension TasksViewModel {
             guard store.canRedo else { return false }
             redo(store)
         case .newTask:
-            // The composer sits under the header, below the panel's scrim; Milestones has none
-            closePanel()
-            if effectiveTab == .milestones { tab = .list }
-            requestFocus(.newTask)
+            // The composer opens at the top of the first group, below the panel's scrim; Milestones has none
+            startNewTask(store)
         case .newProject:
             requestFocus(.newProject)
         case .find:
@@ -153,6 +159,8 @@ extension TasksViewModel {
         case .previousTask, .nextTask:
             guard openTaskId != nil else { return false }
             stepOpenTask(shortcut == .nextTask ? 1 : -1, store: store)
+        case .previousScope, .nextScope:
+            return stepSidebar(shortcut == .nextScope ? 1 : -1, store: store)
         case .toggleTimer:
             // Timers start one at a time; with several selected, Space does nothing
             guard !isMultiSelecting || openTaskId != nil else { return false }

@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Milestones in scope: open ones by due date, then completed ones. Each row shows progress; a
-/// click opens the milestone panel. The last row adds a milestone (in All projects it has a
-/// project chip). Right-click for Open, Show tasks, Mark complete and Delete.
+/// Milestones in scope: open ones by due date, then completed ones. In All projects they're in a
+/// section per project (sidebar order). Each row shows progress; a click shows the milestone's
+/// page. The last row adds a milestone (in All projects it has a project chip). Right-click for
+/// Show tasks, Details, Mark complete, Due date and Delete.
 struct MilestonesView: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
@@ -10,7 +11,49 @@ struct MilestonesView: View {
     @State private var pendingDelete: Milestone?
 
     var body: some View {
-        let milestones = store.milestones(in: model.scope)
+        let sections = store.milestonesByProject(in: model.scope)
+        let grouped = model.scope.projectId == nil
+        VStack(alignment: .leading, spacing: 0) {
+            if grouped {
+                ForEach(sections, id: \.project.id) { section in
+                    sectionHeader(section.project, count: section.milestones.count)
+                    panel(section.milestones, addRow: false)
+                        .padding(.bottom, 22)
+                }
+                if sections.isEmpty {
+                    panel([], addRow: true)
+                } else {
+                    // One add row under the sections, with a project chip
+                    VStack(spacing: 0) { NewMilestoneRow() }
+                        .clipShape(RoundedRectangle(cornerRadius: Focus.radiusPanel))
+                        .focusPanel()
+                }
+            } else {
+                panel(sections.first?.milestones ?? [], addRow: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .milestoneDeleteAlert($pendingDelete)
+    }
+
+    /// A project's section heading in All projects: its tile, name and milestone count. A click shows the project.
+    private func sectionHeader(_ project: Project, count: Int) -> some View {
+        Button { model.select(.project(project.id)) } label: {
+            HStack(spacing: 8) {
+                FocusProjectTile(name: project.name, colorHex: project.colorHex)
+                Text(project.name).font(Focus.groupTitle).foregroundColor(Focus.text).lineLimit(1)
+                Text("\(count)").font(Focus.row.monospacedDigit()).foregroundColor(Focus.text3)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 4)
+            .padding(.bottom, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Show \(project.name)")
+    }
+
+    private func panel(_ milestones: [Milestone], addRow: Bool) -> some View {
         VStack(spacing: 0) {
             if milestones.isEmpty {
                 Text(emptyText)
@@ -20,19 +63,17 @@ struct MilestonesView: View {
                     .padding(16)
                 FocusDivider()
             }
-            ForEach(milestones) { milestone in
-                MilestoneSummaryRow(milestone: milestone, showProject: model.scope.projectId == nil, height: 58) {
-                    model.openMilestone(milestone.id)
+            ForEach(Array(milestones.enumerated()), id: \.element.id) { index, milestone in
+                MilestoneSummaryRow(milestone: milestone, height: 58) {
+                    model.showMilestone(milestone.id, store: store)
                 }
                 .contextMenu { menu(milestone) }
-                FocusDivider()
+                if addRow || index < milestones.count - 1 { FocusDivider() }
             }
-            NewMilestoneRow()
+            if addRow { NewMilestoneRow() }
         }
         .clipShape(RoundedRectangle(cornerRadius: Focus.radiusPanel))
         .focusPanel()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .milestoneDeleteAlert($pendingDelete)
     }
 
     private var emptyText: String {
@@ -43,8 +84,8 @@ struct MilestonesView: View {
 
     @ViewBuilder
     private func menu(_ milestone: Milestone) -> some View {
-        Button("Open") { model.openMilestone(milestone.id) }
-        Button("Show tasks in List") { model.showTasks(ofMilestone: milestone) }
+        Button("Show tasks") { model.showMilestone(milestone.id, store: store) }
+        Button("Details…") { model.openMilestone(milestone.id) }
         Divider()
         if milestone.isCompleted {
             Button("Reopen") { store.reopenMilestone(milestone.id) }
@@ -61,6 +102,19 @@ struct MilestonesView: View {
             if milestone.dueDate != nil {
                 Divider()
                 Button("Clear") { store.setMilestoneDue(milestone.id, to: nil) }
+            }
+        }
+        Menu("Color") {
+            ForEach(Milestone.palette, id: \.self) { hex in
+                Button {
+                    store.setMilestoneColor(milestone.id, colorHex: hex)
+                } label: {
+                    if hex == milestone.colorHex {
+                        Label(Focus.colorName(hex), systemImage: "checkmark")
+                    } else {
+                        Text(Focus.colorName(hex))
+                    }
+                }
             }
         }
         Divider()
@@ -96,6 +150,10 @@ private struct NewMilestoneRow: View {
                 .disabled(target == nil)
                 .onSubmit(add)
                 .accessibilityLabel("New milestone")
+                .accessibilityHint("Return adds it. Shift-Return adds it and shows its page.")
+            if focused, !name.isEmpty {
+                FocusKey(text: "⇧↵ add and open")
+            }
             if model.scope.projectId == nil, let target {
                 Button { pickingProject = true } label: {
                     HStack(spacing: 6) {
@@ -131,9 +189,11 @@ private struct NewMilestoneRow: View {
         .frame(height: 48)
     }
 
+    /// ↵ adds it with an Open toast; ⇧↵ adds it and shows its page
     private func add() {
-        guard let target, store.addMilestone(projectId: target.id, name: name) != nil else { return }
+        let open = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false
+        guard let target, model.addMilestone(name, projectId: target.id, open: open, store: store) != nil else { return }
         name = ""
-        focused = true
+        if !open { focused = true }
     }
 }

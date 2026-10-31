@@ -39,6 +39,8 @@ enum Focus {
     static let ok = Color(hex: 0x15803D)
     static let risk = Color(hex: 0xDC2626)
     static let ringTrack = Color(hex: 0xE4E4E0)
+    /// A brief wash on a task just added (fades out)
+    static let justAdded = Color(hex: 0xE0A020).opacity(0.16)
 
     /// Project tile palette, in the order new projects get them
     static let projectPalette: [UInt32] = [0xFF6B4A, 0x4EA1F5, 0x2DBE7A, 0xE0A020, 0x8B5CF6, 0xEC4899, 0x14B8A6, 0x64748B]
@@ -104,6 +106,12 @@ enum Focus {
     static let progressTint = Tint(icon: progress, fill: Color(hex: 0xFFF4E0), text: Color(hex: 0x8A5300), border: Color(hex: 0xF3DDB0))
     static let doneTint = Tint(icon: done, fill: Color(hex: 0xEFECFD), text: Color(hex: 0x4B3BB8), border: Color(hex: 0xD9D3F8))
     static let riskTint = Tint(icon: risk, fill: Color(hex: 0xFDECEC), text: Color(hex: 0xB91C1C), border: Color(hex: 0xF6CFCF))
+
+    /// A light fill, border and darker text of any color (milestone chips).
+    static func colorTint(_ hex: UInt32) -> Tint {
+        let c = Color(hex: hex)
+        return Tint(icon: c, fill: c.opacity(0.10), text: Color(hex: hex, darkenedBy: 0.35), border: c.opacity(0.30))
+    }
 
     /// The tint of a status dropdown for a status color. The three signal tones keep their own
     /// tints; any other color gets a light fill and border of itself.

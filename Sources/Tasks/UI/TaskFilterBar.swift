@@ -99,12 +99,15 @@ struct TaskFilterBar: View {
 
     // MARK: - Chips
 
-    /// Dimensions offered here: Sprint isn't on Board (it shows the active sprint), Project only in All projects.
+    /// Dimensions offered here: Sprint isn't on Board (it shows the active sprint), Project only in
+    /// All projects, Milestone not on a milestone's page.
     private var dimensions: [Dimension] {
         Dimension.allCases.filter { dimension in
             switch dimension {
             case .sprint: return model.effectiveTab != .board
             case .project: return model.scope.projectId == nil && store.projects.count > 1
+            // A milestone's page shows only its tasks
+            case .milestone: return !model.scope.isMilestone
             default: return true
             }
         }
@@ -292,6 +295,7 @@ struct TaskFilterBar: View {
                     if model.scope.projectId == nil, let project = store.project(milestone.projectId) {
                         FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 14)
                     }
+                    Image(systemName: "diamond.fill").font(.system(size: 9)).foregroundColor(Color(hex: milestone.colorHex))
                     Text(milestone.name).lineLimit(1)
                 }
             }

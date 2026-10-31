@@ -152,7 +152,7 @@ final class TaskPowerBatch4Tests: XCTestCase {
         XCTAssertEqual(store.task(id)?.sprintSlot, .backlog)
         XCTAssertEqual(model.toast?.openTaskId, id)
         XCTAssertEqual(model.toast?.message, "Added to Alpha")
-        model.openFromToast()
+        model.openFromToast(store)
         XCTAssertEqual(model.openTaskId, id)
 
         model.closePanel()

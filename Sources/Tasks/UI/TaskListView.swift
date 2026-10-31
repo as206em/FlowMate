@@ -39,6 +39,7 @@ struct TaskListView: View {
                 showProject: showProject,
                 drop: group.acceptsDrop ? .group(group.value, reorder: model.sort.isManual) : nil,
                 composerIsDefault: group.id == firstOpen,
+                composerOnTop: model.isComposerPinned(TasksViewModel.listComposerKey(group.id)),
                 open: !model.isCollapsed(group.id),
                 gap: index == 0 ? 0 : 22,
                 display: RowDisplay.maker(store: store, model: model)
@@ -58,13 +59,17 @@ struct TaskListView: View {
 
     /// The grouped-by column repeats the group header, so it's hidden (Project stays: its tile helps).
     private var excluded: Set<TaskColumn> {
+        var columns: Set<TaskColumn>
         switch model.grouping {
-        case .milestone: return [.milestone]
-        case .sprint: return [.sprint]
-        case .priority: return [.priority]
-        case .project: return [.project]
-        case .status: return []
+        case .milestone: columns = [.milestone]
+        case .sprint: columns = [.sprint]
+        case .priority: columns = [.priority]
+        case .project: columns = [.project]
+        case .status: columns = []
         }
+        // On a milestone's page every row has the same milestone
+        if model.scope.isMilestone { columns.insert(.milestone) }
+        return columns
     }
 
     /// An empty status group or board column, by what its status means.
@@ -157,6 +162,7 @@ struct SprintPlanView: View {
             showProject: false,
             drop: .slot(slot),
             composerIsDefault: slot == .active,
+            composerOnTop: model.isComposerPinned(TasksViewModel.listComposerKey(key)),
             open: !model.isCollapsed(key),
             gap: gap,
             display: RowDisplay.maker(store: store, model: model)
@@ -200,10 +206,11 @@ extension RowDisplay {
     @MainActor
     static func maker(store: TaskStore, model: TasksViewModel) -> (TaskItem) -> RowDisplay {
         let projects = Dictionary(store.projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let milestones = Dictionary(store.workspace.milestones.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        let milestones = Dictionary(store.workspace.milestones.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let workflows = Dictionary(store.allProjects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let running = store.workspace.runningTimers
         let selected = model.selectedTaskIds
+        let flashing = model.flashTaskId
         return { task in
             let project = projects[task.projectId]
             let workflow = workflows[task.projectId]
@@ -211,14 +218,16 @@ extension RowDisplay {
             return RowDisplay(
                 projectName: project?.name,
                 projectColorHex: project?.colorHex,
-                milestoneName: task.milestoneId.flatMap { milestones[$0] },
+                milestoneName: task.milestoneId.flatMap { milestones[$0]?.name },
+                milestoneColorHex: task.milestoneId.flatMap { milestones[$0]?.colorHex },
                 sprintLabel: store.sprintLabel(for: task),
                 dueLabel: task.dueDate.map { TaskDates.dueLabel($0) },
                 dueIsRisk: store.isOverdue(task) || store.isDueToday(task),
                 runningSince: running[task.id],
                 selected: selected.contains(task.id),
                 status: status,
-                nextStatusName: workflow?.statusAfter(status.id).name ?? ""
+                nextStatusName: workflow?.statusAfter(status.id).name ?? "",
+                flashing: task.id == flashing
             )
         }
     }

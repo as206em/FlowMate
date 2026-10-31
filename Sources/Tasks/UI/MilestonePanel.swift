@@ -21,6 +21,7 @@ struct MilestonePanel: View {
                         FocusCrumb(text: project.name, help: "Open project") { model.openProject(project.id) }
                         FocusCrumbSeparator()
                     }
+                    MilestoneIcon(milestone, size: 11)
                     FocusCrumbCurrent(text: milestone.name)
                     if milestone.isCompleted { FocusTag(text: "Completed", systemImage: "checkmark") }
                 }
@@ -178,6 +179,16 @@ private struct MilestoneInspector: View {
             .overlay(alignment: .top) { FocusDivider() }
 
             VStack(alignment: .leading, spacing: 8) {
+                FocusCaption(text: "Color")
+                FocusColorSwatches(selection: milestone.colorHex, palette: Milestone.palette) {
+                    store.setMilestoneColor(milestone.id, colorHex: $0)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 16)
+            .overlay(alignment: .top) { FocusDivider() }
+
+            VStack(alignment: .leading, spacing: 8) {
                 if milestone.isCompleted {
                     Button {
                         store.reopenMilestone(milestone.id)
@@ -199,8 +210,9 @@ private struct MilestoneInspector: View {
                     Button {
                         model.showTasks(ofMilestone: milestone)
                     } label: {
-                        Label("Show tasks in List", systemImage: "list.bullet")
+                        Label("Show tasks", systemImage: "list.bullet")
                     }
+                    .help("Open the milestone's page: its tasks on Board and List")
                     .buttonStyle(.focus(.ghost))
                     Button(role: .destructive) {
                         confirmingDelete = true

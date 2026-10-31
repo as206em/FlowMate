@@ -55,6 +55,9 @@ struct TasksRootView: View {
     private var main: some View {
         VStack(spacing: 0) {
             TasksHeader()
+            if let milestone = model.scope.milestoneId.flatMap({ store.milestone($0) }) {
+                MilestonePageHeader(milestone: milestone)
+            }
             if model.showsFilterBar, !showsFirstProject {
                 TaskFilterBar()
             }
@@ -76,6 +79,16 @@ struct TasksRootView: View {
                     .onChange(of: model.selectedTaskId) { id in
                         // Keep the keyboard selection on screen
                         guard let id, !model.isPanelOpen else { return }
+                        withAnimation(Focus.hoverAnimation) { proxy.scrollTo(id) }
+                    }
+                    .onChange(of: model.pinnedComposer) { key in
+                        // ⌘N on the Board: the composer at the top of the first column
+                        guard let key else { return }
+                        DispatchQueue.main.async { withAnimation(Focus.hoverAnimation) { proxy.scrollTo(key, anchor: .top) } }
+                    }
+                    .onChange(of: model.flashTaskId) { id in
+                        // A card just added from the composer at the top of its column
+                        guard let id else { return }
                         withAnimation(Focus.hoverAnimation) { proxy.scrollTo(id) }
                     }
                 }
@@ -107,14 +120,14 @@ struct TasksRootView: View {
     private var toastLayer: some View {
         if let toast = model.toast {
             let canUndo = toast.undoId != nil && toast.undoId == store.lastUndoId
-            let canOpen = toast.openTaskId.map { store.task($0) != nil } ?? false
+            let canOpen = toast.open.map { model.canOpen($0, store: store) } ?? false
             FocusToast(
                 message: toast.message,
                 actionTitle: canUndo ? "Undo" : nil,
                 actionKey: canUndo ? "⌘Z" : nil,
                 action: { model.undoFromToast(store) },
                 secondaryTitle: canOpen ? "Open" : nil,
-                secondaryAction: { model.openFromToast() },
+                secondaryAction: { model.openFromToast(store) },
                 dismiss: { model.dismissToast(toast.id) }
             )
             .id(toast.id)
@@ -179,7 +192,7 @@ struct TasksRootView: View {
     private var scopeContent: some View {
         let project = model.scope.projectId.flatMap { store.project($0) }
         VStack(alignment: .leading, spacing: 0) {
-            if let project, model.effectiveTab == .board || model.effectiveTab == .sprints {
+            if let project, !model.scope.isMilestone, model.effectiveTab == .board || model.effectiveTab == .sprints {
                 SprintHeader(project: project)
             }
             switch model.effectiveTab {

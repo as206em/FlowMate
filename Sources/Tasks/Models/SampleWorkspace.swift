@@ -12,7 +12,8 @@ extension Workspace {
         let milestone = Milestone(
             projectId: project.id,
             name: "Getting started",
-            dueDate: Calendar.current.date(byAdding: .day, value: 14, to: Calendar.current.startOfDay(for: now))
+            dueDate: Calendar.current.date(byAdding: .day, value: 14, to: Calendar.current.startOfDay(for: now)),
+            colorHex: Milestone.nextColor(projectColor: project.colorHex, used: [])
         )
 
         func task(_ index: Int, _ title: String, slot: SprintSlot = .active, status: WorkflowStatus = .todo,

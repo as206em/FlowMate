@@ -80,9 +80,11 @@ enum TaskGrouping: String, CaseIterable, Identifiable, Sendable, TolerantStringE
         }
     }
 
-    /// Groupings that make sense in a scope: Project only in All projects.
+    /// Groupings that make sense in a scope: Project only in All projects, Milestone not on a
+    /// milestone's page (every task there has the same one).
     static func available(in scope: TaskScope) -> [TaskGrouping] {
-        scope.projectId == nil ? allCases : allCases.filter { $0 != .project }
+        if scope.isMilestone { return allCases.filter { $0 != .project && $0 != .milestone } }
+        return scope.projectId == nil ? allCases : allCases.filter { $0 != .project }
     }
 }
 

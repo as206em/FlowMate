@@ -25,6 +25,25 @@ struct ComposerDraft: Equatable {
     var priority: TaskPriority?
     var dueDate: Date?
     var expectedMinutes: Int?
+    /// Added from the composer pinned at the top of its group (⌘N): the task goes first
+    var atTop = false
+
+    /// Fills in what the composer's group and the scope give a new task: the group's value (its
+    /// status, sprint, milestone, priority or project) and, on a milestone's page, that milestone.
+    mutating func apply(preset: TaskGroupValue?, in scope: TaskScope) {
+        if let milestoneId = scope.milestoneId, projectId == nil || projectId == scope.projectId {
+            self.milestoneId = milestoneId
+        }
+        switch preset {
+        case let .status(status)?: self.status = status
+        case let .category(category)?: self.category = category
+        case let .sprint(slot)?: if slot != .closed { self.slot = slot }
+        case let .milestone(id)?: milestoneId = id
+        case let .priority(priority)?: self.priority = priority
+        case let .project(id)?: projectId = id
+        case nil: break
+        }
+    }
 
     /// Anything besides the defaults (which keeps the composer open)
     var hasValues: Bool {
@@ -226,7 +245,7 @@ extension TaskStore {
     func addTask(title: String, draft: ComposerDraft, projectId: UUID, now: Date = Date()) -> UUID? {
         undoGroup("Add task") { () -> UUID? in
             guard let id = addTask(title: title, projectId: projectId, milestoneId: draft.milestoneId,
-                                   sprintSlot: draft.slot, now: now) else { return nil }
+                                   sprintSlot: draft.slot, atTop: draft.atTop, now: now) else { return nil }
             if let priority = draft.priority { setPriority(id, priority) }
             if let due = draft.dueDate { setDueDate(id, due) }
             if let minutes = draft.expectedMinutes { setExpectedMinutes(id, minutes) }

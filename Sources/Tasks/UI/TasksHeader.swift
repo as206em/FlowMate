@@ -9,8 +9,11 @@ struct TasksHeader: View {
 
     var body: some View {
         let project = model.scope.projectId.flatMap { store.project($0) }
+        let milestone = model.scope.milestoneId.flatMap { store.milestone($0) }
         HStack(spacing: 14) {
-            if let project {
+            if let milestone {
+                MilestoneHeaderTitle(milestone: milestone)
+            } else if let project {
                 ProjectTitleButton(project: project)
                 if project.isArchived {
                     FocusTag(text: "Archived", systemImage: "archivebox")

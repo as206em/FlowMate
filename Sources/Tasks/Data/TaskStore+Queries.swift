@@ -37,7 +37,9 @@ extension TaskStore {
     /// Every task in the scope, closed ones included. All projects leaves out archived projects.
     func tasks(in scope: TaskScope) -> [TaskItem] {
         let all: [TaskItem]
-        if let projectId = scope.projectId {
+        if let milestoneId = scope.milestoneId {
+            all = workspace.tasks.filter { $0.milestoneId == milestoneId }
+        } else if let projectId = scope.projectId {
             all = workspace.tasks.filter { $0.projectId == projectId }
         } else {
             let archived = Set(archivedProjects.map(\.id))
@@ -48,14 +50,20 @@ extension TaskStore {
 
     func tasks(of projectId: UUID) -> [TaskItem] { tasks(in: .project(projectId)) }
 
-    /// Board column: active-sprint tasks with the given status.
+    /// Board column: active-sprint tasks with the given status. A milestone's board shows all of
+    /// its tasks (any sprint or the backlog), leaving out only those closed with a past sprint.
     func boardTasks(in scope: TaskScope, status: WorkflowStatus) -> [TaskItem] {
-        tasks(in: scope).filter { $0.sprintSlot == .active && $0.statusId == status.id }
+        tasks(in: scope).filter { Self.isOnBoard($0, in: scope) && $0.statusId == status.id }
     }
 
     /// All projects board column: active-sprint tasks of a category, whatever their workflow.
     func boardTasks(in scope: TaskScope, category: StatusCategory) -> [TaskItem] {
-        tasks(in: scope).filter { $0.sprintSlot == .active && $0.statusCategory == category }
+        tasks(in: scope).filter { Self.isOnBoard($0, in: scope) && $0.statusCategory == category }
+    }
+
+    /// Board shows the active sprint; a milestone's board shows every sprint and the backlog.
+    static func isOnBoard(_ task: TaskItem, in scope: TaskScope) -> Bool {
+        scope.isMilestone ? task.sprintSlot != .closed : task.sprintSlot == .active
     }
 
     /// List group: all tasks in scope with the given status (closed sprints included).
@@ -87,6 +95,7 @@ extension TaskStore {
     /// Milestones in scope: open ones first, then by due date (undated last), then name.
     /// All projects leaves out archived projects.
     func milestones(in scope: TaskScope) -> [Milestone] {
+        if let id = scope.milestoneId { return milestone(id).map { [$0] } ?? [] }
         let archived = scope.projectId == nil ? Set(archivedProjects.map(\.id)) : []
         return workspace.milestones
             .filter { m in scope.projectId.map { m.projectId == $0 } ?? !archived.contains(m.projectId) }
@@ -106,6 +115,30 @@ extension TaskStore {
     /// The milestone's tasks in manual order.
     func milestoneTasks(_ milestoneId: UUID) -> [TaskItem] {
         workspace.tasks.filter { $0.milestoneId == milestoneId }.sorted { $0.sortIndex < $1.sortIndex }
+    }
+
+    /// The milestone page for a milestone (nil when it doesn't exist).
+    func scope(ofMilestone id: UUID) -> TaskScope? {
+        milestone(id).map { .milestone($0.id, projectId: $0.projectId) }
+    }
+
+    /// Time tracked on the milestone's tasks (running timers included) and the time they're
+    /// expected to take (canceled tasks left out).
+    func milestoneTime(_ milestoneId: UUID, now: Date = Date()) -> (tracked: TimeInterval, expectedMinutes: Int) {
+        let tasks = workspace.tasks.filter { $0.milestoneId == milestoneId }
+        let tracked = tasks.reduce(0) { $0 + elapsed($1, now: now) }
+        let expected = tasks.filter { !$0.isCanceled }.reduce(0) { $0 + $1.expectedMinutes }
+        return (tracked, expected)
+    }
+
+    /// Milestones in scope split by project, in sidebar order (the All projects Milestones tab).
+    func milestonesByProject(in scope: TaskScope) -> [(project: Project, milestones: [Milestone])] {
+        let all = milestones(in: scope)
+        let order = scope.projectId.flatMap { project($0) }.map { [$0] } ?? projects
+        return order.compactMap { p in
+            let mine = all.filter { $0.projectId == p.id }
+            return mine.isEmpty ? nil : (p, mine)
+        }
     }
 
     func milestoneProgress(_ milestoneId: UUID) -> MilestoneProgress {
