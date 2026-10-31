@@ -29,7 +29,7 @@ struct UndoEntry: Identifiable, Sendable {
 //
 // Every mutation records the workspace it replaced, except timer starts and pauses.
 // Undo restores that snapshot but keeps tracked time as it is now: undo never removes
-// time you spent, never starts a timer, and only pauses one when the task it restores is Done.
+// time you spent, never starts a timer, and only pauses one when the task it restores is done or canceled.
 extension TaskStore {
     /// Steps kept; older ones drop off.
     static let undoLimit = 100
@@ -134,7 +134,8 @@ extension TaskStore {
     /// - tasks that come back (an undone delete) keep the time they tracked until `removedAt` (when
     ///   the step removed them); a timer that was running starts again from `now`, so the time the
     ///   task spent deleted isn't counted;
-    /// - a running task restored as Done is paused, and one restored as To do shows In progress.
+    /// - a running task restored as done or canceled is paused, and one restored as not started
+    ///   shows its project's first Started status.
     static func restoring(_ target: Workspace, over current: Workspace, removedAt: Date, now: Date) -> Workspace {
         var ws = target
         // Settings aren't undo steps
@@ -158,13 +159,18 @@ extension TaskStore {
         }
         for (id, started) in timers {
             guard let i = ws.tasks.firstIndex(where: { $0.id == id }) else { continue }
-            switch ws.tasks[i].status {
-            case .done:
+            switch ws.tasks[i].statusCategory {
+            case .done, .canceled:
                 ws.tasks[i].spentSeconds += max(0, now.timeIntervalSince(started))
                 timers[id] = nil
-            case .todo:
-                ws.tasks[i].status = .inProgress
-            case .inProgress:
+            case .notStarted:
+                let project = ws.projects.first { $0.id == ws.tasks[i].projectId }
+                if let project, project.hasCategory(.started) {
+                    let status = project.firstStatus(.started)
+                    ws.tasks[i].statusId = status.id
+                    ws.tasks[i].statusCategory = status.category
+                }
+            case .started:
                 break
             }
         }

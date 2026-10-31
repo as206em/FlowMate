@@ -216,7 +216,7 @@ final class TaskPowerBatch4Tests: XCTestCase {
 
         store.setStatus([a, b, c], .done, now: t0.addingTimeInterval(600))
         XCTAssertEqual(store.undoStack.count, 1)
-        XCTAssertTrue([a, b, c].allSatisfy { store.task($0)?.status == .done })
+        XCTAssertTrue([a, b, c].allSatisfy { store.task($0)?.statusId == WorkflowStatus.done.id })
         XCTAssertFalse(store.isRunning(a), "Done pauses timers")
         XCTAssertEqual(store.task(a)?.spentSeconds, 600)
 
@@ -447,7 +447,7 @@ final class TaskPowerBatch4Tests: XCTestCase {
         let newId = store.convertSubtaskToTask(id, s3, now: t0)!
         let converted = store.task(newId)!
         XCTAssertEqual(converted.title, "Three")
-        XCTAssertEqual(converted.status, .done, "a checked subtask becomes a done task")
+        XCTAssertEqual(converted.statusId, WorkflowStatus.done.id, "a checked subtask becomes a done task")
         XCTAssertEqual(converted.milestoneId, mid)
         XCTAssertEqual(converted.sprintSlot, .next)
         XCTAssertEqual(converted.priority, .high)

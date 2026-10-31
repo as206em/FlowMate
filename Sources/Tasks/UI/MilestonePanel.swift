@@ -81,10 +81,10 @@ private struct MilestoneTasksSection: View {
                             .foregroundColor(Focus.text3)
                             .lineLimit(1)
                             .fixedSize()
-                        if task.dueDate != nil, !task.isDone {
+                        if task.dueDate != nil, !task.isClosed {
                             TaskDueTag(task: task, showIcon: false)
                         }
-                        if task.isDone {
+                        if task.isClosed {
                             Color.clear.frame(width: 32, height: 32)
                         } else {
                             TaskTimerButton(task: task)

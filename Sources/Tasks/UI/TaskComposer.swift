@@ -102,6 +102,7 @@ struct TaskComposer: View {
     private func applyPreset() {
         switch preset {
         case let .status(status)?: draft.status = status
+        case let .category(category)?: draft.category = category
         case let .sprint(slot)?: if slot != .closed { draft.slot = slot }
         case let .milestone(id)?: draft.milestoneId = id
         case let .priority(priority)?: draft.priority = priority

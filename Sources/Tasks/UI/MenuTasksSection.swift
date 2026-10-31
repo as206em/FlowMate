@@ -256,11 +256,11 @@ struct MenuSearchResults: View {
                 FocusCaption(text: "Tasks").padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 2)
                 ForEach(tasks) { task in
                     MenuItemRow(highlighted: highlight == .task(task.id), action: { activate(.task(task.id)) }) {
-                        FocusStatusIcon(kind: task.status.focusKind, size: 14).frame(width: 20)
+                        WorkflowStatusIcon(status: store.status(of: task), size: 14).frame(width: 20)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(task.title)
                                 .font(.system(size: 13, weight: store.isRunning(task.id) ? .medium : .regular))
-                                .foregroundColor(task.isDone ? Focus.text3 : Focus.text)
+                                .foregroundColor(task.isClosed ? Focus.text3 : Focus.text)
                                 .lineLimit(1)
                             Text(store.project(of: task)?.name ?? "")
                                 .font(.system(size: 11.5))
@@ -269,7 +269,7 @@ struct MenuSearchResults: View {
                         }
                         Spacer(minLength: 4)
                         TaskTimeText(task: task, font: .system(size: 12))
-                        if !task.isDone {
+                        if !task.isClosed {
                             TaskTimerButton(task: task, size: 24)
                         }
                     }
@@ -359,7 +359,7 @@ struct MenuInProgressSection: View {
                 Button("Create a project") { MenuNavigation.openApp() }
                     .buttonStyle(.focus())
             } else {
-                Text("Nothing in progress. Start a timer on a task, or move one to In progress.")
+                Text("Nothing in progress. Start a timer on a task, or move one to a started status such as In progress.")
             }
         }
         .font(Focus.meta)

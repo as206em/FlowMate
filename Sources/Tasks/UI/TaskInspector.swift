@@ -85,11 +85,11 @@ struct TaskInspector: View {
 
     private var statusPicker: some View {
         FocusTintedPicker(
-            options: TaskStatus.ordered,
-            selection: Binding(get: { task.status }, set: { store.setStatus(task.id, $0) }),
-            title: { $0.title },
-            tint: { $0.focusKind.tint },
-            icon: { FocusStatusIcon(kind: $0.focusKind, size: 15) },
+            options: store.project(task.projectId)?.statuses ?? [store.status(of: task)],
+            selection: Binding(get: { store.status(of: task) }, set: { store.setStatus(task.id, $0) }),
+            title: { $0.name },
+            tint: { Focus.statusTint($0.colorHex) },
+            icon: { WorkflowStatusIcon(status: $0, size: 15) },
             accessibilityName: "Status"
         )
     }

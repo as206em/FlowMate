@@ -88,7 +88,7 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         XCTAssertEqual(store.undoStack.count, steps + 1)
         XCTAssertEqual(store.undoActionName, "Move task")
         store.undo()
-        XCTAssertEqual(store.task(b)?.status, .todo)
+        XCTAssertEqual(store.task(b)?.statusId, WorkflowStatus.todo.id)
         XCTAssertEqual(store.tasks(of: pid).map(\.id), [a, b])
     }
 
@@ -108,7 +108,7 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         XCTAssertEqual(store.task(other)?.priority, .medium)
         XCTAssertTrue(store.isRunning(a))
         XCTAssertEqual(store.task(a)?.spentSeconds, 600)
-        XCTAssertEqual(store.task(a)?.status, .inProgress, "a running task never shows To do")
+        XCTAssertEqual(store.task(a)?.statusId, WorkflowStatus.inProgress.id, "a running task never shows To do")
     }
 
     func testUndoingReopenOfRunningTaskPausesIt() async {
@@ -119,7 +119,7 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         store.startTimer(a, now: t0)
         // Undo "Change status" brings back Done: a Done task can't run, so the timer pauses and keeps the time
         store.undo(now: t0.addingTimeInterval(120))
-        XCTAssertEqual(store.task(a)?.status, .done)
+        XCTAssertEqual(store.task(a)?.statusId, WorkflowStatus.done.id)
         XCTAssertFalse(store.isRunning(a))
         XCTAssertEqual(store.task(a)?.spentSeconds, 120)
     }
@@ -186,7 +186,7 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         f.priorities = [.high]
         XCTAssertEqual(store.filtered(all, by: f).map(\.id), [a])
         f = TaskFilter()
-        f.statuses = [.todo]
+        f.statuses = [WorkflowStatus.todo.id]
         f.projectIds = [pid]
         XCTAssertEqual(store.filtered(all, by: f).map(\.id), [a])
         f = TaskFilter()
@@ -235,7 +235,8 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         let json = #"{"filter":{"query":"x","statuses":["todo","bogus"],"due":["overdue"]},"sort":{"key":"due"},"grouping":"weird"}"#
         let options = try JSONDecoder().decode(TaskViewOptions.self, from: Data(json.utf8))
         XCTAssertEqual(options.filter.query, "x")
-        XCTAssertEqual(options.filter.statuses, [.todo])
+        // Status ids are free strings now (custom workflows); unknown ones are ignored when filtering
+        XCTAssertEqual(options.filter.statuses, [WorkflowStatus.todo.id, "bogus"])
         XCTAssertEqual(options.filter.due, [.overdue])
         XCTAssertEqual(options.sort, TaskSort(key: .due))
         XCTAssertEqual(options.grouping, .status)
@@ -315,7 +316,7 @@ final class TaskFindEditBatch2Tests: XCTestCase {
 
         store.startTimer(b, now: t0)
         store.moveTask(b, to: .status(.done), reorder: false, now: t0.addingTimeInterval(60))
-        XCTAssertEqual(store.task(b)?.status, .done)
+        XCTAssertEqual(store.task(b)?.statusId, WorkflowStatus.done.id)
         XCTAssertFalse(store.isRunning(b), "Done still pauses the timer")
         store.moveTask(b, to: .priority(.high))
         XCTAssertEqual(store.task(b)?.priority, .high)
@@ -369,7 +370,7 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         let dup = store.task(copy)!
         XCTAssertEqual(dup.title, "A")
         XCTAssertEqual(dup.priority, .high)
-        XCTAssertEqual(dup.status, .todo)
+        XCTAssertEqual(dup.statusId, WorkflowStatus.todo.id)
         XCTAssertEqual(dup.spentSeconds, 0)
         XCTAssertEqual(dup.subtasks.map(\.isDone), [false])
         XCTAssertNotEqual(dup.subtasks[0].id, store.task(a)!.subtasks[0].id)

@@ -24,6 +24,9 @@ struct RowDisplay: Equatable {
     var runningSince: Date?
     /// The keyboard / multi-selection highlight
     var selected: Bool
+    /// The task's status in its project's workflow, and the one a click on the circle moves to
+    var status: WorkflowStatus = .todo
+    var nextStatusName: String = ""
 }
 
 final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
@@ -164,7 +167,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
     private func drawColumns(task: TaskItem, display: RowDisplay, in inner: NSRect) {
         for (column, cell) in columnRects() {
             switch column {
-            case .status: drawStatus(task.status, in: cell)
+            case .status: drawStatus(display.status, in: cell)
             case .project: drawProject(display, in: cell)
             case .title: if !isRenaming { drawTitle(task, display, in: cell) }
             case .milestone: drawMeta(display.milestoneName, in: cell)
@@ -224,18 +227,19 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         drawText(text, font: Style.meta, color: Style.text3, in: cell)
     }
 
-    private func drawStatus(_ status: TaskStatus, in cell: NSRect) {
+    private func drawStatus(_ status: WorkflowStatus, in cell: NSRect) {
         let size: CGFloat = 16
         let rect = NSRect(x: cell.midX - size / 2, y: cell.midY - size / 2, width: size, height: size)
         let line = size * 0.14
-        switch status {
-        case .todo:
-            Style.text3.setStroke()
+        let color = Self.projectColor(status.colorHex)
+        switch status.category {
+        case .notStarted:
+            color.setStroke()
             let ring = NSBezierPath(ovalIn: rect.insetBy(dx: line / 2, dy: line / 2))
             ring.lineWidth = line
             ring.stroke()
-        case .inProgress:
-            Style.progress.setStroke()
+        case .started:
+            color.setStroke()
             let ring = NSBezierPath(ovalIn: rect.insetBy(dx: line / 2, dy: line / 2))
             ring.lineWidth = line
             ring.stroke()
@@ -245,10 +249,10 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             half.move(to: NSPoint(x: center.x, y: disc.minY))
             half.appendArc(withCenter: center, radius: disc.width / 2, startAngle: -90, endAngle: 90, clockwise: false)
             half.close()
-            Style.progress.setFill()
+            color.setFill()
             half.fill()
         case .done:
-            Style.done.setFill()
+            color.setFill()
             NSBezierPath(ovalIn: rect).fill()
             let check = NSBezierPath()
             check.move(to: NSPoint(x: rect.minX + size * 0.28, y: rect.minY + size * 0.53))
@@ -259,6 +263,19 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             check.lineJoinStyle = .round
             NSColor.white.setStroke()
             check.stroke()
+        case .canceled:
+            color.withAlphaComponent(0.75).setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            let cross = NSBezierPath()
+            let a = size * 0.33, b = size * 0.67
+            cross.move(to: NSPoint(x: rect.minX + a, y: rect.minY + a))
+            cross.line(to: NSPoint(x: rect.minX + b, y: rect.minY + b))
+            cross.move(to: NSPoint(x: rect.minX + b, y: rect.minY + a))
+            cross.line(to: NSPoint(x: rect.minX + a, y: rect.minY + b))
+            cross.lineWidth = 1.6
+            cross.lineCapStyle = .round
+            NSColor.white.setStroke()
+            cross.stroke()
         }
     }
 
@@ -288,9 +305,9 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         let running = display.runningSince != nil
         drawText(task.title,
                  font: running ? Style.titleRunning : Style.title,
-                 color: task.isDone ? Style.text3 : Style.text,
+                 color: task.isClosed ? Style.text3 : Style.text,
                  in: NSRect(x: cell.minX, y: cell.minY, width: titleWidth, height: cell.height),
-                 strikethrough: task.isDone)
+                 strikethrough: task.isClosed)
     }
 
     private func drawSubtaskCount(_ summary: String, at origin: NSPoint) {
@@ -309,7 +326,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
 
     private func drawDue(_ task: TaskItem, _ display: RowDisplay, in cell: NSRect) {
         guard let label = display.dueLabel else { return drawEmpty(in: cell) }
-        if task.isDone {
+        if task.isClosed {
             return drawText(label, font: Style.meta, color: Style.text3, in: cell)
         }
         let width = min(cell.width, textWidth(label, font: Style.tag) + 14)
@@ -351,7 +368,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
     }
 
     private func drawTimer(_ task: TaskItem, _ display: RowDisplay, in cell: NSRect) {
-        guard !task.isDone else { return }
+        guard !task.isClosed else { return }
         let running = display.runningSince != nil
         let size: CGFloat = 32
         let box = NSRect(x: cell.midX - size / 2, y: cell.midY - size / 2, width: size, height: size)
@@ -492,7 +509,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         guard let info, let hit = column(at: point) else { return "" }
         let task = info.task
         switch hit.column {
-        case .status: return "\(task.status.title). Click for \(task.status.next.title.lowercased()), right-click for all"
+        case .status: return "\(info.display.status.name). Click for \(info.display.nextStatusName), right-click for all"
         case .title: return "Click to open, double-click to rename"
         case .project: return info.display.projectName ?? ""
         case .milestone: return "Change milestone"
@@ -500,7 +517,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         case .due: return "Change due date"
         case .priority: return "Change priority"
         case .time: return "Change time spent or expected time"
-        case .timer: return task.isDone ? "" : (info.display.runningSince != nil ? "Pause timer" : "Start timer")
+        case .timer: return task.isClosed ? "" : (info.display.runningSince != nil ? "Pause timer" : "Start timer")
         }
     }
 
@@ -575,7 +592,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
 
     override func accessibilityLabel() -> String? {
         guard let task = info?.task else { return nil }
-        return "\(task.title), \(task.status.title), \(task.priority.title) priority"
+        return "\(task.title), \(info?.display.status.name ?? ""), \(task.priority.title) priority"
     }
 
     override func accessibilityPerformPress() -> Bool {

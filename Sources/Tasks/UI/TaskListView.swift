@@ -32,6 +32,8 @@ struct TaskListView: View {
                 title: group.title,
                 hint: group.hint,
                 colorHex: group.colorHex,
+                statusKind: group.statusKind,
+                statusColorHex: group.statusColorHex,
                 tasks: group.tasks,
                 emptyText: emptyText(group, filtering: filtering),
                 showProject: showProject,
@@ -65,14 +67,23 @@ struct TaskListView: View {
         }
     }
 
+    /// An empty status group or board column, by what its status means.
+    static func emptyStatusText(_ category: StatusCategory, name: String) -> String {
+        switch category {
+        case .notStarted: return "Nothing waiting in \(name). Drag a task here to move it back."
+        case .started: return "Nothing in \(name). Start a timer, or drag a task here."
+        case .done: return "Nothing done yet. Drag a task here, or click its status circle."
+        case .canceled: return "Nothing canceled. Drag a task here to drop it from the plan."
+        }
+    }
+
     /// One empty group among others: what belongs here and how to get it here.
     private func emptyText(_ group: TaskGroup, filtering: Bool) -> String {
         if filtering { return "No tasks here match the filters." }
         guard group.acceptsDrop else { return "No tasks. Past sprints can't take new tasks." }
         switch group.value {
-        case .status(.todo): return "Nothing left to start. Drag a task here to reopen it."
-        case .status(.inProgress): return "Nothing in progress. Start a timer, or drag a task here."
-        case .status(.done): return "Nothing done yet. Drag a task here, or click its status circle."
+        case let .status(status): return Self.emptyStatusText(status.category, name: status.name)
+        case let .category(category): return Self.emptyStatusText(category, name: category.title)
         case .milestone(nil): return "Every task has a milestone. Drag one here to take it off."
         case .milestone: return "No tasks for this milestone yet. Drag tasks here to add them."
         case .project: return "No tasks in this project. Drag tasks here to move them."
@@ -190,10 +201,13 @@ extension RowDisplay {
     static func maker(store: TaskStore, model: TasksViewModel) -> (TaskItem) -> RowDisplay {
         let projects = Dictionary(store.projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let milestones = Dictionary(store.workspace.milestones.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        let workflows = Dictionary(store.allProjects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let running = store.workspace.runningTimers
         let selected = model.selectedTaskIds
         return { task in
             let project = projects[task.projectId]
+            let workflow = workflows[task.projectId]
+            let status = workflow?.status(of: task) ?? WorkflowRules.first(task.statusCategory, in: WorkflowPreset.simple.statuses)
             return RowDisplay(
                 projectName: project?.name,
                 projectColorHex: project?.colorHex,
@@ -202,7 +216,9 @@ extension RowDisplay {
                 dueLabel: task.dueDate.map { TaskDates.dueLabel($0) },
                 dueIsRisk: store.isOverdue(task) || store.isDueToday(task),
                 runningSince: running[task.id],
-                selected: selected.contains(task.id)
+                selected: selected.contains(task.id),
+                status: status,
+                nextStatusName: workflow?.statusAfter(status.id).name ?? ""
             )
         }
     }

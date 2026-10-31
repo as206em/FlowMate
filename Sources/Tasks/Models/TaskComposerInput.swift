@@ -15,8 +15,11 @@ import Foundation
 /// The properties the composer has collected for the next task. nil means "not set".
 struct ComposerDraft: Equatable {
     var projectId: UUID?
-    /// Set by the group the composer sits in (Board column, List grouped by status)
-    var status: TaskStatus = .todo
+    /// Set by the group the composer sits in (Board column, List grouped by status): a status of
+    /// the project's workflow, matched by name and category in another project
+    var status: WorkflowStatus?
+    /// Set by an All projects column or group: the first status of this category in the project
+    var category: StatusCategory?
     var slot: SprintSlot = .active
     var milestoneId: UUID?
     var priority: TaskPriority?
@@ -227,7 +230,11 @@ extension TaskStore {
             if let priority = draft.priority { setPriority(id, priority) }
             if let due = draft.dueDate { setDueDate(id, due) }
             if let minutes = draft.expectedMinutes { setExpectedMinutes(id, minutes) }
-            if draft.status != .todo { setStatus(id, draft.status, now: now) }
+            if let status = draft.status {
+                setStatus(id, status, now: now)
+            } else if let category = draft.category {
+                setCategory(id, category, now: now)
+            }
             rememberProject(projectId)
             return id
         }

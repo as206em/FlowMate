@@ -117,7 +117,7 @@ struct TaskFilterBar: View {
     private func isActive(_ dimension: Dimension) -> Bool {
         let f = model.filter
         switch dimension {
-        case .status: return !f.statuses.isEmpty
+        case .status: return !f.statuses.isEmpty || !f.categories.isEmpty
         case .priority: return !f.priorities.isEmpty
         case .milestone: return !f.milestones.isEmpty
         case .sprint: return !f.sprintSlots.isEmpty
@@ -128,7 +128,9 @@ struct TaskFilterBar: View {
 
     private func clear(_ dimension: Dimension) {
         switch dimension {
-        case .status: model.filter.statuses = []
+        case .status:
+            model.filter.statuses = []
+            model.filter.categories = []
         case .priority: model.filter.priorities = []
         case .milestone: model.filter.milestones = []
         case .sprint: model.filter.sprintSlots = []
@@ -142,7 +144,14 @@ struct TaskFilterBar: View {
         let f = model.filter
         let names: [String]
         switch dimension {
-        case .status: names = TaskStatus.ordered.filter(f.statuses.contains).map(\.title)
+        case .status:
+            // The scope's workflow order; ids from another scope's state by any project's name
+            let workflow = store.statuses(in: model.scope) ?? []
+            let known = workflow.filter { f.statuses.contains($0.id) }.map(\.name)
+            let others = f.statuses.subtracting(workflow.map(\.id)).compactMap { id in
+                store.allProjects.lazy.compactMap { $0.status(id)?.name }.first
+            }
+            names = StatusCategory.ordered.filter(f.categories.contains).map(\.title) + known + Set(others).sorted()
         case .priority: names = TaskPriority.ordered.filter(f.priorities.contains).map(\.title)
         case .milestone:
             names = f.milestones.map { id in id.flatMap { store.milestone($0)?.name } ?? (id == nil ? "None" : "Deleted") }.sorted()
@@ -210,7 +219,7 @@ struct TaskFilterBar: View {
         var tasks = store.tasks(in: model.scope)
         if model.effectiveTab == .board {
             filter.sprintSlots = []
-            tasks = TaskStatus.ordered.flatMap { store.boardTasks(in: model.scope, status: $0) }
+            tasks = store.tasks(in: model.scope).filter { $0.sprintSlot == .active }
         } else if !filter.sprintSlots.contains(.closed) {
             tasks.removeAll { $0.sprintSlot == .closed }
         }
@@ -248,10 +257,21 @@ struct TaskFilterBar: View {
         FocusMenuSection(title: dimension.title, first: first)
         switch dimension {
         case .status:
-            ForEach(TaskStatus.ordered) { status in
-                toggle(model.filter.statuses.contains(status)) { model.filter.statuses.formSymmetricDifference([status]) } label: {
-                    FocusStatusIcon(kind: status.focusKind, size: 14)
-                    Text(status.title)
+            if let workflow = store.statuses(in: model.scope) {
+                // A project: its own statuses
+                ForEach(workflow) { status in
+                    toggle(model.filter.statuses.contains(status.id)) { model.filter.statuses.formSymmetricDifference([status.id]) } label: {
+                        WorkflowStatusIcon(status: status, size: 14)
+                        Text(status.name).lineLimit(1)
+                    }
+                }
+            } else {
+                // All projects: workflows differ, so by category
+                ForEach(StatusCategory.ordered) { category in
+                    toggle(model.filter.categories.contains(category)) { model.filter.categories.formSymmetricDifference([category]) } label: {
+                        FocusStatusIcon(kind: category.focusKind, size: 14)
+                        Text(category.title)
+                    }
                 }
             }
         case .priority:

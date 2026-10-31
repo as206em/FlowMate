@@ -68,7 +68,7 @@ struct TaskDueTag: View {
     var showIcon = true
 
     var body: some View {
-        if let due = task.dueDate, !task.isDone {
+        if let due = task.dueDate, !task.isClosed {
             FocusTag(
                 text: TaskDates.dueLabel(due),
                 systemImage: showIcon ? "calendar" : nil,
@@ -96,42 +96,54 @@ struct SubtaskCount: View {
     }
 }
 
-/// The status icon as a button. A click cycles To do → In progress → Done → To do;
-/// right-click picks any status.
+/// A workflow status's icon: its category's shape in its own color.
+struct WorkflowStatusIcon: View {
+    let status: WorkflowStatus
+    var size: CGFloat = 16
+
+    var body: some View {
+        FocusStatusIcon(kind: status.category.focusKind, color: Color(hex: status.colorHex), size: size)
+    }
+}
+
+/// The status icon as a button. A click moves to the next status of the project's workflow
+/// (wrapping around); right-click picks any status.
 struct TaskStatusButton: View {
     @EnvironmentObject private var store: TaskStore
     let task: TaskItem
 
     var body: some View {
+        let status = store.status(of: task)
+        let next = store.project(task.projectId)?.statusAfter(status.id).name ?? ""
         Button {
             store.cycleStatus(task.id)
         } label: {
-            FocusStatusIcon(kind: task.status.focusKind)
+            WorkflowStatusIcon(status: status)
                 .frame(width: 20, height: 20)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("\(task.status.title). Click for \(task.status.next.title.lowercased()), right-click for all")
+        .help("\(status.name). Click for \(next), right-click for all")
         .contextMenu { TaskStatusMenuItems(task: task) }
-        .accessibilityLabel("Status: \(task.status.title)")
-        .accessibilityHint("Changes the status to \(task.status.next.title)")
+        .accessibilityLabel("Status: \(status.name)")
+        .accessibilityHint("Changes the status to \(next)")
     }
 }
 
-/// The three statuses as menu items, in the shared order, with a check on the current one.
+/// The project's statuses as menu items, in workflow order, with a check on the current one.
 struct TaskStatusMenuItems: View {
     @EnvironmentObject private var store: TaskStore
     let task: TaskItem
 
     var body: some View {
-        ForEach(TaskStatus.ordered) { status in
+        ForEach(store.project(task.projectId)?.statuses ?? []) { status in
             Button {
                 store.setStatus(task.id, status)
             } label: {
-                if status == task.status {
-                    Label(status.title, systemImage: "checkmark")
+                if status.id == task.statusId {
+                    Label(status.name, systemImage: "checkmark")
                 } else {
-                    Text(status.title)
+                    Text(status.name)
                 }
             }
         }
@@ -176,8 +188,8 @@ struct TaskTitleButton: View {
     private var title: some View {
         Text(task.title)
             .font(font ?? (store.isRunning(task.id) ? Focus.rowStrong : Focus.row))
-            .foregroundColor(task.isDone ? Focus.text3 : Focus.text)
-            .strikethrough(task.isDone, color: Focus.text3)
+            .foregroundColor(task.isClosed ? Focus.text3 : Focus.text)
+            .strikethrough(task.isClosed, color: Focus.text3)
             .lineLimit(multiline ? nil : 1)
             .lineSpacing(multiline ? 2 : 0)
             .multilineTextAlignment(.leading)
@@ -207,7 +219,7 @@ struct TaskContextMenu: View {
         if let rename {
             Button("Rename", action: rename)
         }
-        if !task.isDone || store.isRunning(task.id) {
+        if !task.isClosed || store.isRunning(task.id) {
             Button(store.isRunning(task.id) ? "Pause timer" : "Start timer") { store.toggleTimer(task.id) }
         }
         Divider()

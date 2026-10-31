@@ -146,9 +146,12 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
     var archivedAt: Date?
     /// Completed sprints, oldest first
     var pastSprints: [PastSprint]
+    /// The workflow, in board order. Always has a Not started and a Done status (WorkflowRules).
+    var statuses: [WorkflowStatus]
 
     init(id: UUID = UUID(), name: String, colorHex: UInt32, sprint: SprintState, createdAt: Date = Date(),
-         notes: String = "", targetDate: Date? = nil, archivedAt: Date? = nil, pastSprints: [PastSprint] = []) {
+         notes: String = "", targetDate: Date? = nil, archivedAt: Date? = nil, pastSprints: [PastSprint] = [],
+         statuses: [WorkflowStatus] = WorkflowPreset.simple.statuses) {
         self.id = id
         self.name = name
         self.colorHex = colorHex
@@ -158,6 +161,7 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
         self.targetDate = targetDate
         self.archivedAt = archivedAt
         self.pastSprints = pastSprints
+        self.statuses = WorkflowRules.repaired(statuses)
     }
 
     var isArchived: Bool { archivedAt != nil }
@@ -166,7 +170,7 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
     var initial: String { name.trimmingCharacters(in: .whitespaces).first.map { String($0).uppercased() } ?? "?" }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, colorHex, sprint, createdAt, notes, targetDate, archivedAt, pastSprints
+        case id, name, colorHex, sprint, createdAt, notes, targetDate, archivedAt, pastSprints, statuses
     }
 
     init(from decoder: Decoder) throws {
@@ -180,5 +184,7 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
         targetDate = c.decodeOptional(.targetDate)
         archivedAt = c.decodeOptional(.archivedAt)
         pastSprints = c.decodeLossyArray(.pastSprints)
+        // Older files have no workflow: the Simple one (To do, In progress, Done)
+        statuses = WorkflowRules.repaired(c.decodeLossyArray(.statuses))
     }
 }

@@ -158,7 +158,7 @@ extension TasksViewModel {
             guard !isMultiSelecting || openTaskId != nil else { return false }
             guard let id = targetTaskId(store), let task = store.task(id) else { return false }
             // Done tasks have no timer button; a running one can still be paused
-            guard !task.isDone || store.isRunning(id) else { return false }
+            guard !task.isClosed || store.isRunning(id) else { return false }
             store.toggleTimer(id)
         case .delete:
             if isMultiSelecting, !panelOpen {

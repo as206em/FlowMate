@@ -19,7 +19,7 @@ struct TaskBulkBar: View {
                 .foregroundColor(Focus.text)
                 .padding(.horizontal, 8)
             FocusBarSeparator()
-            menuButton("Status", .status) { statusMenu }
+            menuButton("Status", .status) { statusMenu(ids) }
             menuButton("Priority", .priority) { priorityMenu }
             menuButton("Milestone", .milestone) { milestoneMenu(ids) }
             menuButton("Sprint", .sprint) { sprintMenu(ids) }
@@ -51,15 +51,38 @@ struct TaskBulkBar: View {
 
     // MARK: - Menus
 
-    private var statusMenu: some View {
-        FocusPopoverMenu(width: 200) {
-            ForEach(TaskStatus.ordered) { status in
+    /// One project's tasks: its workflow. Tasks of several projects: the statuses every one of
+    /// their workflows has (same name and category), then the categories, which move each task to
+    /// the first status of that category in its own project.
+    private func statusMenu(_ ids: [UUID]) -> some View {
+        let single = store.commonProjectId(ids) != nil
+        let common = store.commonStatuses(for: ids)
+        return FocusPopoverMenu(width: 220, maxHeight: 420) {
+            if !single, !common.isEmpty {
+                FocusMenuSection(title: "Shared statuses", first: true)
+            }
+            ForEach(common) { status in
                 FocusMenuItem {
-                    model.bulk({ "\(tasks($0)) moved to \(status.title)" }, store: store) { store.setStatus($0, status) }
+                    model.bulk({ "\(tasks($0)) moved to \(status.name)" }, store: store) { store.setStatus($0, status) }
                     done()
                 } label: {
-                    FocusStatusIcon(kind: status.focusKind, size: 14)
-                    Text(status.title).font(Focus.control).foregroundColor(Focus.text)
+                    WorkflowStatusIcon(status: status, size: 14)
+                    Text(status.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
+                }
+            }
+            if !single {
+                FocusMenuSection(title: "By category", first: common.isEmpty)
+                ForEach(StatusCategory.ordered) { category in
+                    FocusMenuItem {
+                        model.bulk({ "\(tasks($0)) moved to \(category.title.lowercased())" }, store: store) {
+                            store.setCategory($0, category)
+                        }
+                        done()
+                    } label: {
+                        FocusStatusIcon(kind: category.focusKind, size: 14)
+                        Text(category.title).font(Focus.control).foregroundColor(Focus.text)
+                    }
+                    .help("Each task moves to the first \(category.title.lowercased()) status of its project")
                 }
             }
         }

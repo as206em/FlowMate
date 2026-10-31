@@ -1,14 +1,23 @@
 import AppKit
 import SwiftUI
 
-/// Three status columns of active-sprint cards, narrowed and sorted by the filter bar.
-/// Drag a card to another column to change its status, or onto a card to place it before that card
-/// (in manual order; when sorted, a drop only changes the status).
+/// One column per status of the project's workflow (its colors, in its order), or in All
+/// projects one per category (Canceled only while a card is canceled), of active-sprint cards
+/// narrowed and sorted by the filter bar. Drag a card to another column to change its status, or
+/// onto a card to place it before that card (in manual order; when sorted, a drop only changes the
+/// status). Columns share the width; when they'd get narrower than `minColumnWidth` the board
+/// scrolls sideways instead.
 struct BoardView: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
 
+    static let minColumnWidth: CGFloat = 200
+    static let columnSpacing: CGFloat = 16
+
+    @State private var availableWidth: CGFloat = 0
+
     var body: some View {
+        let columns = model.boardColumns(store)
         VStack(alignment: .leading, spacing: 16) {
             // Columns stay below as drop targets; this says why they're empty
             if let reason = model.boardEmptyReason(store) {
@@ -29,27 +38,48 @@ struct BoardView: View {
                 .padding(.top, -8)
                 .padding(.bottom, -6)
             }
-            HStack(alignment: .top, spacing: 16) {
-                ForEach(TaskStatus.ordered) { status in
-                    column(status)
-                        .frame(maxWidth: .infinity, alignment: .top)
-                        .zIndex(model.activeComposer == Self.composerKey(status) ? 1 : 0)
+            let needed = CGFloat(columns.count) * Self.minColumnWidth + CGFloat(max(0, columns.count - 1)) * Self.columnSpacing
+            Group {
+                if availableWidth == 0 || needed <= availableWidth {
+                    row(columns, width: nil)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: true) {
+                        row(columns, width: Self.minColumnWidth).padding(.bottom, 10)
+                    }
                 }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(GeometryReader { proxy in
+                Color.clear
+                    .onAppear { availableWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { availableWidth = $0 }
+            })
+        }
+    }
+
+    private func row(_ columns: [TaskGroupValue], width: CGFloat?) -> some View {
+        HStack(alignment: .top, spacing: Self.columnSpacing) {
+            ForEach(columns, id: \.key) { value in
+                column(value, isDefault: value == columns.first)
+                    .frame(width: width)
+                    .frame(maxWidth: width == nil ? .infinity : width, alignment: .top)
+                    .zIndex(model.activeComposer == Self.composerKey(value) ? 1 : 0)
             }
         }
     }
 
-    static func composerKey(_ status: TaskStatus) -> String { "composer-board-\(status.rawValue)" }
+    static func composerKey(_ column: TaskGroupValue) -> String { "composer-board-\(column.key)" }
 
-    private func column(_ status: TaskStatus) -> some View {
-        let tasks = model.boardTasks(store, status: status)
+    private func column(_ value: TaskGroupValue, isDefault: Bool) -> some View {
+        let tasks = model.boardTasks(store, column: value)
         let manual = model.sort.isManual
-        let key = "board-\(status.rawValue)"
+        let key = "board-\(value.key)"
         let targeted = model.dropTarget == key
+        let title = value.statusTitle
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                FocusStatusIcon(kind: status.focusKind, size: 15)
-                Text(status.title).font(Focus.groupTitle).foregroundColor(Focus.text)
+                value.statusIcon(size: 15)
+                Text(title).font(Focus.groupTitle).foregroundColor(Focus.text).lineLimit(1)
                 Text("\(tasks.count)").font(Focus.row.monospacedDigit()).foregroundColor(Focus.text3)
             }
             .padding(.horizontal, 6)
@@ -63,7 +93,7 @@ struct BoardView: View {
                         .taskDraggable(task, model: model)
                         .onDrop(of: [.plainText], delegate: TaskDropDelegate(target: key, model: model) { id in
                             guard id != task.id else { return }
-                            store.moveTask(id, toStatus: status, before: task.id, reorder: manual)
+                            drop(id, on: value, before: task.id, reorder: manual)
                         })
                 }
                 if tasks.isEmpty {
@@ -77,7 +107,7 @@ struct BoardView: View {
                                 .strokeBorder(Focus.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                         )
                 }
-                TaskComposer(key: Self.composerKey(status), preset: .status(status), isDefault: status == .todo, groupName: status.title)
+                TaskComposer(key: Self.composerKey(value), preset: value, isDefault: isDefault, groupName: title)
             }
             Spacer(minLength: 0)
         }
@@ -93,8 +123,37 @@ struct BoardView: View {
         )
         .contentShape(Rectangle())
         .onDrop(of: [.plainText], delegate: TaskDropDelegate(target: key, model: model) { id in
-            store.moveTask(id, toStatus: status, reorder: manual)
+            drop(id, on: value, before: nil, reorder: manual)
         })
+    }
+
+    private func drop(_ id: UUID, on value: TaskGroupValue, before: UUID?, reorder: Bool) {
+        switch value {
+        case let .status(status): store.moveTask(id, toStatus: status, before: before, reorder: reorder)
+        case let .category(category): store.moveTask(id, toCategory: category, before: before, reorder: reorder)
+        default: break
+        }
+    }
+}
+
+extension TaskGroupValue {
+    /// The heading of a status or category column or group ("Review", "Started")
+    var statusTitle: String {
+        switch self {
+        case let .status(status): return status.name
+        case let .category(category): return category.title
+        default: return ""
+        }
+    }
+
+    /// Its status icon, in the status's color (a category uses its signal color)
+    @ViewBuilder
+    func statusIcon(size: CGFloat) -> some View {
+        switch self {
+        case let .status(status): WorkflowStatusIcon(status: status, size: size)
+        case let .category(category): FocusStatusIcon(kind: category.focusKind, size: size)
+        default: EmptyView()
+        }
     }
 }
 
@@ -137,7 +196,7 @@ struct TaskCard: View {
                 SubtaskCount(task: task)
                 TaskTimeText(task: task, font: .system(size: 12))
                 Spacer(minLength: 0)
-                if !task.isDone {
+                if !task.isClosed {
                     TaskTimerButton(task: task, size: 28)
                 }
             }

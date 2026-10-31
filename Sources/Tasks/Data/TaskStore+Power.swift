@@ -15,13 +15,6 @@ extension TaskStore {
     /// "3 tasks" / "1 task"
     static func taskCount(_ n: Int) -> String { "\(n) \(n == 1 ? "task" : "tasks")" }
 
-    /// Sets the status of several tasks as one undo step. Done pauses their timers.
-    func setStatus(_ ids: [UUID], _ status: TaskStatus, now: Date = Date()) {
-        undoGroup("Change status") {
-            for id in existing(ids) where task(id)?.status != status { setStatus(id, status, now: now) }
-        }
-    }
-
     func setPriority(_ ids: [UUID], _ priority: TaskPriority) {
         undoGroup("Change priority") {
             for id in existing(ids) { setPriority(id, priority) }
@@ -271,15 +264,17 @@ extension TaskStore {
     }
 
     /// Turns a subtask into its own task just below the parent: same project, milestone and sprint,
-    /// Done if it was checked. One undo step. Returns the new task's id.
+    /// in the project's first Done status if it was checked (else its first Not started one).
+    /// One undo step. Returns the new task's id.
     @discardableResult
     func convertSubtaskToTask(_ taskId: UUID, _ subtaskId: UUID, now: Date = Date()) -> UUID? {
         guard let parent = task(taskId), let subtask = parent.subtasks.first(where: { $0.id == subtaskId }) else { return nil }
+        let workflow = project(parent.projectId)
         let task = TaskItem(
             projectId: parent.projectId,
             milestoneId: parent.milestoneId,
             sprintSlot: parent.sprintSlot == .closed ? .backlog : parent.sprintSlot,
-            status: subtask.isDone ? .done : .todo,
+            status: workflow?.firstStatus(subtask.isDone ? .done : .notStarted) ?? (subtask.isDone ? .done : .todo),
             priority: parent.priority,
             title: subtask.title,
             createdAt: now,

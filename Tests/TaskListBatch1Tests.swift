@@ -17,8 +17,9 @@ final class TaskListBatch1Tests: XCTestCase {
     // MARK: - Status order and cycle (#38, #39)
 
     func testOneStatusAndPriorityOrder() {
-        XCTAssertEqual(TaskStatus.ordered, [.todo, .inProgress, .done])
-        XCTAssertEqual(TaskStatus.ordered.map(\.title), ["To do", "In progress", "Done"])
+        XCTAssertEqual(WorkflowPreset.simple.statuses, [.todo, .inProgress, .done])
+        XCTAssertEqual(WorkflowPreset.simple.statuses.map(\.name), ["To do", "In progress", "Done"])
+        XCTAssertEqual(StatusCategory.ordered, [.notStarted, .started, .done, .canceled])
         XCTAssertEqual(TaskPriority.ordered, [.high, .medium, .low])
     }
 
@@ -26,13 +27,13 @@ final class TaskListBatch1Tests: XCTestCase {
         let (store, pid) = await makeStore()
         let a = store.addTask(title: "A", projectId: pid, now: t0)!
         store.cycleStatus(a, now: t0)
-        XCTAssertEqual(store.task(a)?.status, .inProgress)
+        XCTAssertEqual(store.task(a)?.statusId, WorkflowStatus.inProgress.id)
         store.startTimer(a, now: t0)
         store.cycleStatus(a, now: t0.addingTimeInterval(60))
-        XCTAssertEqual(store.task(a)?.status, .done)
+        XCTAssertEqual(store.task(a)?.statusId, WorkflowStatus.done.id)
         XCTAssertFalse(store.isRunning(a), "Done pauses the timer")
         store.cycleStatus(a, now: t0.addingTimeInterval(120))
-        XCTAssertEqual(store.task(a)?.status, .todo)
+        XCTAssertEqual(store.task(a)?.statusId, WorkflowStatus.todo.id)
         store.cycleStatus(UUID()) // unknown id is a no-op
     }
 

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The project side panel, opened from the sidebar, the header title or a breadcrumb.
-/// Left: name, Markdown description and the milestones. Right: color, target date, the sprint
+/// Left: name, Markdown description, the milestones and the workflow (statuses). Right: color, target date, the sprint
 /// (number, start, length, goal), then Show tasks, Archive and Delete.
 /// TasksRootView supplies the frame, scrim, slide-in and Esc handling, as for the task panel.
 struct ProjectPanel: View {
@@ -33,6 +33,7 @@ struct ProjectPanel: View {
                             minHeight: 140
                         )
                         ProjectMilestonesSection(project: project)
+                        ProjectWorkflowSection(project: project)
                     }
                     ProjectInspector(project: project)
                 }

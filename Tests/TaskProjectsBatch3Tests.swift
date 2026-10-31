@@ -135,7 +135,7 @@ final class TaskProjectsBatch3Tests: XCTestCase {
             store.setStatus(open, .inProgress, now: t0)
             store.completeSprint(projectId: pid, unfinished: choice, now: t0)
             let task = store.task(open)!
-            XCTAssertEqual(task.status, .inProgress, "\(choice): status is untouched")
+            XCTAssertEqual(task.statusId, WorkflowStatus.inProgress.id, "\(choice): status is untouched")
             switch choice {
             case .moveToNextSprint: XCTAssertEqual(task.sprintSlot, .active)
             case .moveToBacklog: XCTAssertEqual(task.sprintSlot, .backlog)
@@ -284,7 +284,7 @@ final class TaskProjectsBatch3Tests: XCTestCase {
         store.completeMilestone(m1, now: t0)
         XCTAssertTrue(store.milestone(m1)!.isCompleted)
         XCTAssertFalse(store.isOverdue(store.milestone(m1)!), "a completed milestone is never overdue")
-        XCTAssertEqual(store.task(a)?.status, .todo, "its tasks are left alone")
+        XCTAssertEqual(store.task(a)?.statusId, WorkflowStatus.todo.id, "its tasks are left alone")
         XCTAssertEqual(store.milestones(of: pid).map(\.id), [m2, m1], "completed ones sort last")
         XCTAssertEqual(store.undoActionName, "Complete milestone")
 

@@ -191,7 +191,7 @@ struct CompleteSprintSheet: View {
     var body: some View {
         let sprint = project.sprint
         let active = store.sprintTasks(projectId: project.id, slot: .active)
-        let done = active.filter(\.isDone).count
+        let done = active.filter(\.isClosed).count
         let open = active.count - done
         let next = store.sprintTasks(projectId: project.id, slot: .next).count
         let today = Calendar.current.startOfDay(for: Date())
@@ -207,7 +207,7 @@ struct CompleteSprintSheet: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                line(done == 0 ? "No done tasks to close." : "\(tasks(done)) marked done \(done == 1 ? "closes" : "close") with the sprint.")
+                line(done == 0 ? "No done tasks to close." : "\(tasks(done)) marked done or canceled \(done == 1 ? "closes" : "close") with the sprint.")
                 if next > 0 { line("\(tasks(next)) planned for \(sprint.nextName) \(next == 1 ? "moves" : "move") in.") }
             }
 

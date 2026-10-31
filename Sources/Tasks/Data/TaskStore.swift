@@ -236,6 +236,8 @@ final class TaskStore: ObservableObject {
         guard !savesBlocked else { return }
         var copy = workspace
         change(&copy)
+        // Every task keeps a status of its own project's workflow, whatever the change did
+        copy.normalizeStatuses()
         guard copy != workspace else { return }
         let before = workspace
         workspace = copy

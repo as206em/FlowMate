@@ -15,7 +15,7 @@ extension Workspace {
             dueDate: Calendar.current.date(byAdding: .day, value: 14, to: Calendar.current.startOfDay(for: now))
         )
 
-        func task(_ index: Int, _ title: String, slot: SprintSlot = .active, status: TaskStatus = .todo,
+        func task(_ index: Int, _ title: String, slot: SprintSlot = .active, status: WorkflowStatus = .todo,
                   priority: TaskPriority = .medium, expected: Int = 30, notes: String = "",
                   subtasks: [Subtask] = []) -> TaskItem {
             TaskItem(projectId: project.id, milestoneId: milestone.id, sprintSlot: slot, status: status,

@@ -12,12 +12,16 @@ extension TaskStore {
         let milestoneIds = Set(workspace.milestones.map(\.id))
         let milestones = filter.milestones.filter { $0.map(milestoneIds.contains) ?? true }
         let projectIds = filter.projectIds.intersection(workspace.projects.map(\.id))
+        // Statuses of a workflow that has since changed are ignored the same way
+        let statusIds = filter.statuses.intersection(workspace.projects.flatMap { $0.statuses.map(\.id) })
+        let categories = filter.categories
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: now)
         let weekEnd = calendar.dateInterval(of: .weekOfYear, for: now)?.end ?? today.addingTimeInterval(7 * 86_400)
 
         return tasks.filter { task in
-            if !filter.statuses.isEmpty, !filter.statuses.contains(task.status) { return false }
+            if !statusIds.isEmpty || !categories.isEmpty,
+               !statusIds.contains(task.statusId), !categories.contains(task.statusCategory) { return false }
             if !filter.priorities.isEmpty, !filter.priorities.contains(task.priority) { return false }
             if !milestones.isEmpty, !milestones.contains(task.milestoneId) { return false }
             if !filter.sprintSlots.isEmpty, !filter.sprintSlots.contains(task.sprintSlot) { return false }
@@ -54,7 +58,20 @@ extension TaskStore {
         }
         switch grouping {
         case .status:
-            return TaskStatus.ordered.map { status in group(.status(status), status.title) { $0.status == status } }
+            if let statuses = statuses(in: scope) {
+                return statuses.map { status in
+                    var g = group(.status(status), status.name) { $0.statusId == status.id }
+                    g.statusKind = status.category.focusKind
+                    g.statusColorHex = status.colorHex
+                    return g
+                }
+            }
+            // All projects: workflows differ, so group by category (Canceled only when used)
+            return categoryColumns(for: tasks).map { category in
+                var g = group(.category(category), category.title) { $0.statusCategory == category }
+                g.statusKind = category.focusKind
+                return g
+            }
         case .priority:
             return TaskPriority.ordered.map { p in group(.priority(p), p.title) { $0.priority == p } }
         case .project:
@@ -99,7 +116,9 @@ extension TaskStore {
         undoGroup("Move task") {
             switch value {
             case let .status(status):
-                if task.status != status { setStatus(id, status, now: now) }
+                if task.statusId != status.id { setStatus(id, status, now: now) }
+            case let .category(category):
+                setCategory(id, category, now: now)
             case let .priority(priority):
                 setPriority(id, priority)
             case let .project(projectId):

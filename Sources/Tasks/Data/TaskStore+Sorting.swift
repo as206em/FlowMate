@@ -8,7 +8,7 @@ extension TaskStore {
         let manual = tasks.sorted { $0.sortIndex < $1.sortIndex }
         guard !sort.isManual else { return manual }
         let position = Dictionary(uniqueKeysWithValues: manual.enumerated().map { ($1.id, $0) })
-        let key = sortValueProvider(sort.key)
+        let key = sortValueProvider(sort.key, singleProject: Set(tasks.map(\.projectId)).count <= 1)
         return manual.sorted { a, b in
             switch (key(a), key(b)) {
             case let (x?, y?):
@@ -22,12 +22,17 @@ extension TaskStore {
     }
 
     /// The comparable value of one column for a task; nil means "empty".
-    private func sortValueProvider(_ key: TaskSortKey) -> (TaskItem) -> SortValue? {
+    private func sortValueProvider(_ key: TaskSortKey, singleProject: Bool) -> (TaskItem) -> SortValue? {
         switch key {
         case .manual:
             return { .number($0.sortIndex) }
         case .status:
-            return { .number(Double(TaskStatus.ordered.firstIndex(of: $0.status) ?? 0)) }
+            // One project: its workflow order. Several: by category, then each workflow's order.
+            let workflows = Dictionary(workspace.projects.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            return { task in
+                let index = Double(workflows[task.projectId]?.statusIndex(task.statusId) ?? 0)
+                return .number(singleProject ? index : Double(task.statusCategory.rank) * 1000 + index)
+            }
         case .title:
             return { .text($0.title) }
         case .project:

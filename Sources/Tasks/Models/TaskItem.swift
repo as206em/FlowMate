@@ -1,40 +1,5 @@
 import Foundation
 
-enum TaskStatus: String, CaseIterable, Identifiable, Sendable, TolerantStringEnum {
-    case todo, inProgress, done
-
-    static var fallback: TaskStatus { .todo }
-    var id: String { rawValue }
-
-    /// The one display order used everywhere: board columns, list groups, menus and pickers.
-    static let ordered: [TaskStatus] = [.todo, .inProgress, .done]
-
-    /// What a click on the status circle moves to: To do → In progress → Done → To do.
-    var next: TaskStatus {
-        switch self {
-        case .todo: return .inProgress
-        case .inProgress: return .done
-        case .done: return .todo
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .todo: return "To do"
-        case .inProgress: return "In progress"
-        case .done: return "Done"
-        }
-    }
-
-    var focusKind: FocusStatusKind {
-        switch self {
-        case .todo: return .todo
-        case .inProgress: return .inProgress
-        case .done: return .done
-        }
-    }
-}
-
 enum TaskPriority: String, CaseIterable, Identifiable, Sendable, TolerantStringEnum {
     case low, medium, high
 
@@ -112,7 +77,11 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
     var projectId: UUID
     var milestoneId: UUID?
     var sprintSlot: SprintSlot
-    var status: TaskStatus
+    /// A status of the task's project (Project.statuses). The store keeps it valid.
+    var statusId: String
+    /// The category of that status, kept in step by the store (Workspace.normalizeStatuses), so
+    /// anything can ask whether a task is done without looking up its project.
+    var statusCategory: StatusCategory
     var priority: TaskPriority
     var title: String
     /// Markdown description
@@ -133,7 +102,7 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         projectId: UUID,
         milestoneId: UUID? = nil,
         sprintSlot: SprintSlot = .active,
-        status: TaskStatus = .todo,
+        status: WorkflowStatus = .todo,
         priority: TaskPriority = .medium,
         title: String,
         notes: String = "",
@@ -150,7 +119,8 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         self.projectId = projectId
         self.milestoneId = milestoneId
         self.sprintSlot = sprintSlot
-        self.status = status
+        self.statusId = status.id
+        self.statusCategory = status.category
         self.priority = priority
         self.title = title
         self.notes = notes
@@ -164,15 +134,21 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         self.closedSprintNumber = closedSprintNumber
     }
 
-    var isDone: Bool { status == .done }
+    /// Finished: done or canceled. Closed tasks have no timer, aren't overdue and collapse in List.
+    var isClosed: Bool { statusCategory.isClosed }
+    /// Done (not canceled); what progress counts.
+    var isDone: Bool { statusCategory == .done }
+    var isCanceled: Bool { statusCategory == .canceled }
     var subtasksDone: Int { subtasks.filter(\.isDone).count }
     /// "2/4", or nil when there are no subtasks
     var subtaskSummary: String? { subtasks.isEmpty ? nil : "\(subtasksDone)/\(subtasks.count)" }
 
     private enum CodingKeys: String, CodingKey {
-        case id, projectId, milestoneId, sprintSlot, status, priority, title, notes, subtasks
+        case id, projectId, milestoneId, sprintSlot, statusId, statusCategory, priority, title, notes, subtasks
         case dueDate, expectedMinutes, spentSeconds, createdAt, updatedAt, sortIndex, closedSprintNumber
     }
+
+    private enum LegacyKeys: String, CodingKey { case status }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -180,7 +156,18 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         projectId = try c.decode(UUID.self, forKey: .projectId)
         milestoneId = c.decodeOptional(.milestoneId)
         sprintSlot = c.decode(.sprintSlot, or: .backlog)
-        status = c.decode(.status, or: .todo)
+        if let id: String = c.decodeOptional(.statusId), !id.isEmpty {
+            statusId = id
+            statusCategory = c.decode(.statusCategory, or: .notStarted)
+        } else {
+            // Schema 5 and older: a fixed status ("todo", "inProgress", "done"). The Simple
+            // workflow every project migrates to uses the same ids.
+            let legacy = (try? decoder.container(keyedBy: LegacyKeys.self))
+                .flatMap { $0.decodeOptional(.status) as String? }
+            let status = [WorkflowStatus.todo, .inProgress, .done].first { $0.id == legacy } ?? .todo
+            statusId = status.id
+            statusCategory = status.category
+        }
         priority = c.decode(.priority, or: .medium)
         title = c.decode(.title, or: "Untitled task")
         notes = c.decode(.notes, or: "")

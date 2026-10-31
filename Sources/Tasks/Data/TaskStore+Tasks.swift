@@ -4,7 +4,8 @@ import Foundation
 extension TaskStore {
     // MARK: - Tasks
 
-    /// Quick add: active sprint, To do, medium priority, 60m expected, appended at the end.
+    /// Quick add: active sprint, the project's first Not started status (or `status`, matched in
+    /// the project), medium priority, 60m expected, appended at the end.
     /// Returns nil for a blank title or unknown project.
     @discardableResult
     func addTask(
@@ -12,11 +13,12 @@ extension TaskStore {
         projectId: UUID,
         milestoneId: UUID? = nil,
         sprintSlot: SprintSlot = .active,
-        status: TaskStatus = .todo,
+        status: WorkflowStatus? = nil,
         now: Date = Date()
     ) -> UUID? {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty, project(projectId) != nil else { return nil }
+        guard !title.isEmpty, let project = project(projectId) else { return nil }
+        let status = status.map { project.status($0.id) ?? WorkflowRules.remap($0, into: project.statuses) } ?? project.defaultStatus
         let validMilestone = milestoneId.flatMap { milestone($0)?.projectId == projectId ? $0 : nil }
         let task = TaskItem(projectId: projectId, milestoneId: validMilestone, sprintSlot: sprintSlot,
                             status: status, priority: .medium, title: title,
@@ -76,13 +78,18 @@ extension TaskStore {
         updateTask(id, action: "Change milestone") { $0.milestoneId = milestoneId }
     }
 
-    /// Moves a task to another project. Its milestone is cleared (milestones belong to one project).
-    /// Everything else (status, sprint slot, time, a running timer) comes along.
+    /// Moves a task to another project. Its milestone is cleared (milestones belong to one project)
+    /// and its status maps onto the new workflow by category: the status with the same name and
+    /// category, else the first status of that category. Everything else (sprint slot, time, a
+    /// running timer) comes along.
     func setProject(_ id: UUID, _ projectId: UUID) {
-        guard project(projectId) != nil else { return }
+        guard let destination = project(projectId), let current = task(id) else { return }
+        let status = WorkflowRules.remap(self.status(of: current), into: destination.statuses)
         updateTask(id, action: "Move to project") { task in
             guard task.projectId != projectId else { return }
             task.projectId = projectId
+            task.statusId = status.id
+            task.statusCategory = status.category
             task.milestoneId = nil
             // Past sprints belong to the old project; the task goes to the new one's backlog
             if task.sprintSlot == .closed {
@@ -92,31 +99,13 @@ extension TaskStore {
         }
     }
 
-    /// Changes status. Marking a task Done pauses its timer.
-    /// Reopening a task from a closed sprint puts it in the backlog so it can be planned again.
-    func setStatus(_ id: UUID, _ status: TaskStatus, now: Date = Date()) {
-        undoGroup("Change status") {
-            if status == .done { pauseTimer(id, now: now) }
-            updateTask(id, now: now) { task in
-                task.status = status
-                if status != .done, task.sprintSlot == .closed { task.sprintSlot = .backlog }
-            }
-        }
-    }
-
-    /// The status circle: To do → In progress → Done → To do.
-    func cycleStatus(_ id: UUID, now: Date = Date()) {
-        guard let task = task(id) else { return }
-        setStatus(id, task.status.next, now: now)
-    }
-
     func setSprintSlot(_ id: UUID, _ slot: SprintSlot) {
         updateTask(id, action: "Change sprint") { $0.sprintSlot = slot }
     }
 
     /// Board drag and drop: new status, placed before `beforeTaskId` (or at the end when nil).
     /// Pass `reorder: false` when the view is sorted, so only the status changes.
-    func moveTask(_ id: UUID, toStatus status: TaskStatus, before beforeTaskId: UUID? = nil,
+    func moveTask(_ id: UUID, toStatus status: WorkflowStatus, before beforeTaskId: UUID? = nil,
                   reorder: Bool = true, now: Date = Date()) {
         undoGroup("Move task") {
             setStatus(id, status, now: now)
@@ -142,14 +131,16 @@ extension TaskStore {
         }
     }
 
-    /// Copies a task just below the original: same fields, To do, no time spent,
+    /// Copies a task just below the original: same fields, the first Not started status, no time spent,
     /// subtasks unchecked. Returns the copy's id.
     @discardableResult
     func duplicateTask(_ id: UUID, now: Date = Date()) -> UUID? {
         guard let original = task(id) else { return nil }
         var copy = original
         copy.id = UUID()
-        copy.status = .todo
+        let status = project(original.projectId)?.defaultStatus ?? .todo
+        copy.statusId = status.id
+        copy.statusCategory = status.category
         copy.spentSeconds = 0
         copy.createdAt = now
         copy.updatedAt = now

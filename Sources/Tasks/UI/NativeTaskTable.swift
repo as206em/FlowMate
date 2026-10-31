@@ -28,6 +28,9 @@ struct GroupHeaderInfo: Equatable {
     let title: String
     let hint: String
     let colorHex: UInt32?
+    /// Status groups: the status icon (and its color; nil for a category's signal color)
+    var statusKind: FocusStatusKind? = nil
+    var statusColorHex: UInt32? = nil
     let count: Int
     let open: Bool
     /// Space above the header, between groups
@@ -112,6 +115,8 @@ struct TaskTableBuilder {
         title: String,
         hint: String = "",
         colorHex: UInt32? = nil,
+        statusKind: FocusStatusKind? = nil,
+        statusColorHex: UInt32? = nil,
         tasks: [TaskItem],
         emptyText: String,
         showProject: Bool,
@@ -122,7 +127,8 @@ struct TaskTableBuilder {
         display: (TaskItem) -> RowDisplay
     ) {
         rows.append(.groupHeader(GroupHeaderInfo(
-            key: key, title: title, hint: hint, colorHex: colorHex, count: tasks.count, open: open, gap: gap
+            key: key, title: title, hint: hint, colorHex: colorHex, statusKind: statusKind,
+            statusColorHex: statusColorHex, count: tasks.count, open: open, gap: gap
         )))
         if let drop { drops[key] = drop }
         guard open else { return }
@@ -272,6 +278,9 @@ private struct GroupHeaderRow: View {
                     .frame(width: 10)
                 if let colorHex = info.colorHex {
                     FocusProjectTile(name: info.title, colorHex: colorHex)
+                }
+                if let kind = info.statusKind {
+                    FocusStatusIcon(kind: kind, color: info.statusColorHex.map { Color(hex: $0) }, size: 15)
                 }
                 Text(info.title).font(Focus.groupTitle).foregroundColor(Focus.text).lineLimit(1)
                 Text("\(info.count)").font(Focus.row.monospacedDigit()).foregroundColor(Focus.text3)

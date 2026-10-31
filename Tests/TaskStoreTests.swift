@@ -72,7 +72,7 @@ final class TaskStoreTests: XCTestCase {
         let ws = try LocalJSONWorkspaceRepository.makeDecoder().decode(Workspace.self, from: Data(json.utf8)).migrated()
         XCTAssertEqual(ws.projects.count, 1)
         XCTAssertEqual(ws.tasks.count, 1)
-        XCTAssertEqual(ws.tasks[0].status, .todo)
+        XCTAssertEqual(ws.tasks[0].statusId, WorkflowStatus.todo.id)
         XCTAssertEqual(ws.tasks[0].expectedMinutes, 60)
     }
 
@@ -98,7 +98,7 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertTrue(store.isRunning(a))
         XCTAssertTrue(store.isRunning(b))
         XCTAssertEqual(store.runningTasks.map(\.id), [a, b])
-        XCTAssertEqual(store.task(a)?.status, .inProgress, "starting a To do task moves it to In progress")
+        XCTAssertEqual(store.task(a)?.statusId, WorkflowStatus.inProgress.id, "starting a To do task moves it to In progress")
         XCTAssertEqual(store.elapsed(a, now: t0.addingTimeInterval(60)), 60, accuracy: 0.001)
         XCTAssertEqual(store.elapsed(b, now: t0.addingTimeInterval(60)), 50, accuracy: 0.001)
         XCTAssertTrue(store.isProjectRunning(pid))
@@ -181,7 +181,7 @@ final class TaskStoreTests: XCTestCase {
 
         XCTAssertEqual(store.task(doneActive)?.sprintSlot, .closed)
         XCTAssertEqual(store.task(openActive)?.sprintSlot, .active)
-        XCTAssertEqual(store.task(openActive)?.status, .inProgress)
+        XCTAssertEqual(store.task(openActive)?.statusId, WorkflowStatus.inProgress.id)
         XCTAssertEqual(store.task(next)?.sprintSlot, .active)
         XCTAssertEqual(store.task(backlog)?.sprintSlot, .backlog)
         XCTAssertEqual(store.task(doneBacklog)?.sprintSlot, .backlog)
@@ -205,7 +205,7 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(store.task(doneActive)?.sprintSlot, .closed)
         store.startTimer(doneActive)
         XCTAssertEqual(store.task(doneActive)?.sprintSlot, .backlog)
-        XCTAssertEqual(store.task(doneActive)?.status, .inProgress)
+        XCTAssertEqual(store.task(doneActive)?.statusId, WorkflowStatus.inProgress.id)
     }
 
     func testSprintDisplay() {
@@ -261,7 +261,7 @@ final class TaskStoreTests: XCTestCase {
         let task = store.task(a)!
         XCTAssertEqual(task.title, "Write docs")
         XCTAssertEqual(task.sprintSlot, .active)
-        XCTAssertEqual(task.status, .todo)
+        XCTAssertEqual(task.statusId, WorkflowStatus.todo.id)
         XCTAssertEqual(task.priority, .medium)
         XCTAssertEqual(task.expectedMinutes, 60)
         XCTAssertEqual(store.openCount(pid), 1)
@@ -274,7 +274,7 @@ final class TaskStoreTests: XCTestCase {
         let c = store.addTask(title: "C", projectId: pid)!
         store.moveTask(c, toStatus: .inProgress, before: b)
         XCTAssertEqual(store.tasks(in: .project(pid)).map(\.id), [a, c, b])
-        XCTAssertEqual(store.task(c)?.status, .inProgress)
+        XCTAssertEqual(store.task(c)?.statusId, WorkflowStatus.inProgress.id)
         store.moveTask(a, toSlot: .backlog)
         XCTAssertEqual(store.sprintTasks(projectId: pid, slot: .backlog).map(\.id), [a])
         XCTAssertEqual(store.tasks(in: .project(pid)).last?.id, a)

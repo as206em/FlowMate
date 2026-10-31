@@ -215,7 +215,8 @@ extension TaskStore {
     }
 
     /// Closes the active sprint and starts the next one today. One undo step.
-    /// - Done tasks in the active sprint become `closed` (remembering the sprint number).
+    /// - Done and canceled tasks in the active sprint become `closed` (remembering the sprint
+    ///   number); only done ones count as done in the sprint's history.
     /// - Unfinished active tasks follow `unfinished`: stay for the new sprint, go to the backlog,
     ///   or close with the old sprint.
     /// - Next-sprint tasks become active.
@@ -234,8 +235,8 @@ extension TaskStore {
                 switch ws.tasks[i].sprintSlot {
                 case .active:
                     sprintTasks.append(ws.tasks[i].id)
-                    if ws.tasks[i].status == .done {
-                        doneTasks.append(ws.tasks[i].id)
+                    if ws.tasks[i].isClosed {
+                        if ws.tasks[i].isDone { doneTasks.append(ws.tasks[i].id) }
                         ws.tasks[i].sprintSlot = .closed
                         ws.tasks[i].closedSprintNumber = old.number
                         ws.tasks[i].updatedAt = now

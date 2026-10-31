@@ -18,7 +18,7 @@ final class TaskRowController: NSObject {
         switch column {
         case .status?:
             store.cycleStatus(id)
-        case .timer? where !task.isDone:
+        case .timer? where !task.isClosed:
             store.toggleTimer(id)
         case .milestone?, .due?, .priority?, .time?:
             showEditor(column!, taskId: id, rect: rect, in: view)
@@ -85,13 +85,14 @@ final class TaskRowController: NSObject {
 
         menu.addItem(item("Open") { [weak model] in model?.openTask(id) })
         menu.addItem(item("Rename", action: rename))
-        if !task.isDone || store.isRunning(id) {
+        if !task.isClosed || store.isRunning(id) {
             menu.addItem(item(store.isRunning(id) ? "Pause timer" : "Start timer") { [weak store] in store?.toggleTimer(id) })
         }
         menu.addItem(.separator())
 
-        menu.addItem(submenu("Status", TaskStatus.ordered.map { status in
-            item(status.title, checked: status == task.status) { [weak store] in store?.setStatus(id, status) }
+        let workflow = store.project(task.projectId)?.statuses ?? []
+        menu.addItem(submenu("Status", workflow.map { status in
+            item(status.name, checked: status.id == task.statusId) { [weak store] in store?.setStatus(id, status) }
         }))
         menu.addItem(submenu("Priority", TaskPriority.ordered.map { priority in
             item(priority.title, checked: priority == task.priority) { [weak store] in store?.setPriority(id, priority) }

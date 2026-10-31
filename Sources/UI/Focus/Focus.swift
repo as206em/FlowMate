@@ -43,6 +43,11 @@ enum Focus {
     /// Project tile palette, in the order new projects get them
     static let projectPalette: [UInt32] = [0xFF6B4A, 0x4EA1F5, 0x2DBE7A, 0xE0A020, 0x8B5CF6, 0xEC4899, 0x14B8A6, 0x64748B]
 
+    /// Workflow status colors: the three signal tones (text3 gray, progress, done) first, then the
+    /// project palette. Statuses tint their icon, board column and dropdown with it.
+    static let statusPalette: [UInt32] = [0x6E6E78, 0xB76E00, 0x6D5AE6, 0x4EA1F5, 0x14B8A6, 0x2DBE7A, 0xE0A020,
+                                          0xFF6B4A, 0xEC4899, 0x8B5CF6, 0xDC2626]
+
     // MARK: - Type
 
     static let taskTitle = Font.system(size: 26, weight: .semibold)
@@ -100,6 +105,20 @@ enum Focus {
     static let doneTint = Tint(icon: done, fill: Color(hex: 0xEFECFD), text: Color(hex: 0x4B3BB8), border: Color(hex: 0xD9D3F8))
     static let riskTint = Tint(icon: risk, fill: Color(hex: 0xFDECEC), text: Color(hex: 0xB91C1C), border: Color(hex: 0xF6CFCF))
 
+    /// The tint of a status dropdown for a status color. The three signal tones keep their own
+    /// tints; any other color gets a light fill and border of itself.
+    static func statusTint(_ hex: UInt32) -> Tint {
+        switch hex {
+        case 0x6E6E78: return neutralTint
+        case 0xB76E00: return progressTint
+        case 0x6D5AE6: return doneTint
+        case 0xDC2626: return riskTint
+        default:
+            let c = Color(hex: hex)
+            return Tint(icon: c, fill: c.opacity(0.10), text: Color(hex: hex, darkenedBy: 0.35), border: c.opacity(0.30))
+        }
+    }
+
     /// Formats seconds as a clock: 1:38:08
     static func clockString(_ seconds: TimeInterval) -> String {
         let s = max(0, Int(seconds))
@@ -116,14 +135,24 @@ enum Focus {
 
 // MARK: - Status and priority (visual kinds; the task model maps onto these)
 
+/// How a status icon is drawn, from its category: not started, started, done or canceled.
 enum FocusStatusKind: CaseIterable {
-    case todo, inProgress, done
+    case todo, inProgress, done, canceled
 
     var tint: Focus.Tint {
         switch self {
-        case .todo: return Focus.neutralTint
+        case .todo, .canceled: return Focus.neutralTint
         case .inProgress: return Focus.progressTint
         case .done: return Focus.doneTint
+        }
+    }
+
+    /// The color when the status has none of its own
+    var defaultColor: Color {
+        switch self {
+        case .todo, .canceled: return Focus.text3
+        case .inProgress: return Focus.progress
+        case .done: return Focus.done
         }
     }
 }
@@ -148,23 +177,37 @@ enum FocusPriorityLevel: CaseIterable {
     }
 }
 
-/// Open circle, half-filled circle, or filled circle with a check
+/// Open circle, half-filled circle, filled circle with a check, or filled circle with an ×,
+/// in the status's color (the category's signal color when nil).
 struct FocusStatusIcon: View {
     let kind: FocusStatusKind
+    var color: Color?
     var size: CGFloat = 16
 
+    init(kind: FocusStatusKind, color: Color? = nil, size: CGFloat = 16) {
+        self.kind = kind
+        self.color = color
+        self.size = size
+    }
+
     var body: some View {
+        let tone = color ?? kind.defaultColor
         ZStack {
             switch kind {
             case .todo:
-                Circle().strokeBorder(Focus.text3, lineWidth: size * 0.14)
+                Circle().strokeBorder(tone, lineWidth: size * 0.14)
             case .inProgress:
-                Circle().strokeBorder(Focus.progress, lineWidth: size * 0.14)
-                HalfDisc().fill(Focus.progress).padding(size * 0.25)
+                Circle().strokeBorder(tone, lineWidth: size * 0.14)
+                HalfDisc().fill(tone).padding(size * 0.25)
             case .done:
-                Circle().fill(Focus.done)
+                Circle().fill(tone)
                 Image(systemName: "checkmark")
                     .font(.system(size: size * 0.5, weight: .bold))
+                    .foregroundColor(.white)
+            case .canceled:
+                Circle().fill(tone.opacity(0.75))
+                Image(systemName: "xmark")
+                    .font(.system(size: size * 0.42, weight: .bold))
                     .foregroundColor(.white)
             }
         }
@@ -1604,14 +1647,16 @@ struct FocusProgressBar: View {
 
 // MARK: - Color swatches
 
-/// The project palette as 20pt circles; the chosen one has a `text` ring.
+/// The project palette (or another, such as Focus.statusPalette) as 20pt circles; the chosen one
+/// has a `text` ring.
 struct FocusColorSwatches: View {
     let selection: UInt32
+    var palette: [UInt32] = Focus.projectPalette
     let choose: (UInt32) -> Void
 
     var body: some View {
         HStack(spacing: 7) {
-            ForEach(Focus.projectPalette, id: \.self) { hex in
+            ForEach(palette, id: \.self) { hex in
                 Button { choose(hex) } label: {
                     Circle()
                         .fill(Color(hex: hex))
@@ -1641,6 +1686,10 @@ extension Focus {
         case 0xEC4899: return "Pink"
         case 0x14B8A6: return "Teal"
         case 0x64748B: return "Slate"
+        case 0x6E6E78: return "Gray"
+        case 0xB76E00: return "Ochre"
+        case 0x6D5AE6: return "Indigo"
+        case 0xDC2626: return "Red"
         default: return String(format: "#%06X", hex)
         }
     }
@@ -1867,5 +1916,18 @@ extension NSColor {
             blue: CGFloat(hex & 0xFF) / 255,
             alpha: 1
         )
+    }
+}
+
+extension Color {
+    /// The color mixed toward black by `amount` (0–1), for readable text in a tinted control.
+    init(hex: UInt32, darkenedBy amount: CGFloat) {
+        let k = 1 - max(0, min(1, amount))
+        self.init(nsColor: NSColor(
+            srgbRed: CGFloat((hex >> 16) & 0xFF) / 255 * k,
+            green: CGFloat((hex >> 8) & 0xFF) / 255 * k,
+            blue: CGFloat(hex & 0xFF) / 255 * k,
+            alpha: 1
+        ))
     }
 }

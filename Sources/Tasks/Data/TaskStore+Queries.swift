@@ -49,13 +49,18 @@ extension TaskStore {
     func tasks(of projectId: UUID) -> [TaskItem] { tasks(in: .project(projectId)) }
 
     /// Board column: active-sprint tasks with the given status.
-    func boardTasks(in scope: TaskScope, status: TaskStatus) -> [TaskItem] {
-        tasks(in: scope).filter { $0.sprintSlot == .active && $0.status == status }
+    func boardTasks(in scope: TaskScope, status: WorkflowStatus) -> [TaskItem] {
+        tasks(in: scope).filter { $0.sprintSlot == .active && $0.statusId == status.id }
     }
 
-    /// List group: all tasks in scope with the given status (Done includes closed sprints).
-    func listTasks(in scope: TaskScope, status: TaskStatus) -> [TaskItem] {
-        tasks(in: scope).filter { $0.status == status }
+    /// All projects board column: active-sprint tasks of a category, whatever their workflow.
+    func boardTasks(in scope: TaskScope, category: StatusCategory) -> [TaskItem] {
+        tasks(in: scope).filter { $0.sprintSlot == .active && $0.statusCategory == category }
+    }
+
+    /// List group: all tasks in scope with the given status (closed sprints included).
+    func listTasks(in scope: TaskScope, status: WorkflowStatus) -> [TaskItem] {
+        tasks(in: scope).filter { $0.statusId == status.id }
     }
 
     /// Sprints view group for one project: active, next or backlog.
@@ -68,13 +73,13 @@ extension TaskStore {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
         let matches = tasks(in: .all).filter { $0.title.localizedCaseInsensitiveContains(q) }
-        let ordered = matches.filter { !$0.isDone } + matches.filter(\.isDone)
+        let ordered = matches.filter { !$0.isClosed } + matches.filter(\.isClosed)
         return Array(ordered.prefix(limit))
     }
 
     /// Unfinished tasks in a project (sidebar count).
     func openCount(_ projectId: UUID) -> Int {
-        workspace.tasks.filter { $0.projectId == projectId && !$0.isDone }.count
+        workspace.tasks.filter { $0.projectId == projectId && !$0.isClosed }.count
     }
 
     // MARK: - Milestones
@@ -104,7 +109,8 @@ extension TaskStore {
     }
 
     func milestoneProgress(_ milestoneId: UUID) -> MilestoneProgress {
-        let tasks = workspace.tasks.filter { $0.milestoneId == milestoneId }
+        // Canceled tasks are no longer part of the work
+        let tasks = workspace.tasks.filter { $0.milestoneId == milestoneId && !$0.isCanceled }
         return MilestoneProgress(done: tasks.filter(\.isDone).count, total: tasks.count)
     }
 
@@ -157,15 +163,15 @@ extension TaskStore {
 
     // MARK: - Due dates
 
-    /// Open task whose due date is before today.
+    /// Open (not done or canceled) task whose due date is before today.
     func isOverdue(_ task: TaskItem, now: Date = Date()) -> Bool {
-        guard !task.isDone, let due = task.dueDate else { return false }
+        guard !task.isClosed, let due = task.dueDate else { return false }
         return TaskDates.isBeforeToday(due, now: now)
     }
 
     /// Open task due today.
     func isDueToday(_ task: TaskItem, now: Date = Date()) -> Bool {
-        guard !task.isDone, let due = task.dueDate else { return false }
+        guard !task.isClosed, let due = task.dueDate else { return false }
         return Calendar.current.isDate(due, inSameDayAs: now)
     }
 }

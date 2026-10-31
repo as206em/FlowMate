@@ -97,7 +97,7 @@ final class TaskComposerGroupTests: XCTestCase {
         var draft = ComposerDraft()
         draft.status = .inProgress
         let id = store.addTask(title: "Started", draft: draft, projectId: pid)!
-        XCTAssertEqual(store.task(id)?.status, .inProgress)
+        XCTAssertEqual(store.task(id)?.statusId, WorkflowStatus.inProgress.id)
         XCTAssertEqual(TaskGroupSection.preset(.slot(.next)), .sprint(.next))
         XCTAssertEqual(TaskGroupSection.preset(.group(.priority(.high), reorder: true)), .priority(.high))
     }

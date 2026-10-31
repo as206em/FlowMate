@@ -81,8 +81,9 @@ final class TasksViewModel: ObservableObject {
     @Published private(set) var selectedTaskIds: Set<UUID> = []
     /// "Adjust time…" sheet for this task (right-click menu)
     @Published var adjustingTimeTaskId: UUID?
-    /// Collapsed list/sprint groups, by key. Done starts collapsed.
-    @Published var collapsedGroups: Set<String> = [TaskGroupValue.status(.done).key] {
+    /// List/sprint groups toggled away from how they start, by key. Groups that start collapsed
+    /// (done and canceled statuses, past sprints) are listed here once opened.
+    @Published var collapsedGroups: Set<String> = [] {
         didSet { if collapsedGroups != oldValue { saveWindowState() } }
     }
     /// Filters, sort and grouping per scope ("all" or a project id), so each project keeps its own.
@@ -333,12 +334,13 @@ final class TasksViewModel: ObservableObject {
         setSelection(alive, focus: focus, anchor: selectionAnchorId.flatMap { alive.contains($0) ? $0 : nil } ?? focus)
     }
 
-    /// Past-sprint groups ("past-…") start collapsed; the others start open (Done excepted).
+    /// Past-sprint groups ("past-…") and groups of done or canceled statuses ("closed-…") start
+    /// collapsed; the others start open.
     func isCollapsed(_ key: String) -> Bool {
         Self.startsCollapsed(key) ? !collapsedGroups.contains(key) : collapsedGroups.contains(key)
     }
 
-    static func startsCollapsed(_ key: String) -> Bool { key.hasPrefix("past-") }
+    static func startsCollapsed(_ key: String) -> Bool { key.hasPrefix("past-") || key.hasPrefix("closed-") }
 
     static func pastSprintGroupKey(_ sprint: PastSprint) -> String { "past-\(sprint.id.uuidString)" }
 
@@ -395,12 +397,31 @@ final class TasksViewModel: ObservableObject {
         return store.filtered(store.tasks(in: scope), by: filter, now: now).filter { $0.sprintSlot == .closed }.count
     }
 
-    /// One board column: active-sprint tasks with the status, filtered and sorted.
+    /// Board columns: the project's statuses in workflow order, or in All projects (where
+    /// workflows differ) the categories, with Canceled only while an active-sprint task is canceled.
+    func boardColumns(_ store: TaskStore) -> [TaskGroupValue] {
+        if let statuses = store.statuses(in: scope) { return statuses.map { .status($0) } }
+        let active = store.tasks(in: scope).filter { $0.sprintSlot == .active }
+        return store.categoryColumns(for: active).map { .category($0) }
+    }
+
+    /// One board column: active-sprint tasks with the status (or category), filtered and sorted.
     /// The Sprint chip doesn't apply here: Board always shows the active sprint.
-    func boardTasks(_ store: TaskStore, status: TaskStatus, now: Date = Date()) -> [TaskItem] {
+    func boardTasks(_ store: TaskStore, column: TaskGroupValue, now: Date = Date()) -> [TaskItem] {
         var filter = self.filter
         filter.sprintSlots = []
-        return store.sorted(store.filtered(store.boardTasks(in: scope, status: status), by: filter, now: now), by: sort)
+        let tasks: [TaskItem]
+        switch column {
+        case let .status(status): tasks = store.boardTasks(in: scope, status: status)
+        case let .category(category): tasks = store.boardTasks(in: scope, category: category)
+        default: tasks = []
+        }
+        return store.sorted(store.filtered(tasks, by: filter, now: now), by: sort)
+    }
+
+    /// Every card on the board, column by column.
+    func allBoardTasks(_ store: TaskStore, now: Date = Date()) -> [TaskItem] {
+        boardColumns(store).flatMap { boardTasks(store, column: $0, now: now) }
     }
 
     /// Open tasks in the scope that Board leaves out because they sit in Next or Backlog
@@ -408,7 +429,7 @@ final class TasksViewModel: ObservableObject {
     func boardWaitingCount(_ store: TaskStore, now: Date = Date()) -> Int {
         var filter = self.filter
         filter.sprintSlots = []
-        let waiting = store.tasks(in: scope).filter { ($0.sprintSlot == .next || $0.sprintSlot == .backlog) && !$0.isDone }
+        let waiting = store.tasks(in: scope).filter { ($0.sprintSlot == .next || $0.sprintSlot == .backlog) && !$0.isClosed }
         return store.filtered(waiting, by: filter, now: now).count
     }
 
@@ -447,13 +468,13 @@ final class TasksViewModel: ObservableObject {
 
     /// nil while any Board column has a card.
     func boardEmptyReason(_ store: TaskStore, now: Date = Date()) -> EmptyReason? {
-        guard TaskStatus.ordered.allSatisfy({ boardTasks(store, status: $0, now: now).isEmpty }) else { return nil }
+        guard allBoardTasks(store, now: now).isEmpty else { return nil }
         var chips = filter
         chips.sprintSlots = []
         if !chips.isEmpty { return .noMatches }
         let all = store.tasks(in: scope)
         if all.isEmpty { return .noTasks }
-        return .sprintEmpty(waiting: all.filter { ($0.sprintSlot == .next || $0.sprintSlot == .backlog) && !$0.isDone }.count)
+        return .sprintEmpty(waiting: all.filter { ($0.sprintSlot == .next || $0.sprintSlot == .backlog) && !$0.isClosed }.count)
     }
 
     /// Sprint view groups (manual order, no filters).
@@ -468,7 +489,7 @@ final class TasksViewModel: ObservableObject {
         case .list:
             return listGroups(store, now: now).filter { !isCollapsed($0.id) }.flatMap(\.tasks)
         case .board:
-            return TaskStatus.ordered.flatMap { boardTasks(store, status: $0, now: now) }
+            return allBoardTasks(store, now: now)
         case .sprints:
             guard let projectId = scope.projectId else { return [] }
             return Self.sprintSlots
@@ -777,7 +798,7 @@ final class TasksViewModel: ObservableObject {
         let shown: [TaskItem]
         switch effectiveTab {
         case .list: shown = listGroups(store, now: now).flatMap(\.tasks)
-        case .board: shown = TaskStatus.ordered.flatMap { boardTasks(store, status: $0, now: now) }
+        case .board: shown = allBoardTasks(store, now: now)
         default: shown = visibleTasks(store, now: now)
         }
         let ids = shown.filter { store.isOverdue($0, now: now) }.map(\.id)

@@ -9,7 +9,10 @@ struct Workspace: Codable, Equatable, Sendable {
     /// 4: which projects are first-launch sample data (preferences.sampleProjectIds).
     /// 5: when you last answered Keep to "Still working on X?" (preferences.longRunKeptAt), so the
     ///    answer survives a relaunch.
-    static let currentSchemaVersion = 5
+    /// 6: statuses per project (Project.statuses, a custom workflow). Tasks store a status id and
+    ///    its category instead of the fixed To do / In progress / Done; older files get the Simple
+    ///    workflow, whose ids match the old values.
+    static let currentSchemaVersion = 6
 
     var schemaVersion: Int
     var projects: [Project]
@@ -54,6 +57,7 @@ struct Workspace: Codable, Equatable, Sendable {
         ws.preferences.sampleProjectIds.removeAll { id in !ws.projects.contains(where: { $0.id == id }) }
         // 5: older files have no Keep answers (decodes to none). Answers only matter while that timer runs.
         ws.preferences.longRunKeptAt = ws.preferences.longRunKeptAt.filter { ws.runningTimers[$0.key] != nil }
+        // 6: projects decode the Simple workflow and tasks their old status under the same id.
         ws.schemaVersion = Workspace.currentSchemaVersion
 
         let projectIds = Set(ws.projects.map(\.id))
@@ -68,6 +72,7 @@ struct Workspace: Codable, Equatable, Sendable {
         let taskIds = Set(ws.tasks.map(\.id))
         ws.runningTimers = ws.runningTimers.filter { taskIds.contains($0.key) }
         ws.preferences.longRunKeptAt = ws.preferences.longRunKeptAt.filter { ws.runningTimers[$0.key] != nil }
+        ws.normalizeStatuses()
         return ws
     }
 
