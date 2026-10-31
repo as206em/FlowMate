@@ -238,7 +238,7 @@ final class TimeLogTests: XCTestCase {
 
         let days = store.trackedSecondsByDay(in: DateInterval(start: day, end: second.end), calendar: utc, now: now)
         XCTAssertEqual(days.map(\.day), [day, midnight])
-        XCTAssertEqual(days.map(\.seconds), [3600, 5400 + 7200])
+        XCTAssertEqual(days.map(\.seconds), [3600.0, 5400.0 + 7200.0])
         XCTAssertEqual(store.trackedToday(now: now, calendar: utc), 5400 + 7200)
     }
 
