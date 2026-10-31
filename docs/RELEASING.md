@@ -5,9 +5,9 @@ Builds run on GitHub Actions. Installed copies update themselves with [Sparkle 2
 | Workflow | When | What it does |
 |---|---|---|
 | `ci.yml` | every push and pull request | tests, universal build, signs (Developer ID when the secrets exist, ad-hoc otherwise), uploads `FlowMate-<sha>.zip` as a build artifact (14 days) |
-| `release.yml` | a tag like `v1.2.0` | tests, build, Developer ID signing, notarization, `FlowMate-1.2.0.zip` on a GitHub Release, Sparkle appcast on the `gh-pages` branch |
+| `release.yml` | you run it (Actions › Release › Run workflow, or `gh workflow run release.yml`) | tests, build, Developer ID signing, notarization, `FlowMate-1.2.0.zip` on a GitHub Release, Sparkle appcast on the `gh-pages` branch |
 
-To release: `git tag v1.2.0 && git push origin v1.2.0`. The tag is the marketing version; the build number is the UTC time, so it only grows.
+The version is `1.1.<run number>` unless you type one in; the workflow creates the `v<version>` tag itself. The build number is the UTC time, so it only grows. The workflow must be on `main` to be listed in the Actions tab.
 
 ## One-time setup
 

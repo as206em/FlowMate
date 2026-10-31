@@ -1,14 +1,19 @@
 name: Release
 
-# Push a tag like v1.2.0 to publish a release:
+# Run it from the Actions tab ("Run workflow") or: gh workflow run release.yml
+# The version is 1.1.<run number> unless you type one in. The workflow creates the tag itself.
 #   builds a universal app, signs it with Developer ID, notarizes it, attaches FlowMate-1.2.0.zip
 #   to a GitHub Release and adds it to the Sparkle appcast (gh-pages branch), which installed
 #   copies of FlowMate read to offer the update.
 #
 # Secrets (Settings > Secrets and variables > Actions): see docs/RELEASING.md
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (empty = 1.1.<run number>)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -26,7 +31,10 @@ jobs:
 
       - name: Version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+          [ -n "$VERSION" ] || VERSION="1.1.${{ github.run_number }}"
+          echo "TAG=v$VERSION" >> "$GITHUB_ENV"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           # Sparkle compares this number to decide what is newer: it must only ever grow
           echo "BUILD_NUMBER=$(date -u +%Y%m%d%H%M)" >> "$GITHUB_ENV"
@@ -85,13 +93,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" --jq .body > notes.md
-          gh release create "$GITHUB_REF_NAME" "$ZIP" --title "FlowMate $VERSION" --notes-file notes.md
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" --jq .body > notes.md
+          gh release create "$TAG" "$ZIP" --target "$GITHUB_SHA" --title "FlowMate $VERSION" --notes-file notes.md
 
       - name: Publish appcast (gh-pages)
         run: |
           [ -n "$ED_SIGNATURE" ] || { echo "::error::No Sparkle signature"; exit 1; }
-          URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$ZIP"
+          URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$ZIP"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if git ls-remote --exit-code --heads origin gh-pages > /dev/null; then
