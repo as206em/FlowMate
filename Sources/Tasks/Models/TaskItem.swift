@@ -106,6 +106,9 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
     var focusDate: Date?
     /// Order inside Today's My focus (drag to reorder); lower comes first.
     var focusIndex: Double
+    /// Workspace labels (Workspace.labels), in the order they were added. The store keeps them
+    /// existing and unique (Workspace.normalizeLabels).
+    var labelIds: [UUID]
 
     init(
         id: UUID = UUID(),
@@ -126,7 +129,8 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         closedSprintNumber: Int? = nil,
         completedAt: Date? = nil,
         focusDate: Date? = nil,
-        focusIndex: Double = 0
+        focusIndex: Double = 0,
+        labelIds: [UUID] = []
     ) {
         self.id = id
         self.projectId = projectId
@@ -148,6 +152,7 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         self.completedAt = status.category.isClosed ? (completedAt ?? self.updatedAt) : nil
         self.focusDate = focusDate
         self.focusIndex = focusIndex
+        self.labelIds = labelIds
     }
 
     /// Finished: done or canceled. Closed tasks have no timer, aren't overdue and collapse in List.
@@ -164,7 +169,7 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, projectId, milestoneId, sprintSlot, statusId, statusCategory, priority, title, notes, subtasks
         case dueDate, expectedMinutes, spentSeconds, createdAt, updatedAt, completedAt, sortIndex, closedSprintNumber
-        case focusDate, focusIndex
+        case focusDate, focusIndex, labelIds
     }
 
     private enum LegacyKeys: String, CodingKey { case status }
@@ -203,5 +208,7 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         // Schema 8 and older: nothing is pinned to Today
         focusDate = c.decodeOptional(.focusDate)
         focusIndex = c.decode(.focusIndex, or: 0)
+        // Schema 10 and older: no labels
+        labelIds = c.decodeLossyArray(.labelIds)
     }
 }

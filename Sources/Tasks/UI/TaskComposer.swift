@@ -7,7 +7,7 @@ import SwiftUI
 /// Tasks added here take the group's value (its status, sprint, milestone, priority or project).
 ///
 /// Recognised words (see ComposerInput) leave the title and fill their button as soon as a space
-/// follows them. A word starting with # @ ! + or / opens a menu: ↑/↓ choose, ↵ or Tab pick,
+/// follows them. A word starting with # @ ! + * % or / opens a menu: ↑/↓ choose, ↵ or Tab pick,
 /// Esc closes it, typing filters it. ↵ adds, ⇧↵ adds and opens. ⌘N focuses it.
 struct TaskComposer: View {
     @EnvironmentObject private var store: TaskStore
@@ -35,7 +35,7 @@ struct TaskComposer: View {
     @State private var added: Added?
     @FocusState private var focused: Bool
 
-    enum Picker: Hashable { case project, status, sprint, milestone, priority, due, time }
+    enum Picker: Hashable { case project, status, sprint, milestone, priority, due, time, labels }
 
     struct Added: Equatable {
         let title: String
@@ -142,7 +142,7 @@ struct TaskComposer: View {
                 .disabled(target == nil)
                 .onSubmit(submit)
                 .accessibilityLabel("New task title")
-                .accessibilityHint("Type 2h, #next, @milestone, !high, *status, +project or due:fri to set them. Return adds.")
+                .accessibilityHint("Type 2h, #next, @milestone, !high, *status, %label, +project or due:fri to set them. Return adds.")
         }
         .padding(.horizontal, 12)
         .frame(height: Self.fieldHeight)
@@ -257,6 +257,26 @@ struct TaskComposer: View {
                 }
             }
 
+            let labels = draft.labelIds.compactMap { store.label($0) }
+            let labelNames = labels.map(\.name) + draft.newLabelNames
+            ComposerPropertyButton(tint: .label(labels.first?.colorHex), isSet: !labelNames.isEmpty, isOpen: binding(.labels)) {
+                if let first = labels.first {
+                    Circle().fill(Color(hex: first.colorHex)).frame(width: 7, height: 7)
+                } else {
+                    Image(systemName: "tag").font(.system(size: 10, weight: .semibold))
+                }
+                Text(labelNames.isEmpty ? "Labels" : (labelNames.count <= 2 ? labelNames.joined(separator: ", ") : "\(labelNames[0]) +\(labelNames.count - 1)"))
+            } popover: {
+                LabelsPicker(
+                    state: { draft.labelIds.contains($0) ? .on : .off },
+                    toggle: { id in
+                        if let index = draft.labelIds.firstIndex(of: id) { draft.labelIds.remove(at: index) } else { draft.labelIds.append(id) }
+                    },
+                    create: { name in draft.addLabel(named: name, existing: store.matchLabel(name)) }
+                )
+                .environmentObject(store)
+            }
+
             ComposerPropertyButton(tint: .due, isSet: draft.dueDate != nil, isOpen: binding(.due)) {
                 Image(systemName: "calendar").font(.system(size: 10, weight: .semibold))
                 Text(draft.dueDate.map { "Due " + TaskDates.dueLabel($0) } ?? "Due date")
@@ -302,7 +322,7 @@ struct TaskComposer: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(Focus.text)
             } else {
-                Text("Type 2h, #next, @milestone, !high, *status, +project or due:fri. / lists everything.")
+                Text("Type 2h, #next, @milestone, !high, %label, *status, +project or due:fri. / lists everything.")
                     .font(.system(size: 12))
                     .foregroundColor(Focus.text3)
                     .lineLimit(1)
@@ -385,6 +405,8 @@ struct TaskComposer: View {
         case let .priority(priority): draft.priority = priority
         case let .project(id): setProject(id)
         case let .status(status): draft.status = status
+        case let .label(id): if !draft.labelIds.contains(id) { draft.labelIds.append(id) }
+        case let .newLabel(name): draft.addLabel(named: name, existing: store.matchLabel(name))
         case let .trigger(trigger):
             title = rest + String(trigger.rawValue)
             highlight = 0
@@ -429,6 +451,7 @@ struct TaskComposer: View {
         case let .due(date): draft.dueDate = date
         case let .project(name): if let id = store.matchProject(name)?.id { setProject(id) }
         case let .status(name): draft.status = store.matchStatus(name, projectId: (targetProject ?? target).id)
+        case let .label(name): draft.addLabel(named: name, existing: store.matchLabel(name))
         }
     }
 
@@ -458,6 +481,7 @@ struct TaskComposer: View {
         draft.priority = nil
         draft.dueDate = nil
         draft.expectedMinutes = nil
+        draft.clearLabels()
         applyPreset()
         if open {
             added = nil
@@ -550,9 +574,12 @@ private struct ComposerPropertyButton<Label: View, Popover: View>: View {
 /// Colours of the property buttons; each kind differs in lightness as well as hue.
 private enum ComposerTint {
     case neutral, sprint, milestone, priority, due, time
+    /// The first label's color (gray without one)
+    case label(UInt32?)
 
     private var base: Color {
         switch self {
+        case let .label(hex): return hex.map { Color(hex: $0) } ?? Focus.text3
         case .neutral: return Focus.text
         case .sprint: return Focus.done
         case .milestone: return Color(hex: 0x14B8A6)
@@ -570,11 +597,13 @@ private enum ComposerTint {
         case .priority: return Color(hex: 0xB42318)
         case .due: return Color(hex: 0x1D5FB0)
         case .time: return Color(hex: 0x8A5300)
+        case let .label(hex): return hex.map { Color(hex: $0, darkenedBy: 0.35) } ?? Focus.text2
         }
     }
 
-    var fill: Color { self == .neutral ? Focus.sidebar : base.opacity(0.1) }
-    var stroke: Color { self == .neutral ? Focus.hairline : base.opacity(0.4) }
+    private var isNeutral: Bool { if case .neutral = self { return true }; return false }
+    var fill: Color { isNeutral ? Focus.sidebar : base.opacity(0.1) }
+    var stroke: Color { isNeutral ? Focus.hairline : base.opacity(0.4) }
 }
 
 /// Expected time presets, a typed value and Clear.

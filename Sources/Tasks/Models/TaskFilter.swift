@@ -33,6 +33,8 @@ struct TaskFilter: Equatable, Codable, Sendable {
     var due: Set<TaskDueFilter> = []
     /// Only used in All projects.
     var projectIds: Set<UUID> = []
+    /// Label ids (TaskLabel): a task with any of them matches.
+    var labels: Set<UUID> = []
 
     init() {}
 
@@ -43,11 +45,12 @@ struct TaskFilter: Equatable, Codable, Sendable {
 
     /// How many dimensions (chips) are set, search excluded.
     var chipCount: Int {
-        [statuses.isEmpty && categories.isEmpty, priorities.isEmpty, milestones.isEmpty, sprintSlots.isEmpty, due.isEmpty, projectIds.isEmpty]
+        [statuses.isEmpty && categories.isEmpty, priorities.isEmpty, milestones.isEmpty, sprintSlots.isEmpty, due.isEmpty,
+         projectIds.isEmpty, labels.isEmpty]
             .filter { !$0 }.count
     }
 
-    private enum CodingKeys: String, CodingKey { case query, statuses, categories, priorities, milestones, sprintSlots, due, projectIds }
+    private enum CodingKeys: String, CodingKey { case query, statuses, categories, priorities, milestones, sprintSlots, due, projectIds, labels }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -60,12 +63,13 @@ struct TaskFilter: Equatable, Codable, Sendable {
         sprintSlots = c.decode(.sprintSlots, or: [])
         due = c.decode(.due, or: [])
         projectIds = c.decode(.projectIds, or: [])
+        labels = c.decode(.labels, or: [])
     }
 }
 
 /// What the List groups its rows by. Dragging a row to another group changes that value.
 enum TaskGrouping: String, CaseIterable, Identifiable, Sendable, TolerantStringEnum {
-    case status, milestone, project, priority, sprint
+    case status, milestone, project, priority, sprint, label
 
     static var fallback: TaskGrouping { .status }
     var id: String { rawValue }
@@ -77,6 +81,7 @@ enum TaskGrouping: String, CaseIterable, Identifiable, Sendable, TolerantStringE
         case .project: return "Project"
         case .priority: return "Priority"
         case .sprint: return "Sprint"
+        case .label: return "Label"
         }
     }
 
@@ -135,6 +140,8 @@ enum TaskGroupValue: Hashable, Sendable {
     case project(UUID)
     case priority(TaskPriority)
     case sprint(SprintSlot)
+    /// A label; nil is "No label". A task with several labels is listed under each of them.
+    case label(UUID?)
 
     /// Stable key for collapsing and the drop outline. Groups of done and canceled statuses start
     /// with "closed-", so they start collapsed (TasksViewModel.startsCollapsed).
@@ -146,6 +153,7 @@ enum TaskGroupValue: Hashable, Sendable {
         case let .project(id): return "project-\(id.uuidString)"
         case let .priority(p): return "priority-\(p.rawValue)"
         case let .sprint(slot): return "sprint-\(slot.rawValue)"
+        case let .label(id): return "label-\(id?.uuidString ?? "none")"
         }
     }
 }
@@ -162,6 +170,8 @@ struct TaskGroup: Identifiable, Equatable, Sendable {
     /// Status and category groups: the status icon to draw
     var statusKind: FocusStatusKind?
     var statusColorHex: UInt32?
+    /// Label groups: the label's color (a dot before the name)
+    var labelColorHex: UInt32?
     /// False for groups you can't drop into (closed sprints)
     var acceptsDrop = true
     var tasks: [TaskItem]

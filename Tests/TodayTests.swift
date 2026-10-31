@@ -178,7 +178,7 @@ final class TodayTests: XCTestCase {
         """
         let decoder = LocalJSONWorkspaceRepository.makeDecoder()
         var ws = try decoder.decode(Workspace.self, from: Data(json.utf8)).migrated()
-        XCTAssertEqual(ws.schemaVersion, 10)
+        XCTAssertEqual(ws.schemaVersion, Workspace.currentSchemaVersion)
         XCTAssertEqual(ws.tasks.count, 1)
         XCTAssertNil(ws.tasks[0].focusDate, "nothing is pinned in older files")
         XCTAssertEqual(ws.tasks[0].title, "Write")

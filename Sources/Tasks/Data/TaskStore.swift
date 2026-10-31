@@ -304,6 +304,8 @@ final class TaskStore: ObservableObject {
         copy.normalizeCompletion()
         copy.normalizeTime()
         copy.assignMilestoneColors()
+        // Tasks carry only labels that exist; views of a deleted project or milestone go with it
+        copy.normalizeLabels()
         guard copy != workspace else { return }
         let before = workspace
         workspace = copy

@@ -12,6 +12,10 @@ enum MenuSearchItem: Hashable, Sendable {
     case task(UUID)
     /// A command (palette)
     case command(PaletteCommand)
+    /// A label (palette): All projects' List filtered to it
+    case label(UUID)
+    /// A saved view (palette): shows it
+    case savedView(UUID)
 }
 
 /// The menu bar search results and the ⌘K palette's, in display order, and the keyboard
@@ -41,7 +45,7 @@ struct MenuSearchResultsModel: Equatable {
             case let .project(id): projects.append(id)
             case let .milestone(id): milestones.append(id)
             case let .task(id): tasks.append(id)
-            case .add, .today, .command: break
+            case .add, .today, .command, .label, .savedView: break
             }
         }
     }
@@ -93,7 +97,7 @@ extension TaskStore {
     }
 
     /// The palette's places, scored against the typed text (FuzzyMatch): Today, projects
-    /// (archived ones too, lower), milestones (open ones first) and tasks of every project (open
+    /// (archived ones too, lower), milestones (open ones first), saved views, labels and tasks of every project (open
     /// ones first; a task needs a closer match than a place, so a short query isn't all tasks).
     func paletteMatches(_ query: String) -> [(item: MenuSearchItem, score: Int)] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -111,6 +115,14 @@ extension TaskStore {
             let projectName = self.project(milestone.projectId)?.name ?? ""
             guard let score = FuzzyMatch.score(q, in: [milestone.name, projectName + " " + milestone.name]) else { continue }
             matches.append((.milestone(milestone.id), score + (milestone.isCompleted ? -60 : 2)))
+        }
+        for view in savedViews {
+            guard let score = FuzzyMatch.score(q, in: [view.name, "View " + view.name]) else { continue }
+            matches.append((.savedView(view.id), score + 3))
+        }
+        for label in labels {
+            guard let score = FuzzyMatch.score(q, in: [label.name, "%" + label.name, "Label " + label.name]) else { continue }
+            matches.append((.label(label.id), score + 1))
         }
         for task in tasks(in: .all) {
             guard let score = FuzzyMatch.score(q, in: task.title), score >= 500 else { continue }

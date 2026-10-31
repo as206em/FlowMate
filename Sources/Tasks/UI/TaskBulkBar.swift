@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Floating bar for two or more selected tasks (⌘-click, ⇧-click, ⌘A):
-/// "3 selected · Status · Priority · Milestone · Sprint · Due · Move to · Delete · ×".
+/// "3 selected · Status · Priority · Milestone · Sprint · Due · Labels · Move to · Delete · ×".
 /// Every action is one undo step with an "Undo" toast.
 struct TaskBulkBar: View {
     @EnvironmentObject private var store: TaskStore
@@ -9,7 +9,7 @@ struct TaskBulkBar: View {
 
     @State private var open: Menu?
 
-    private enum Menu: Hashable { case status, priority, milestone, sprint, due, project }
+    private enum Menu: Hashable { case status, priority, milestone, sprint, due, labels, project }
 
     var body: some View {
         let ids = model.selectedIds(store)
@@ -26,6 +26,9 @@ struct TaskBulkBar: View {
                 menuButton("Sprint", .sprint, help: "Move to a sprint (R)") { sprintMenu(ids) }
             }
             menuButton("Due", .due, help: "Set the due date (D)") { dueMenu }
+            menuButton("Labels", .labels, help: "Add or remove labels (L)") {
+                TaskLabelsEditor(taskIds: ids, toast: true) { done() }
+            }
             if store.projects.count > 1 {
                 menuButton("Move to", .project, help: "Move to another project (⇧M)") { projectMenu }
             }

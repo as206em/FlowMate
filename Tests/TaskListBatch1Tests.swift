@@ -105,7 +105,7 @@ final class TaskListBatch1Tests: XCTestCase {
     // MARK: - Column layout (#3)
 
     func testColumnLayoutKeepsTitleRoom() {
-        let wide = TaskColumnLayout.make(showProject: true, width: 1000)
+        let wide = TaskColumnLayout.make(showProject: true, width: 1200)
         XCTAssertEqual(wide.columns, TaskColumn.allCases)
 
         let project = TaskColumnLayout.make(showProject: false, width: 1000)

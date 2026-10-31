@@ -21,6 +21,8 @@ struct TasksRootView: View {
             model.dropStaleIds(store)
         }
         .onChange(of: store.workspace.milestones.map(\.id)) { _ in model.dropStaleIds(store) }
+        // The saved view on screen was deleted (or undone away)
+        .onChange(of: store.workspace.savedViews.map(\.id)) { _ in model.dropStaleIds(store) }
         // Sprints on or off and default views, which the tabs and filters follow
         .onChange(of: store.workspace.projects) { _ in model.syncProjects(store) }
         // The restored scope (last launch) may name a project that's gone
@@ -48,6 +50,16 @@ struct TasksRootView: View {
                     .environmentObject(store)
                     .environmentObject(model)
             }
+        }
+        .sheet(isPresented: $model.showingLabelsManager) {
+            LabelsManagerSheet()
+                .environmentObject(store)
+                .environmentObject(model)
+        }
+        .sheet(item: $model.savingView) { request in
+            SaveViewSheet(request: request)
+                .environmentObject(store)
+                .environmentObject(model)
         }
         .onChange(of: store.workspace.tasks.map(\.id)) { _ in
             // A selected task was deleted (here, by undo or from the menu bar)

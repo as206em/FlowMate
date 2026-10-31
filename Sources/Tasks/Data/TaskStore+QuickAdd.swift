@@ -81,6 +81,11 @@ extension TaskStore {
             }
         }
         if let slot = input.slot { applied.append(sprintLabel(slot, projectId: target)) }
+        for query in input.labelQueries {
+            draft.addLabel(named: query, existing: matchLabel(query))
+        }
+        let labelNames = draft.labelIds.compactMap { label($0)?.name } + draft.newLabelNames
+        applied += labelNames.map { "%" + $0 }
         if let due = input.dueDate { applied.append("Due " + TaskDates.dueLabel(due, now: now)) }
         if let minutes = input.expectedMinutes { applied.append(TaskDurationParser.format(seconds: TimeInterval(minutes * 60))) }
 
@@ -133,6 +138,8 @@ extension TaskStore {
             parts.append("◆ " + (plan.draft.milestoneId.flatMap { milestone($0)?.name } ?? "No milestone “\(query)”"))
         }
         if let slot = input.slot { parts.append(sprintLabel(slot, projectId: plan.projectId)) }
+        parts += plan.draft.labelIds.compactMap { label($0).map { "%" + $0.name } }
+        parts += plan.draft.newLabelNames.map { "New label %\($0)" }
         if let due = input.dueDate { parts.append("Due " + TaskDates.dueLabel(due, now: now)) }
         if let minutes = input.expectedMinutes { parts.append(Focus.durationString(minutes: minutes)) }
         return parts
@@ -145,7 +152,7 @@ extension TaskStore {
         return project(projectId)
     }
 
-    /// Tab in a one-line box: completes the word being typed after # @ ! + or * with the first
+    /// Tab in a one-line box: completes the word being typed after # @ ! + * or % with the first
     /// match, written as a token ("@beta_launch "). nil when there's nothing to complete.
     func completeQuickAdd(_ text: String, projectId: UUID?) -> String? {
         guard let active = ComposerInput.activeTrigger(text), active.trigger != .all else { return nil }
@@ -167,7 +174,9 @@ extension TaskStore {
             case let .priority(priority): word = "!" + priority.title.lowercased()
             case let .project(id): word = ComposerInput.word(.project, project(id)?.name ?? "")
             case let .status(status): word = ComposerInput.word(.status, status.name)
-            case .newMilestone, .trigger, .pickDue, .pickTime: continue
+            case let .label(id): word = ComposerInput.word(.label, label(id)?.name ?? "")
+            // A new name is complete as typed; it's made when the task is added
+            case .newLabel, .newMilestone, .trigger, .pickDue, .pickTime: continue
             }
             return earlier + word + " "
         }

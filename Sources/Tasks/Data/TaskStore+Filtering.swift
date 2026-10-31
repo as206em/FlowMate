@@ -15,6 +15,8 @@ extension TaskStore {
         // Statuses of a workflow that has since changed are ignored the same way
         let statusIds = filter.statuses.intersection(workspace.projects.flatMap { $0.statuses.map(\.id) })
         let categories = filter.categories
+        let labelIds = filter.labels.intersection(workspace.labels.map(\.id))
+        let labelNames = words.isEmpty ? [:] : Dictionary(workspace.labels.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: now)
         let weekEnd = calendar.dateInterval(of: .weekOfYear, for: now)?.end ?? today.addingTimeInterval(7 * 86_400)
@@ -26,6 +28,8 @@ extension TaskStore {
             if !milestones.isEmpty, !milestones.contains(task.milestoneId) { return false }
             if !filter.sprintSlots.isEmpty, !filter.sprintSlots.contains(task.sprintSlot) { return false }
             if !projectIds.isEmpty, !projectIds.contains(task.projectId) { return false }
+            // Any of the labels
+            if !labelIds.isEmpty, !task.labelIds.contains(where: labelIds.contains) { return false }
             if !filter.due.isEmpty {
                 let matches = filter.due.contains { due in
                     switch due {
@@ -37,7 +41,8 @@ extension TaskStore {
                 if !matches { return false }
             }
             if !words.isEmpty {
-                let fields = [task.title, task.notes] + task.subtasks.map(\.title)
+                // Label names count as words of the task too
+                let fields = [task.title, task.notes] + task.subtasks.map(\.title) + task.labelIds.compactMap { labelNames[$0] }
                 for word in words where !fields.contains(where: { $0.localizedStandardContains(word) }) {
                     return false
                 }
@@ -92,6 +97,17 @@ extension TaskStore {
             }
             result.append(group(.milestone(nil), "No milestone") { $0.milestoneId == nil })
             return result
+        case .label:
+            // A task with several labels is listed under each of them; labels the scope's tasks
+            // use, by name, then No label
+            let used = Set(self.tasks(in: scope).flatMap(\.labelIds)).union(tasks.flatMap(\.labelIds))
+            var result = labels.filter { used.contains($0.id) }.map { label -> TaskGroup in
+                var g = group(.label(label.id), label.name) { $0.labelIds.contains(label.id) }
+                g.labelColorHex = label.colorHex
+                return g
+            }
+            result.append(group(.label(nil), "No label") { $0.labelIds.isEmpty })
+            return result
         case .sprint:
             let sprint = scope.projectId.flatMap { project($0)?.sprint }
             var result = [
@@ -135,6 +151,13 @@ extension TaskStore {
                     setProject(id, milestone.projectId)
                 }
                 setMilestone(id, milestoneId)
+            case let .label(labelId):
+                // A label group adds its label (the others stay); No label takes them all off
+                if let labelId {
+                    addLabel(labelId, to: [id])
+                } else if !task.labelIds.isEmpty {
+                    setLabels(id, [])
+                }
             }
             if reorder { self.reorder(id, before: beforeTaskId) }
         }

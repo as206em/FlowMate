@@ -164,6 +164,8 @@ private struct PaletteRow: View {
         case let .milestone(id): return store.milestone(id)?.name ?? ""
         case let .task(id): return store.task(id)?.title ?? ""
         case let .command(command): return model.paletteTitle(command, store: store)
+        case let .label(id): return store.label(id)?.name ?? ""
+        case let .savedView(id): return store.savedView(id)?.name ?? ""
         }
     }
 
@@ -173,6 +175,10 @@ private struct PaletteRow: View {
         case let .project(id): return store.project(id)?.isArchived == true ? "Archived" : "\(store.openCount(id)) open"
         case let .milestone(id): return store.milestone(id).flatMap { store.project($0.projectId)?.name } ?? ""
         case let .task(id): return store.task(id).flatMap { store.project($0.projectId)?.name } ?? ""
+        case let .label(id):
+            let count = store.labelUsage()[id] ?? 0
+            return "Label · \(count) \(count == 1 ? "task" : "tasks")"
+        case let .savedView(id): return store.savedView(id).map { "View · " + store.savedViewPlace($0) } ?? ""
         case .add, .command: return ""
         }
     }
@@ -180,6 +186,7 @@ private struct PaletteRow: View {
     private var kind: String {
         switch item {
         case .today, .project, .milestone: return "↵ go · ⇧↵ panel"
+        case .label, .savedView: return "↵ show"
         case .task: return "↵ go · ⇧↵ open here"
         case .add, .command: return "Command"
         }
@@ -196,6 +203,13 @@ private struct PaletteRow: View {
             if let milestone = store.milestone(id) { MilestoneIcon(milestone, size: 12) }
         case let .task(id):
             if let task = store.task(id) { WorkflowStatusIcon(status: store.status(of: task), size: 14) }
+        case let .label(id):
+            if let label = store.label(id) {
+                Circle().fill(Color(hex: label.colorHex)).frame(width: 9, height: 9).frame(width: 16)
+            }
+        case let .savedView(id):
+            Image(systemName: store.savedView(id)?.iconName ?? SavedView.defaultIcon)
+                .font(.system(size: 12, weight: .medium)).foregroundColor(Focus.text2)
         case .command, .add:
             Image(systemName: "chevron.right.2").font(.system(size: 10, weight: .bold)).foregroundColor(Focus.text3)
         }

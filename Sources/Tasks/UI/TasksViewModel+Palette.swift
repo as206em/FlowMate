@@ -29,6 +29,12 @@ enum PaletteCommand: Hashable, Sendable {
     case toggleTimer
     case duplicate
     case delete
+    /// The Labels sheet
+    case manageLabels
+    /// Save what's on screen as a view (when the filters differ from the defaults)
+    case saveView
+    /// The saved view on screen: take the current filters, or go back to the saved ones
+    case updateView, revertView
 }
 
 extension TasksViewModel {
@@ -72,7 +78,7 @@ extension TasksViewModel {
             if commandsOnly { return MenuSearchResultsModel(ranked: commands.map(MenuSearchItem.command)) }
             let recent = paletteRecents.compactMap { paletteItem(forKey: $0, store: store) }
             // Nothing picked yet: Today and the projects, then the commands for the selection
-            let fallback: [MenuSearchItem] = [.today] + store.projects.map { .project($0.id) }
+            let fallback: [MenuSearchItem] = [.today] + store.savedViews.map { .savedView($0.id) } + store.projects.map { .project($0.id) }
             let base = recent.isEmpty ? fallback : recent
             let suggested = commands.filter { if case .quickAction = $0 { return true }; return $0 == .newTask }
             return MenuSearchResultsModel(ranked: Array((base + suggested.map(MenuSearchItem.command)).prefix(limit)))
@@ -99,10 +105,12 @@ extension TasksViewModel {
         switch item {
         case .today: return 0
         case .project: return 1
-        case .milestone: return 2
-        case .command: return 3
-        case .task: return 4
-        case .add: return 5
+        case .savedView: return 2
+        case .milestone: return 3
+        case .label: return 4
+        case .command: return 5
+        case .task: return 6
+        case .add: return 7
         }
     }
 
@@ -150,6 +158,9 @@ extension TasksViewModel {
         }
         commands += projects.map { .toggleMilestones($0.id) }
         if !store.archivedProjects.isEmpty { commands.append(.toggleArchived) }
+        if canSaveView { commands.append(.saveView) }
+        if isViewModified(store) { commands += [.updateView, .revertView] }
+        commands.append(.manageLabels)
         commands += [.focusSidebar, .showShortcuts, .openSettings]
         return commands
     }
@@ -184,6 +195,10 @@ extension TasksViewModel {
         case .toggleTimer: return "Start or pause the timer"
         case .duplicate: return "Duplicate \(subject)"
         case .delete: return "Delete \(subject)"
+        case .manageLabels: return "Manage labels…"
+        case .saveView: return "Save view…"
+        case .updateView: return "Update view \(activeView(store)?.name ?? "")"
+        case .revertView: return "Revert view \(activeView(store)?.name ?? "")"
         }
     }
 
@@ -210,6 +225,10 @@ extension TasksViewModel {
         case .toggleTimer: return ["play", "track"]
         case .duplicate: return ["copy"]
         case .delete: return ["remove", "trash"]
+        case .manageLabels: return ["labels", "tags", "rename label", "delete label"]
+        case .saveView: return ["smart list", "save filter", "new view"]
+        case .updateView: return ["save view", "smart list"]
+        case .revertView: return ["reset view", "discard"]
         }
     }
 
@@ -260,6 +279,10 @@ extension TasksViewModel {
             openTask(id)
         case let .command(command):
             run(command, store: store)
+        case let .label(id):
+            showLabel(id, store: store)
+        case let .savedView(id):
+            applySavedView(id, store: store)
         }
     }
 
@@ -319,6 +342,14 @@ extension TasksViewModel {
             if isMultiSelecting, !isPanelOpen { duplicateSelected(store) } else if let id = targetTaskId(store) { duplicateTask(id, store: store) }
         case .delete:
             if isMultiSelecting, !isPanelOpen { deleteSelected(store) } else if let id = targetTaskId(store) { deleteTask(id, store: store) }
+        case .manageLabels:
+            showingLabelsManager = true
+        case .saveView:
+            if canSaveView { savingView = SaveViewRequest(kind: .new) }
+        case .updateView:
+            updateActiveView(store)
+        case .revertView:
+            revertActiveView(store)
         }
     }
 
@@ -331,6 +362,8 @@ extension TasksViewModel {
         case let .project(id): return "project:\(id.uuidString)"
         case let .milestone(id): return "milestone:\(id.uuidString)"
         case let .task(id): return "task:\(id.uuidString)"
+        case let .label(id): return "label:\(id.uuidString)"
+        case let .savedView(id): return "view:\(id.uuidString)"
         case .add, .command: return nil
         }
     }
@@ -344,6 +377,8 @@ extension TasksViewModel {
         case "project": return store.project(id) != nil ? .project(id) : nil
         case "milestone": return store.milestone(id) != nil ? .milestone(id) : nil
         case "task": return store.task(id) != nil ? .task(id) : nil
+        case "label": return store.label(id) != nil ? .label(id) : nil
+        case "view": return store.savedView(id) != nil ? .savedView(id) : nil
         default: return nil
         }
     }

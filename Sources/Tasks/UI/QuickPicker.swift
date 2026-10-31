@@ -1,8 +1,9 @@
 import AppKit
 import SwiftUI
 
-// The single-key pickers (S, P, M, R, D, E, T, ⇧M): a field that filters as you type, the options
-// below it, ↑/↓ to move, ↵ to choose, Esc to close. It hangs from the selected row or card, the
+// The single-key pickers (S, P, M, R, D, E, T, L, ⇧M): a field that filters as you type, the options
+// below it, ↑/↓ to move, ↵ to choose, Esc to close. L (labels) toggles instead and stays open:
+// ↵ or Space (with the field empty) toggles the highlighted label. It hangs from the selected row or card, the
 // bulk bar for several tasks, or the task panel. Options and what they do: TasksViewModel+Keyboard.
 
 // MARK: - Keys in a field
@@ -273,7 +274,7 @@ struct QuickPickerView: View {
                 }
             }
             FocusDivider()
-            Text("↑↓ choose · ↵ set · esc close")
+            Text(request.action.isMultiSelect ? "↑↓ choose · ↵ or space toggle · esc close" : "↑↓ choose · ↵ set · esc close")
                 .font(.system(size: 11.5))
                 .foregroundColor(Focus.text3)
                 .padding(.horizontal, 12)
@@ -323,6 +324,12 @@ struct QuickPickerView: View {
     }
 
     private func handle(_ event: NSEvent, options: [QuickPickOption]) -> Bool {
+        // Space toggles a label while nothing is typed (a typed name can have spaces)
+        if request.action.isMultiSelect, event.keyCode == 49, query.isEmpty,
+           event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
+            if !options.isEmpty { choose(options[min(highlight, options.count - 1)]) }
+            return true
+        }
         guard let key = ListKey(event) else { return false }
         switch key {
         case .up: highlight = max(min(highlight, options.count - 1) - 1, 0)
@@ -338,7 +345,12 @@ struct QuickPickerView: View {
 
     private func choose(_ option: QuickPickOption) {
         model.applyQuickPick(option.value, ids: request.taskIds, store: store)
-        close()
+        if request.action.isMultiSelect {
+            // Stays open for the next one; a new label was typed, so the field starts over
+            if option.isTyped { query = "" }
+        } else {
+            close()
+        }
     }
 }
 
@@ -361,6 +373,8 @@ private struct QuickPickRow: View {
                 }
                 if option.isCurrent {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundColor(Focus.text2)
+                } else if option.isMixed {
+                    Image(systemName: "minus").font(.system(size: 11, weight: .bold)).foregroundColor(Focus.text3)
                 }
             }
             .padding(.horizontal, 8)
@@ -388,6 +402,8 @@ private struct QuickPickRow: View {
         case let .project(name, colorHex, icon): FocusProjectTile(name: name, colorHex: colorHex, size: 14, icon: icon)
         case let .symbol(name):
             Image(systemName: name).font(.system(size: 11, weight: .semibold)).foregroundColor(Focus.text3)
+        case let .label(hex):
+            Circle().fill(Color(hex: hex)).frame(width: 8, height: 8)
         }
     }
 }

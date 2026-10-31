@@ -13,6 +13,8 @@ struct TasksHeader: View {
         HStack(spacing: 14) {
             if model.scope.isToday {
                 TodayHeaderTitle()
+            } else if let view = model.activeView(store) {
+                SavedViewHeaderTitle(view: view)
             } else if let milestone {
                 MilestoneHeaderTitle(milestone: milestone)
             } else if let project {

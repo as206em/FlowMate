@@ -54,7 +54,7 @@ final class SprintCapacityTests: XCTestCase {
         """
         let decoder = LocalJSONWorkspaceRepository.makeDecoder()
         let ws = try decoder.decode(Workspace.self, from: Data(json.utf8)).migrated(now: now)
-        XCTAssertEqual(ws.schemaVersion, 10)
+        XCTAssertEqual(ws.schemaVersion, Workspace.currentSchemaVersion)
         let project = ws.projects[0]
         XCTAssertTrue(project.usesSprints, "older projects keep their sprints")
         XCTAssertNil(project.weeklyCapacityHours)

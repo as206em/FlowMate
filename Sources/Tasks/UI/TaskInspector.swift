@@ -22,6 +22,7 @@ struct TaskInspector: View {
                         property("Today") { TaskTodayField(task: task) }
                     }
                     property("Expected", key: "E") { expectedPicker }
+                    property("Labels", key: "L") { TaskLabelsField(task: task) }
                     property("Project") { projectPicker }
                 }
                 .padding(.top, 16)

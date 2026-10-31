@@ -16,8 +16,8 @@ enum TasksShortcut: Equatable, CaseIterable {
     /// ⌘T: add the selected tasks to Today, or remove them
     case toggleToday
     case help, clearSelection
-    /// Single keys on the selection or the open task: S, P, M, R, D, E, T, ⇧M
-    case pickStatus, pickPriority, pickMilestone, pickSprint, pickDue, pickExpected, pickTimeSpent, pickProject
+    /// Single keys on the selection or the open task: S, P, M, R, D, E, T, L, ⇧M
+    case pickStatus, pickPriority, pickMilestone, pickSprint, pickDue, pickExpected, pickTimeSpent, pickLabels, pickProject
     /// X: done, or back to Not started
     case toggleDone
     /// 1–4: priority by level (4 does nothing while there are three levels)
@@ -88,6 +88,7 @@ enum TasksShortcut: Equatable, CaseIterable {
         case .pickDue: return .due
         case .pickExpected: return .expected
         case .pickTimeSpent: return .timeSpent
+        case .pickLabels: return .labels
         case .pickProject: return .project
         default: return nil
         }
@@ -138,6 +139,7 @@ enum TasksShortcut: Equatable, CaseIterable {
             case "d": return .pickDue
             case "e": return .pickExpected
             case "t": return .pickTimeSpent
+            case "l": return .pickLabels
             case "x": return .toggleDone
             case "1": return .priority1
             case "2": return .priority2
@@ -321,7 +323,7 @@ extension TasksViewModel {
             selectedTaskId = nil
         case .left, .right:
             return false
-        case .pickStatus, .pickPriority, .pickMilestone, .pickSprint, .pickDue, .pickExpected, .pickTimeSpent, .pickProject,
+        case .pickStatus, .pickPriority, .pickMilestone, .pickSprint, .pickDue, .pickExpected, .pickTimeSpent, .pickLabels, .pickProject,
              .priority1, .priority2, .priority3, .priority4:
             return false
         }

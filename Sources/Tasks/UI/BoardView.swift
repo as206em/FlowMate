@@ -164,7 +164,8 @@ extension TaskGroupValue {
     }
 }
 
-/// A board card: project/milestone line with priority, title, then due, subtasks, time and the ring.
+/// A board card: project/milestone line with priority, title, its labels (as many as fit, then
+/// "+2"), then due, subtasks, time and the ring.
 struct TaskCard: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
@@ -203,6 +204,9 @@ struct TaskCard: View {
                     .accessibilityLabel("\(task.priority.title) priority")
             }
             TaskTitleButton(task: task, multiline: true) { model.clickTitle(task.id, store: store) }
+            if !task.labelIds.isEmpty {
+                TaskLabelChips(labels: store.labels(of: task))
+            }
             HStack(spacing: 8) {
                 TaskDueTag(task: task, showIcon: false)
                 SubtaskCount(task: task)

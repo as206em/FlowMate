@@ -251,6 +251,7 @@ private extension String {
 /// - `+atlas` or `+"side project"`: project (the task goes there, and it becomes the remembered one)
 /// - `#now` `#next` `#backlog`: sprint
 /// - `*review` or `*"in review"`: status (matched by name in the target project's workflow)
+/// - `%bug` or `%"needs review"`: label (several allowed; a name that doesn't exist is created)
 /// - `due:fri`, `due:nov18`, `due:"nov 18"`, `today`, `tomorrow`: due date
 /// - `~90m`, `2h`, `1h30m`: expected time
 /// Unrecognised tokens stay in the title, so nothing typed is lost.
@@ -265,10 +266,12 @@ struct QuickAddInput: Equatable, Sendable {
     /// The word that set `slot` as typed ("#next"), to put back for a project without sprints
     var slotWord: String?
     var statusQuery: String?
+    /// Every %label word, as typed (without the %)
+    var labelQueries: [String] = []
 
     var hasTokens: Bool {
         priority != nil || milestoneQuery != nil || dueDate != nil || expectedMinutes != nil
-            || projectQuery != nil || slot != nil || statusQuery != nil
+            || projectQuery != nil || slot != nil || statusQuery != nil || !labelQueries.isEmpty
     }
 
     static func parse(_ text: String, now: Date = Date(), calendar: Calendar = .current) -> QuickAddInput {
@@ -285,6 +288,7 @@ struct QuickAddInput: Equatable, Sendable {
                 result.slot = slot
                 result.slotWord = word
             case let .status(name)?: result.statusQuery = name
+            case let .label(name)?: result.labelQueries.append(name)
             case nil: kept.append(word)
             }
         }

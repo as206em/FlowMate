@@ -205,7 +205,7 @@ struct StatusMenuView: View {
             MenuNavigation.openTask(id)
         case .today:
             MenuNavigation.openToday()
-        case .command:
+        case .command, .label, .savedView:
             break
         }
     }

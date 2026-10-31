@@ -58,7 +58,7 @@ final class MilestonePageTests: XCTestCase {
         XCTAssertEqual(model.tab, .list, "a milestone page opens on List the first time")
         model.tab = .milestones
         XCTAssertEqual(model.effectiveTab, .list)
-        XCTAssertEqual(TaskGrouping.available(in: model.scope), [.status, .priority, .sprint])
+        XCTAssertEqual(TaskGrouping.available(in: model.scope), [.status, .priority, .sprint, .label])
         model.options.grouping = .milestone
         XCTAssertEqual(model.grouping, .status, "Milestone grouping falls back to Status on its own page")
         XCTAssertTrue(model.expandedProjects.contains(pid), "the sidebar lists the project's milestones")

@@ -35,6 +35,7 @@ struct TaskListView: View {
                 icon: group.icon,
                 statusKind: group.statusKind,
                 statusColorHex: group.statusColorHex,
+                labelColorHex: group.labelColorHex,
                 tasks: group.tasks,
                 emptyText: emptyText(group, filtering: filtering),
                 showProject: showProject,
@@ -49,7 +50,7 @@ struct TaskListView: View {
         builder.spacer("bottom", 72)
         return TaskTable(
             showProject: showProject,
-            excluding: excluded,
+            excluding: excluded(groups),
             sort: Binding(get: { model.sort }, set: { model.sort = $0 }),
             caption: hidden > 0 ? "\(hidden) \(hidden == 1 ? "task" : "tasks") from past sprints hidden. Filter by Sprint › Past sprints to show them." : "",
             rows: builder.rows,
@@ -59,15 +60,18 @@ struct TaskListView: View {
     }
 
     /// The grouped-by column repeats the group header, so it's hidden (Project stays: its tile helps).
-    private var excluded: Set<TaskColumn> {
+    private func excluded(_ groups: [TaskGroup]) -> Set<TaskColumn> {
         var columns: Set<TaskColumn>
         switch model.grouping {
         case .milestone: columns = [.milestone]
         case .sprint: columns = [.sprint]
         case .priority: columns = [.priority]
         case .project: columns = [.project]
+        case .label: columns = []
         case .status: columns = []
         }
+        // Labels only while a task on screen has one
+        if !groups.contains(where: { $0.tasks.contains { !$0.labelIds.isEmpty } }) { columns.insert(.labels) }
         // On a milestone's page every row has the same milestone
         if model.scope.isMilestone { columns.insert(.milestone) }
         // A project without sprints has no sprint to show
@@ -99,6 +103,8 @@ struct TaskListView: View {
         case .sprint(.active): return "Nothing planned for this sprint. Drag tasks here."
         case .sprint(.next): return "Nothing planned for the next sprint. Drag tasks here."
         case .sprint: return "Empty. Drag tasks here."
+        case .label(nil): return "Every task has a label. Drag one here to take its labels off."
+        case .label: return "No tasks with this label. Drag a task here to add it."
         }
     }
 }
@@ -126,7 +132,7 @@ struct SprintPlanView: View {
         // Manual order only: rows are dragged between and within groups here, so headers don't sort
         return TaskTable(
             showProject: false,
-            excluding: [.sprint],
+            excluding: store.tasks(of: projectId).contains { !$0.labelIds.isEmpty } ? [.sprint] : [.sprint, .labels],
             caption: "Drag tasks between the active sprint, the next sprint and the backlog.",
             rows: builder.rows,
             drops: builder.drops
@@ -224,6 +230,8 @@ extension RowDisplay {
         let projects = Dictionary(store.projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let milestones = Dictionary(store.workspace.milestones.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let workflows = Dictionary(store.allProjects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let labels = Dictionary(store.workspace.labels.map { ($0.id, RowLabel(name: $0.name, colorHex: $0.colorHex)) },
+                                uniquingKeysWith: { first, _ in first })
         let running = store.workspace.runningTimers
         let selected = model.selectedTaskIds
         let flashing = model.flashTaskId
@@ -247,6 +255,8 @@ extension RowDisplay {
                 nextStatusName: workflow?.statusAfter(status.id).name ?? "",
                 flashing: task.id == flashing,
                 note: today ? store.focusCarryLabel(task, now: now) : nil,
+                labels: task.labelIds.isEmpty ? [] : task.labelIds.compactMap { labels[$0] }
+                    .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending },
                 quickAction: today && !task.isClosed
                     && (store.isOverdue(task, now: now) || store.isDueToday(task, now: now) || store.isInFocus(task, now: now))
                     ? .tomorrow : nil

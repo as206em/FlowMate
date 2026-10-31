@@ -35,8 +35,16 @@ struct RowDisplay: Equatable {
     var flashing = false
     /// A quiet note after the title (Today: "From yesterday" on a task pinned on an earlier day)
     var note: String?
+    /// The task's labels, by name (the Labels column)
+    var labels: [RowLabel] = []
     /// A button shown at the end of the title while the row is hovered (Today: "→ Tomorrow")
     var quickAction: RowQuickAction?
+}
+
+/// A label as a row draws it.
+struct RowLabel: Equatable {
+    let name: String
+    let colorHex: UInt32
 }
 
 /// The hover button at the end of a row's title.
@@ -204,6 +212,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             case .project: drawProject(display, in: cell)
             case .title: if !isRenaming { drawTitle(task, display, in: cell) }
             case .milestone: drawMilestone(display, in: cell)
+            case .labels: drawLabels(display.labels, in: cell)
             case .sprint: drawMeta(display.sprintLabel, in: cell)
             case .due: drawDue(task, display, in: cell)
             case .priority: drawPriority(task.priority, in: cell)
@@ -284,6 +293,34 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         let textX = chip.minX + pad + diamond + gap
         drawText(name, font: font, color: textColor,
                  in: NSRect(x: textX, y: cell.minY, width: max(0, chip.maxX - pad - textX + 1), height: cell.height))
+    }
+
+    /// Label chips (a dot and the name in the label's tint) that fit the cell, then "+2" for the rest.
+    private func drawLabels(_ labels: [RowLabel], in cell: NSRect) {
+        guard !labels.isEmpty else { return drawEmpty(in: cell) }
+        let font = Style.tag
+        let pad: CGFloat = 6, dot: CGFloat = 6, gap: CGFloat = 4, between: CGFloat = 4
+        let layout = LabelChipLayout.fit(labels.map { textWidth($0.name, font: font) + pad * 2 + dot + gap },
+                                         width: cell.width, spacing: between,
+                                         moreWidth: { textWidth("+\($0)", font: font) + 10 })
+        var x = cell.minX - 2
+        for (index, width) in layout.widths.enumerated() {
+            let label = labels[index]
+            let chip = NSRect(x: x, y: cell.midY - 10, width: width, height: 20)
+            let color = Self.projectColor(label.colorHex)
+            color.withAlphaComponent(0.10).setFill()
+            NSBezierPath(roundedRect: chip, xRadius: Focus.radiusTag, yRadius: Focus.radiusTag).fill()
+            color.setFill()
+            NSBezierPath(ovalIn: NSRect(x: chip.minX + pad, y: chip.midY - dot / 2, width: dot, height: dot)).fill()
+            let textX = chip.minX + pad + dot + gap
+            drawText(label.name, font: font, color: Self.darkened(label.colorHex),
+                     in: NSRect(x: textX, y: cell.minY, width: max(0, chip.maxX - pad - textX + 1), height: cell.height))
+            x += width + between
+        }
+        if layout.more > 0 {
+            drawText("+\(layout.more)", font: font, color: Style.text3,
+                     in: NSRect(x: x, y: cell.minY, width: max(0, cell.maxX - x), height: cell.height))
+        }
     }
 
     private static var darkenedColors: [UInt32: NSColor] = [:]
@@ -634,6 +671,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             return "Click to open, double-click to rename"
         case .project: return info.display.projectName ?? ""
         case .milestone: return "Change milestone"
+        case .labels: return info.display.labels.isEmpty ? "Add labels (L)" : info.display.labels.map(\.name).joined(separator: ", ") + " · click to change (L)"
         case .sprint: return task.sprintSlot == .closed ? info.display.sprintLabel : "Change sprint"
         case .due: return "Change due date"
         case .priority: return "Change priority"

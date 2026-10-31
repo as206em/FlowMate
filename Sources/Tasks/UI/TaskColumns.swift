@@ -11,7 +11,7 @@ import SwiftUI
 
 /// One column of the task list, left to right.
 enum TaskColumn: String, CaseIterable, Identifiable, Sendable {
-    case status, project, title, milestone, sprint, due, priority, time, timer
+    case status, project, title, milestone, labels, sprint, due, priority, time, timer
 
     var id: String { rawValue }
 
@@ -22,6 +22,7 @@ enum TaskColumn: String, CaseIterable, Identifiable, Sendable {
         case .project: return "Project"
         case .title: return "Title"
         case .milestone: return "Milestone"
+        case .labels: return "Labels"
         case .sprint: return "Sprint"
         case .due: return "Due"
         case .priority: return "Priority"
@@ -36,6 +37,7 @@ enum TaskColumn: String, CaseIterable, Identifiable, Sendable {
         case .project: return 130
         case .title: return nil
         case .milestone: return 130
+        case .labels: return 112
         case .sprint: return 92
         case .due: return 88
         case .priority: return 76
@@ -55,7 +57,7 @@ enum TaskColumn: String, CaseIterable, Identifiable, Sendable {
     /// What clicking the header sorts by; nil for columns that don't sort.
     var sortKey: TaskSortKey? {
         switch self {
-        case .status, .timer: return nil
+        case .status, .timer, .labels: return nil
         case .project: return .project
         case .title: return .title
         case .milestone: return .milestone
@@ -76,7 +78,7 @@ struct TaskColumnLayout: Equatable, Sendable {
     /// The title keeps at least this much room; other columns drop out to make it.
     static let minTitleWidth: CGFloat = 200
     /// Dropped first when the table is narrow
-    static let dropOrder: [TaskColumn] = [.sprint, .milestone, .project, .priority]
+    static let dropOrder: [TaskColumn] = [.sprint, .labels, .milestone, .project, .priority]
 
     var columns: [TaskColumn]
 
@@ -92,7 +94,7 @@ struct TaskColumnLayout: Equatable, Sendable {
     }
 
     /// The layout for a table: Project only in All projects, minus `excluding`,
-    /// then narrow columns dropped (sprint, milestone, project, priority) until the title fits.
+    /// then narrow columns dropped (sprint, labels, milestone, project, priority) until the title fits.
     static func make(showProject: Bool, excluding: Set<TaskColumn> = [], width: CGFloat) -> TaskColumnLayout {
         var layout = TaskColumnLayout(columns: TaskColumn.allCases.filter { column in
             if column == .project && !showProject { return false }

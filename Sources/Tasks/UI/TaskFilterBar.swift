@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The bar under the header on List and Board: search (⌘F), filter chips, Group (List only),
-/// Sort and Clear. Settings are kept per project (TasksViewModel.optionsByScope).
+/// Sort, Save view… and Clear. Settings are kept per project (TasksViewModel.optionsByScope).
+/// On a saved view whose filters changed: "Modified · Update view · Revert".
 struct TaskFilterBar: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
@@ -11,7 +12,13 @@ struct TaskFilterBar: View {
     /// The bar's width; a narrow window shows Filter, Group and Sort without their labels
     @State private var width: CGFloat = 1000
 
-    private var compact: Bool { width < 900 }
+    /// Narrow: icons for Filter, Group and Sort. A modified saved view's Update and Revert, or
+    /// Save view…, need room on the right, so the bar goes compact sooner then.
+    private var compact: Bool {
+        if model.activeViewId != nil, model.isViewModified(store) { return width < 1200 }
+        if model.canSaveView { return width < 1000 }
+        return width < 900
+    }
 
     /// Which popover is open
     private enum Menu: Hashable {
@@ -20,7 +27,7 @@ struct TaskFilterBar: View {
 
     /// One filter dimension (a chip)
     enum Dimension: String, CaseIterable, Identifiable {
-        case status, priority, milestone, sprint, due, project
+        case status, priority, milestone, sprint, due, label, project
         var id: String { rawValue }
 
         var title: String {
@@ -30,6 +37,7 @@ struct TaskFilterBar: View {
             case .milestone: return "Milestone"
             case .sprint: return "Sprint"
             case .due: return "Due"
+            case .label: return "Label"
             case .project: return "Project"
             }
         }
@@ -73,10 +81,19 @@ struct TaskFilterBar: View {
                 groupButton
             }
             sortButton
-            if model.options.isCustomized {
-                Button("Clear") { model.clearOptions() }
-                    .buttonStyle(.focus(.ghost))
-                    .help("Reset search, filters, sort and grouping")
+            if model.activeViewId != nil {
+                SavedViewModifiedControls()
+            } else {
+                if model.canSaveView {
+                    Button(compact ? "Save…" : "Save view…") { model.savingView = SaveViewRequest(kind: .new) }
+                        .buttonStyle(.focus(.ghost))
+                        .help("Keep these filters, sort and grouping as a view in the sidebar")
+                }
+                if model.options.isCustomized {
+                    Button("Clear") { model.clearOptions() }
+                        .buttonStyle(.focus(.ghost))
+                        .help("Reset search, filters, sort and grouping")
+                }
             }
         }
         .padding(.horizontal, 28)
@@ -108,6 +125,7 @@ struct TaskFilterBar: View {
             case .project: return model.scope.projectId == nil && store.projects.count > 1
             // A milestone's page shows only its tasks
             case .milestone: return !model.scope.isMilestone
+            case .label: return !store.workspace.labels.isEmpty || !model.filter.labels.isEmpty
             default: return true
             }
         }
@@ -125,6 +143,7 @@ struct TaskFilterBar: View {
         case .milestone: return !f.milestones.isEmpty
         case .sprint: return !f.sprintSlots.isEmpty
         case .due: return !f.due.isEmpty
+        case .label: return !f.labels.isEmpty
         case .project: return !f.projectIds.isEmpty
         }
     }
@@ -138,6 +157,7 @@ struct TaskFilterBar: View {
         case .milestone: model.filter.milestones = []
         case .sprint: model.filter.sprintSlots = []
         case .due: model.filter.due = []
+        case .label: model.filter.labels = []
         case .project: model.filter.projectIds = []
         }
     }
@@ -160,6 +180,7 @@ struct TaskFilterBar: View {
             names = f.milestones.map { id in id.flatMap { store.milestone($0)?.name } ?? (id == nil ? "None" : "Deleted") }.sorted()
         case .sprint: names = Self.sprintChoices.filter { f.sprintSlots.contains($0.slot) }.map(\.title)
         case .due: names = TaskDueFilter.allCases.filter(f.due.contains).map(\.title)
+        case .label: names = store.labels.filter { f.labels.contains($0.id) }.map(\.name)
         case .project: names = store.projects.filter { f.projectIds.contains($0.id) }.map(\.name)
         }
         return names.count <= 2 ? names.joined(separator: ", ") : "\(names.count) selected"
@@ -242,7 +263,7 @@ struct TaskFilterBar: View {
                 }
             }
         }
-        .help("Filter by status, priority, milestone, sprint or due date")
+        .help("Filter by status, priority, milestone, sprint, due date or label")
     }
 
     private func binding(for menu: Menu) -> Binding<Bool> {
@@ -318,6 +339,20 @@ struct TaskFilterBar: View {
                         }
                     }
                 }
+            }
+        case .label:
+            // Any of the chosen labels
+            ForEach(store.labels) { label in
+                toggle(model.filter.labels.contains(label.id)) { model.filter.labels.formSymmetricDifference([label.id]) } label: {
+                    Circle().fill(Color(hex: label.colorHex)).frame(width: 8, height: 8).frame(width: 14)
+                    Text(label.name).lineLimit(1)
+                }
+            }
+            FocusMenuItem {
+                openMenu = nil
+                model.showingLabelsManager = true
+            } label: {
+                Text("Manage labels…").font(Focus.control).foregroundColor(Focus.text2)
             }
         case .project:
             ForEach(store.projects) { project in

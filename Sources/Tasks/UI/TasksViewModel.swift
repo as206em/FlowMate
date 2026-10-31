@@ -70,6 +70,16 @@ final class TasksViewModel: ObservableObject {
     @Published var scope: TaskScope = .all {
         didSet { if scope != oldValue { saveWindowState() } }
     }
+    /// The saved view on screen (sidebar › Views), or nil. Its scope is `scope`; its filters,
+    /// sort, grouping and tab are kept under its own key ("view-<id>"), so the project's own stay
+    /// as they were. Any other sidebar item clears it.
+    @Published var activeViewId: UUID? {
+        didSet { if activeViewId != oldValue { saveWindowState() } }
+    }
+    /// The Labels sheet (add, rename, recolor, delete)
+    @Published var showingLabelsManager = false
+    /// The Save view sheet (new, or renaming one)
+    @Published var savingView: SaveViewRequest?
     /// The tab on screen. Each scope remembers its own (`tabByScope`), so a project opens on its last tab.
     @Published var tab: Tab = .board {
         didSet {
@@ -148,7 +158,7 @@ final class TasksViewModel: ObservableObject {
     /// The single-key picker that's open (S, P, M, R, D, E, T, ⇧M), anchored to its row or the bulk bar
     @Published var quickPicker: QuickPickerRequest?
     /// ⌘0: the sidebar has the keyboard; this item has the focus ring (↑↓ move, ↵ shows it, Esc leaves)
-    @Published var sidebarCursor: TaskScope?
+    @Published var sidebarCursor: SidebarItem?
     /// The ⌘K palette is open
     @Published var showingPalette = false
     @Published var paletteQuery = "" {
@@ -259,6 +269,7 @@ final class TasksViewModel: ObservableObject {
         // A milestone page opens on List the first time: it lists every task of the milestone
         var remembered = tabByScope[scope.key] ?? (scope.isMilestone ? .list : tab)
         if case let .project(id) = scope, let view = defaultViews[id] { remembered = Self.tab(view) }
+        activeViewId = nil
         self.scope = scope
         // Today has no tabs: the tab stays for the next scope
         if !scope.isToday { tab = Self.tab(remembered, in: scope, sprints: scopeUsesSprints) }
@@ -378,10 +389,11 @@ final class TasksViewModel: ObservableObject {
         tab = .sprints
     }
 
-    /// The sidebar's items top to bottom: Today, All projects, each project, and the milestones
-    /// listed under the projects that show them (⌥⌘↑ / ⌥⌘↓ walk this order).
-    func sidebarScopes(_ store: TaskStore) -> [TaskScope] {
-        var result: [TaskScope] = [.today, .all]
+    /// The sidebar's items top to bottom: Today, All projects, the saved views, each project, and
+    /// the milestones listed under the projects that show them (⌥⌘↑ / ⌥⌘↓ walk this order).
+    func sidebarScopes(_ store: TaskStore) -> [SidebarItem] {
+        var result: [SidebarItem] = [.today, .all]
+        result += store.savedViews.map { .view($0.id) }
         for project in store.projects {
             result.append(.project(project.id))
             if isProjectExpanded(project.id) {
@@ -392,17 +404,28 @@ final class TasksViewModel: ObservableObject {
         return result
     }
 
+    /// The sidebar item on screen: the saved view when one is, else the scope.
+    var sidebarSelection: SidebarItem { activeViewId.map { .view($0) } ?? SidebarItem(scope) }
+
+    /// Shows a sidebar item: a scope, or a saved view (its scope, tab and filters).
+    func select(_ item: SidebarItem, store: TaskStore) {
+        switch item {
+        case let .view(id): applySavedView(id, store: store)
+        default: if let scope = item.scope { select(scope) }
+        }
+    }
+
     /// Selects the sidebar item `offset` rows from the one on screen. False at either end.
     @discardableResult
     func stepSidebar(_ offset: Int, store: TaskStore) -> Bool {
-        let scopes = sidebarScopes(store)
-        guard let index = scopes.firstIndex(of: scope) else {
-            guard let first = scopes.first else { return false }
-            select(first)
+        let items = sidebarScopes(store)
+        guard let index = items.firstIndex(of: sidebarSelection) else {
+            guard let first = items.first else { return false }
+            select(first, store: store)
             return true
         }
-        guard scopes.indices.contains(index + offset) else { return false }
-        select(scopes[index + offset])
+        guard items.indices.contains(index + offset) else { return false }
+        select(items[index + offset], store: store)
         return true
     }
 
@@ -535,7 +558,11 @@ final class TasksViewModel: ObservableObject {
 
     // MARK: - Filters, sort and grouping
 
-    private var scopeKey: String { scope.key }
+    /// Where the tab and options on screen are kept: the saved view's own key while one is on
+    /// screen, else the scope's.
+    private var scopeKey: String { activeViewId.map(Self.viewKey) ?? scope.key }
+
+    static func viewKey(_ id: UUID) -> String { "view-\(id.uuidString)" }
 
     static func scopeKey(_ scope: TaskScope) -> String { scope.key }
 
@@ -690,7 +717,9 @@ final class TasksViewModel: ObservableObject {
         }
         switch effectiveTab {
         case .list:
-            return listGroups(store, now: now).filter { !isCollapsed($0.id) }.flatMap(\.tasks)
+            // Grouped by label a task can be under several groups; ↑/↓ visit it once
+            var seen = Set<UUID>()
+            return listGroups(store, now: now).filter { !isCollapsed($0.id) }.flatMap(\.tasks).filter { seen.insert($0.id).inserted }
         case .board:
             return allBoardTasks(store, now: now)
         case .sprints:
@@ -803,6 +832,10 @@ final class TasksViewModel: ObservableObject {
         default:
             break
         }
+        if store.isLoaded, let id = activeViewId, store.savedView(id) == nil {
+            // The view on screen was deleted (or undone away): its scope stays, with its own filters
+            activeViewId = nil
+        }
         if let id = scope.projectId, store.project(id) == nil {
             select(.all)
         } else if case let .milestone(id, projectId) = scope, store.milestone(id)?.projectId != projectId {
@@ -827,10 +860,12 @@ final class TasksViewModel: ObservableObject {
         var overviewSort: PortfolioSort = .attention
         var milestonesLayout: MilestonesLayout = .list
         var timelineZoom: TimelineZoom = .quarter
+        /// The saved view on screen, if one was
+        var view: UUID?
 
         init(scope: String = "all", tabs: [String: String] = [:], options: [String: TaskViewOptions] = [:],
              collapsed: [String]? = nil, expanded: [String] = [], overviewSort: PortfolioSort = .attention,
-             milestonesLayout: MilestonesLayout = .list, timelineZoom: TimelineZoom = .quarter) {
+             milestonesLayout: MilestonesLayout = .list, timelineZoom: TimelineZoom = .quarter, view: UUID? = nil) {
             self.scope = scope
             self.tabs = tabs
             self.options = options
@@ -839,10 +874,11 @@ final class TasksViewModel: ObservableObject {
             self.overviewSort = overviewSort
             self.milestonesLayout = milestonesLayout
             self.timelineZoom = timelineZoom
+            self.view = view
         }
 
         private enum CodingKeys: String, CodingKey {
-            case scope, tabs, options, collapsed, expanded, overviewSort, milestonesLayout, timelineZoom
+            case scope, tabs, options, collapsed, expanded, overviewSort, milestonesLayout, timelineZoom, view
         }
 
         init(from decoder: Decoder) throws {
@@ -854,6 +890,7 @@ final class TasksViewModel: ObservableObject {
             overviewSort = c.decode(.overviewSort, or: .attention)
             milestonesLayout = c.decode(.milestonesLayout, or: .list)
             timelineZoom = c.decode(.timelineZoom, or: .quarter)
+            view = c.decodeOptional(.view)
             // One broken entry doesn't lose the others
             let raw: [String: LossyOptions] = c.decode(.options, or: [:])
             options = raw.compactMapValues(\.value)
@@ -876,7 +913,8 @@ final class TasksViewModel: ObservableObject {
             expanded: expandedProjects.map(\.uuidString).sorted(),
             overviewSort: overviewSort,
             milestonesLayout: milestonesLayout,
-            timelineZoom: timelineZoom
+            timelineZoom: timelineZoom,
+            view: activeViewId
         )
     }
 
@@ -900,7 +938,9 @@ final class TasksViewModel: ObservableObject {
         timelineZoom = state.timelineZoom
         let restoredScope = TaskScope(storageKey: state.scope) ?? .all
         scope = restoredScope
-        let remembered = tabByScope[restoredScope.key] ?? (restoredScope.isMilestone ? .list : .board)
+        // A saved view comes back on its own tab and filters (checked against the data once loaded)
+        if let view = state.view, !restoredScope.isToday { activeViewId = view }
+        let remembered = tabByScope[scopeKey] ?? (restoredScope.isMilestone ? .list : .board)
         tab = restoredScope.isToday ? (tabByScope[TaskScope.all.key] ?? .board) : Self.tab(remembered, in: restoredScope)
     }
 
@@ -908,7 +948,8 @@ final class TasksViewModel: ObservableObject {
     private func forgetDeletedScopes(_ store: TaskStore) {
         guard store.isLoaded else { return }
         let alive = Set(store.allProjects.map(\.id.uuidString) + ["all", "today"]
-                        + store.workspace.milestones.map { TaskScope.milestone($0.id, projectId: $0.projectId).key })
+                        + store.workspace.milestones.map { TaskScope.milestone($0.id, projectId: $0.projectId).key }
+                        + store.savedViews.map { Self.viewKey($0.id) })
         let tabs = tabByScope.filter { alive.contains($0.key) }
         if tabs != tabByScope { tabByScope = tabs; saveWindowState() }
         let options = optionsByScope.filter { alive.contains($0.key) }

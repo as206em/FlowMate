@@ -1,15 +1,18 @@
 import Foundation
 
 // Single-key actions on the selection (Linear-style): S status, P priority, M milestone, R sprint,
-// D due date, E expected time, T time spent, ⇧M project, X done, 1–3 priority, ⌥↑/⌥↓ order.
+// D due date, E expected time, T time spent, L labels, ⇧M project, X done, 1–3 priority, ⌥↑/⌥↓ order.
 // The pickers' options and what choosing one does live here, so they're testable without views;
 // QuickPicker.swift draws them anchored to the row, card, bulk bar or task panel.
 
 /// What a single-key picker edits.
 enum TaskQuickAction: String, CaseIterable, Identifiable, Sendable {
-    case status, priority, milestone, sprint, due, expected, timeSpent, project
+    case status, priority, milestone, sprint, due, expected, timeSpent, labels, project
 
     var id: String { rawValue }
+
+    /// Choosing a row toggles it and the picker stays open (labels: several at once)
+    var isMultiSelect: Bool { self == .labels }
 
     var title: String {
         switch self {
@@ -20,6 +23,7 @@ enum TaskQuickAction: String, CaseIterable, Identifiable, Sendable {
         case .due: return "Due date"
         case .expected: return "Expected time"
         case .timeSpent: return "Time spent"
+        case .labels: return "Labels"
         case .project: return "Move to project"
         }
     }
@@ -34,6 +38,7 @@ enum TaskQuickAction: String, CaseIterable, Identifiable, Sendable {
         case .due: return ["D"]
         case .expected: return ["E"]
         case .timeSpent: return ["T"]
+        case .labels: return ["L"]
         case .project: return ["⇧", "M"]
         }
     }
@@ -50,6 +55,7 @@ enum TaskQuickAction: String, CaseIterable, Identifiable, Sendable {
         case .due: return "fri, nov 18, tomorrow, 3d…"
         case .expected: return "1h 30m, 45m, 2h…"
         case .timeSpent: return "1h 15m sets it, +15m or -5m adjusts…"
+        case .labels: return "Toggle labels, or type a new one…"
         case .project: return "Move to project…"
         }
     }
@@ -94,6 +100,9 @@ enum QuickPickValue: Equatable {
     case setSpent(TimeInterval)
     case adjustSpent(TimeInterval)
     case project(UUID)
+    /// On for every task, or off for every task when they all have it
+    case label(UUID)
+    case newLabel(String)
 }
 
 /// One row of a single-key picker.
@@ -106,6 +115,7 @@ struct QuickPickOption: Identifiable, Equatable {
         case milestone(UInt32?)
         case project(name: String, colorHex: UInt32, icon: ProjectIcon?)
         case symbol(String)
+        case label(UInt32)
     }
 
     let id: String
@@ -115,6 +125,8 @@ struct QuickPickOption: Identifiable, Equatable {
     var keywords: [String] = []
     /// The tasks' current value
     var isCurrent = false
+    /// Some of the tasks have it (a label on part of the selection): a dash
+    var isMixed = false
     /// Read from the typed text ("fri" → Fri, Nov 6): shown first and never filtered out
     var isTyped = false
     var icon: Icon = .none
@@ -263,6 +275,12 @@ extension TasksViewModel {
                                        icon: .symbol(minutes > 0 ? "plus" : "minus"), value: .adjustSpent(TimeInterval(minutes * 60)))
             } + [QuickPickOption(id: "spent-reset", title: "Reset to 0m", keywords: ["zero", "clear"],
                                  icon: .symbol("arrow.counterclockwise"), value: .setSpent(0))]
+        case .labels:
+            return store.labels.map { label in
+                QuickPickOption(id: "label-\(label.id)", title: label.name,
+                                isCurrent: store.allHave(label.id, ids), isMixed: store.someHave(label.id, ids),
+                                icon: .label(label.colorHex), value: .label(label.id))
+            }
         case .project:
             return store.projects.map { project in
                 QuickPickOption(id: "project-\(project.id)", title: project.name,
@@ -314,6 +332,11 @@ extension TasksViewModel {
             guard let level = Int(text), let priority = TaskPriority.level(level) else { return [] }
             return [QuickPickOption(id: "typed-priority", title: priority.title, detail: "\(level)", isTyped: true,
                                     icon: .priority(priority), value: .priority(priority))]
+        case .labels:
+            let name = TaskLabel.cleanName(text)
+            guard !name.isEmpty, !store.workspace.labels.contains(where: { $0.name.lowercased() == name.lowercased() }) else { return [] }
+            return [QuickPickOption(id: "typed-label", title: "Create label “\(name)”", isTyped: true,
+                                    icon: .symbol("plus"), value: .newLabel(name))]
         case .status, .sprint, .project:
             return []
         }
@@ -378,6 +401,10 @@ extension TasksViewModel {
         case let .project(projectId):
             let name = store.project(projectId)?.name ?? "project"
             edit("\(subject) moved to \(name)", store: store) { store.setProject(ids, projectId) }
+        case let .label(labelId):
+            toggleLabel(labelId, on: ids, store: store, toast: true)
+        case let .newLabel(name):
+            createLabel(name, adding: ids, store: store, toast: true)
         }
     }
 
@@ -499,7 +526,7 @@ extension TasksViewModel {
     func focusSidebar(store: TaskStore) {
         closeQuickPicker()
         let scopes = sidebarScopes(store)
-        sidebarCursor = scopes.contains(scope) ? scope : scopes.first
+        sidebarCursor = scopes.contains(sidebarSelection) ? sidebarSelection : scopes.first
     }
 
     /// ↑/↓ in the sidebar.
@@ -543,7 +570,8 @@ extension TasksViewModel {
     func activateSidebarCursor(store: TaskStore) {
         guard let cursor = sidebarCursor else { return }
         sidebarCursor = nil
-        if cursor != scope { select(cursor) }
+        // A saved view is applied again (its filters fresh) even when it's the one on screen
+        if cursor != sidebarSelection || cursor.scope == nil { select(cursor, store: store) }
     }
 }
 

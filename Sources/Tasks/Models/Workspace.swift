@@ -23,7 +23,9 @@ struct Workspace: Codable, Equatable, Sendable {
     ///     sprint (planned, done and tracked time, capacity). Older projects decode with sprints on
     ///     and no settings; older past sprints get their numbers worked out from the tasks and the
     ///     time log as they are now, marked approximate (addPastSprintStats).
-    static let currentSchemaVersion = 10
+    /// 11: labels (Workspace.labels, TaskItem.labelIds) and saved views (Workspace.savedViews).
+    ///     Older files decode with none of either; nothing to convert.
+    static let currentSchemaVersion = 11
 
     var schemaVersion: Int
     var projects: [Project]
@@ -35,6 +37,10 @@ struct Workspace: Codable, Equatable, Sendable {
     var timeEntries: [TimeEntry]
     /// Small settings that travel with the data (the last project used, timer prompts).
     var preferences: WorkspacePreferences
+    /// Labels every project shares, in the order they were made (shown sorted by name)
+    var labels: [TaskLabel]
+    /// The sidebar's Views, in sidebar order
+    var savedViews: [SavedView]
 
     init(
         schemaVersion: Int = Workspace.currentSchemaVersion,
@@ -43,7 +49,9 @@ struct Workspace: Codable, Equatable, Sendable {
         tasks: [TaskItem] = [],
         runningTimers: [UUID: Date] = [:],
         timeEntries: [TimeEntry] = [],
-        preferences: WorkspacePreferences = WorkspacePreferences()
+        preferences: WorkspacePreferences = WorkspacePreferences(),
+        labels: [TaskLabel] = [],
+        savedViews: [SavedView] = []
     ) {
         self.schemaVersion = schemaVersion
         self.projects = projects
@@ -52,6 +60,8 @@ struct Workspace: Codable, Equatable, Sendable {
         self.runningTimers = runningTimers
         self.timeEntries = timeEntries
         self.preferences = preferences
+        self.labels = labels
+        self.savedViews = savedViews
     }
 
     static let empty = Workspace()
@@ -78,6 +88,7 @@ struct Workspace: Codable, Equatable, Sendable {
         // 8: milestones decode without a color; assignMilestoneColors (below) gives each one.
         // 9: tasks decode with no focusDate (not pinned to Today); nothing to convert.
         // 10: past sprints get their numbers after the time log is reconciled (below).
+        // 11: no labels or saved views yet (they decode as none); normalizeLabels drops dangling ids.
         let addStats = ws.schemaVersion < 10
         ws.schemaVersion = Workspace.currentSchemaVersion
 
@@ -97,6 +108,7 @@ struct Workspace: Codable, Equatable, Sendable {
         ws.normalizeCompletion()
         ws.reconcileTrackedTime(now: now)
         ws.assignMilestoneColors()
+        ws.normalizeLabels()
         if addStats { ws.addPastSprintStats() }
         return ws
     }
@@ -141,8 +153,56 @@ struct Workspace: Codable, Equatable, Sendable {
         }
     }
 
+    /// Keeps labels and saved views consistent with the rest: one label per name (a duplicate's
+    /// tasks move to the first), tasks only carry labels that exist (each once), and saved views
+    /// whose project or milestone is gone are dropped. Filters inside views keep only existing labels.
+    mutating func normalizeLabels() {
+        if labels.isEmpty, savedViews.isEmpty, !tasks.contains(where: { !$0.labelIds.isEmpty }) { return }
+        // Duplicate ids or names (hand-edited files): the first wins
+        var seenIds = Set<UUID>()
+        var byName: [String: UUID] = [:]
+        var merged: [UUID: UUID] = [:]
+        var kept: [TaskLabel] = []
+        for label in labels {
+            guard seenIds.insert(label.id).inserted else { continue }
+            let key = label.name.lowercased()
+            if let first = byName[key] {
+                merged[label.id] = first
+            } else {
+                byName[key] = label.id
+                kept.append(label)
+            }
+        }
+        if kept != labels { labels = kept }
+        let valid = Set(labels.map(\.id))
+        for i in tasks.indices where !tasks[i].labelIds.isEmpty {
+            var seen = Set<UUID>()
+            let ids = tasks[i].labelIds.map { merged[$0] ?? $0 }.filter { valid.contains($0) && seen.insert($0).inserted }
+            if ids != tasks[i].labelIds { tasks[i].labelIds = ids }
+        }
+        guard !savedViews.isEmpty else { return }
+        let projectIds = Set(projects.map(\.id))
+        let milestoneProjects = Dictionary(milestones.map { ($0.id, $0.projectId) }, uniquingKeysWith: { a, _ in a })
+        var viewIds = Set<UUID>()
+        let views = savedViews.compactMap { view -> SavedView? in
+            guard viewIds.insert(view.id).inserted else { return nil }
+            switch view.scope {
+            case .today, .all: break
+            case let .project(id): if !projectIds.contains(id) { return nil }
+            case let .milestone(id, projectId): if milestoneProjects[id] != projectId { return nil }
+            }
+            var view = view
+            let labels = Set(view.options.filter.labels.map { merged[$0] ?? $0 }).intersection(valid)
+            if labels != view.options.filter.labels { view.options.filter.labels = labels }
+            return view
+        }
+        if views != savedViews { savedViews = views }
+    }
+
     // Running timers are stored as {"<uuid>": "<date>"} so the JSON stays readable.
-    private enum CodingKeys: String, CodingKey { case schemaVersion, projects, milestones, tasks, runningTimers, timeEntries, preferences }
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, projects, milestones, tasks, runningTimers, timeEntries, preferences, labels, savedViews
+    }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -155,6 +215,9 @@ struct Workspace: Codable, Equatable, Sendable {
                                    uniquingKeysWith: { a, _ in a })
         timeEntries = c.decodeLossyArray(.timeEntries)
         preferences = c.decode(.preferences, or: WorkspacePreferences())
+        // Schema 10 and older: no labels or views
+        labels = c.decodeLossyArray(.labels)
+        savedViews = c.decodeLossyArray(.savedViews)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -167,6 +230,8 @@ struct Workspace: Codable, Equatable, Sendable {
         try c.encode(raw, forKey: .runningTimers)
         try c.encode(timeEntries, forKey: .timeEntries)
         try c.encode(preferences, forKey: .preferences)
+        try c.encode(labels, forKey: .labels)
+        try c.encode(savedViews, forKey: .savedViews)
     }
 }
 

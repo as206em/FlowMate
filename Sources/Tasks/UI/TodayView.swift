@@ -50,7 +50,8 @@ struct TodayView: View {
         builder.spacer("bottom", 72)
         return TaskTable(
             showProject: true,
-            excluding: [.sprint],
+            // Labels only while a task here has one
+            excluding: sections.contains { $0.tasks.contains { !$0.labelIds.isEmpty } } ? [.sprint] : [.sprint, .labels],
             rows: builder.rows,
             drops: builder.drops,
             draggable: builder.draggable

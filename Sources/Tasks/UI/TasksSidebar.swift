@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 240pt sidebar: app tile, All projects, the project list (drag to reorder; the arrow lists a
+/// 240pt sidebar: app tile, Today, All projects, the saved views, the project list (drag to reorder; the arrow lists a
 /// project's milestones), "New project", the Archived section and the running timers.
 struct TasksSidebar: View {
     @EnvironmentObject private var store: TaskStore
@@ -31,7 +31,7 @@ struct TasksSidebar: View {
             .padding(.trailing, 2)
             .padding(.bottom, 14)
 
-            FocusSidebarItem(selected: model.scope == .today, focused: model.sidebarCursor == .today, action: { model.select(.today) }) {
+            FocusSidebarItem(selected: model.sidebarSelection == .today, focused: model.sidebarCursor == .today, action: { model.select(.today) }) {
                 Image(systemName: "sun.max")
                     .font(.system(size: 13, weight: .medium))
                     .frame(width: 18)
@@ -52,20 +52,22 @@ struct TasksSidebar: View {
                 }
             }
 
-            FocusSidebarItem(selected: model.scope == .all, focused: model.sidebarCursor == .all, action: { model.select(.all) }) {
+            FocusSidebarItem(selected: model.sidebarSelection == .all, focused: model.sidebarCursor == .all, action: { model.select(.all) }) {
                 Image(systemName: "square.grid.2x2")
                     .font(.system(size: 13, weight: .medium))
                     .frame(width: 18)
                 Text("All projects").frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            FocusCaption(text: "Projects")
-                .padding(.horizontal, 8)
-                .padding(.top, 18)
-                .padding(.bottom, 6)
-
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 2) {
+                    SidebarViewsSection()
+
+                    FocusCaption(text: "Projects")
+                        .padding(.horizontal, 8)
+                        .padding(.top, 18)
+                        .padding(.bottom, 6)
+
                     ForEach(store.projects) { project in
                         projectRow(project)
                             .onDrag {
@@ -140,7 +142,7 @@ struct TasksSidebar: View {
             .accessibilityValue(model.showingArchived ? "Expanded" : "Collapsed")
             if model.showingArchived {
                 ForEach(archived) { project in
-                    FocusSidebarItem(selected: model.scope == .project(project.id), focused: model.sidebarCursor == .project(project.id), action: { model.clickSidebarProject(project.id) }) {
+                    FocusSidebarItem(selected: model.sidebarSelection == .project(project.id), focused: model.sidebarCursor == .project(project.id), action: { model.clickSidebarProject(project.id) }) {
                         FocusProjectTile(project: project)
                             .opacity(0.6)
                         Text(project.name)
@@ -165,7 +167,7 @@ struct TasksSidebar: View {
         if renamingId == project.id {
             ProjectRenameField(project: project) { renamingId = nil }
         } else {
-            FocusSidebarItem(selected: model.scope == .project(project.id), focused: model.sidebarCursor == .project(project.id), action: { model.clickSidebarProject(project.id) }) {
+            FocusSidebarItem(selected: model.sidebarSelection == .project(project.id), focused: model.sidebarCursor == .project(project.id), action: { model.clickSidebarProject(project.id) }) {
                 FocusProjectTile(project: project)
                 Text(project.name)
                     .lineLimit(1)
@@ -300,7 +302,7 @@ private struct SidebarMilestones: View {
         let milestones = store.milestones(of: project.id)
         VStack(alignment: .leading, spacing: 0) {
             ForEach(milestones) { milestone in
-                let onScreen = model.scope.milestoneId == milestone.id
+                let onScreen = model.activeViewId == nil && model.scope.milestoneId == milestone.id
                 SidebarMilestoneRow(milestone: milestone,
                                     selected: onScreen || model.dropTarget == SidebarMilestoneDrop.key(milestone.id),
                                     focused: model.sidebarCursor == .milestone(milestone.id, projectId: project.id)) {

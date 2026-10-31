@@ -21,7 +21,7 @@ final class TaskRowController: NSObject {
         case .timer? where !task.isClosed:
             // ⌥-click: this timer runs, every other one pauses
             if modifiers.contains(.option) { store.startTimerExclusively(id) } else { store.toggleTimer(id) }
-        case .milestone?, .due?, .priority?, .time?:
+        case .milestone?, .due?, .priority?, .time?, .labels?:
             showEditor(column!, taskId: id, rect: rect, in: view)
         case .sprint? where task.sprintSlot != .closed:
             showEditor(.sprint, taskId: id, rect: rect, in: view)
@@ -55,6 +55,7 @@ final class TaskRowController: NSObject {
             case .sprint: AnyView(TaskSprintEditor(task: task, close: close))
             case .due: AnyView(TaskDueEditor(task: task, close: close))
             case .priority: AnyView(TaskPriorityEditor(task: task, close: close))
+            case .labels: AnyView(TaskLabelsEditor(taskIds: [task.id], close: close))
             default: AnyView(TaskTimeEditor(task: task, close: close))
             }
         }

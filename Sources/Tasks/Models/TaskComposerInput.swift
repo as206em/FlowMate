@@ -12,6 +12,7 @@ import Foundation
 //   due:fri  today  tomorrow     due date (due: takes anything TaskDateParser reads)
 //   +atlas  +"side project"      project
 //   *review  *"in review"        status (matched by name in the project's workflow)
+//   %bug  %"needs review"        label (a name that doesn't exist yet is created with the task)
 //   /                            a menu of all of the above
 
 /// The properties the composer has collected for the next task. nil means "not set".
@@ -33,6 +34,11 @@ struct ComposerDraft: Equatable {
     var atTop = false
     /// Added on the Today page: the task is pinned to Today
     var pinToday = false
+    /// Labels that exist (a %word, the chip, a label group)
+    var labelIds: [UUID] = []
+    /// %words naming no label yet: made when the task is added (so a word typed and taken back
+    /// leaves no label behind)
+    var newLabelNames: [String] = []
 
     /// Fills in what the composer's group and the scope give a new task: the group's value (its
     /// status, sprint, milestone, priority or project) and, on a milestone's page, that milestone.
@@ -48,13 +54,32 @@ struct ComposerDraft: Equatable {
         case let .milestone(id)?: milestoneId = id
         case let .priority(priority)?: self.priority = priority
         case let .project(id)?: projectId = id
-        case nil: break
+        case let .label(id?)?: if !labelIds.contains(id) { labelIds.append(id) }
+        case .label(nil)?, nil: break
         }
+    }
+
+    /// Adds a label word's name: the existing label when one has the name, else a new one to make.
+    mutating func addLabel(named name: String, existing: TaskLabel?) {
+        if let existing {
+            if !labelIds.contains(existing.id) { labelIds.append(existing.id) }
+        } else {
+            let clean = TaskLabel.cleanName(name)
+            guard !clean.isEmpty, !newLabelNames.contains(where: { $0.lowercased() == clean.lowercased() }) else { return }
+            newLabelNames.append(clean)
+        }
+    }
+
+    /// Clears the labels (after a task is added, or "Clear" on the chip)
+    mutating func clearLabels() {
+        labelIds = []
+        newLabelNames = []
     }
 
     /// Anything besides the defaults (which keeps the composer open)
     var hasValues: Bool {
         slot != nil || milestoneId != nil || priority != nil || dueDate != nil || expectedMinutes != nil
+            || !labelIds.isEmpty || !newLabelNames.isEmpty
     }
 }
 
@@ -67,6 +92,7 @@ enum ComposerToken: Equatable {
     case due(Date)
     case project(String)
     case status(String)
+    case label(String)
 }
 
 /// A word that opens a picking menu.
@@ -76,6 +102,7 @@ enum ComposerTrigger: Character, CaseIterable {
     case priority = "!"
     case project = "+"
     case status = "*"
+    case label = "%"
     case all = "/"
 }
 
@@ -105,6 +132,11 @@ enum ComposerInput {
             let name = name()
             guard let initial = name.first, initial.isLetter || initial.isNumber else { return nil }
             return .status(name)
+        case "%":
+            // A letter or digit must follow, so "%" alone stays text
+            let name = name()
+            guard let initial = name.first, initial.isLetter || initial.isNumber else { return nil }
+            return .label(name)
         case "~":
             guard let minutes = TaskDurationParser.minutes(String(lower.dropFirst())), minutes > 0 else { return nil }
             return .minutes(minutes)
@@ -127,7 +159,7 @@ enum ComposerInput {
         return nil
     }
 
-    /// Splits on spaces, keeping `"quoted text"` (after @, +, * or due:) inside one word.
+    /// Splits on spaces, keeping `"quoted text"` (after @, +, *, % or due:) inside one word.
     static func words(_ text: String) -> [String] {
         var words: [String] = []
         var current = ""
@@ -203,7 +235,7 @@ enum ComposerInput {
         return (result, tokens)
     }
 
-    /// The word being typed at the end of the text when it starts with # @ ! + * or /:
+    /// The word being typed at the end of the text when it starts with # @ ! + * % or /:
     /// the trigger and what follows it ("#ne" → sprint, "ne").
     static func activeTrigger(_ text: String) -> (trigger: ComposerTrigger, query: String)? {
         guard let last = text.split(separator: " ", omittingEmptySubsequences: false).last,
@@ -227,6 +259,9 @@ struct ComposerSuggestion: Identifiable, Equatable {
         case priority(TaskPriority)
         case project(UUID)
         case status(WorkflowStatus)
+        case label(UUID)
+        /// A label that doesn't exist yet
+        case newLabel(String)
         /// "/" menu: switch to that trigger's menu
         case trigger(ComposerTrigger)
         /// "/" menu: open the due date or time picker
@@ -282,6 +317,16 @@ extension TaskStore {
             guard let projectId, let project = project(projectId) else { return [] }
             return project.statuses.filter { matches($0.name) }
                 .map { ComposerSuggestion(id: "st-\($0.id)", title: $0.name, detail: $0.category.title, action: .status($0)) }
+        case .label:
+            let rows = labels.filter { matches($0.name) }.map {
+                ComposerSuggestion(id: "lb-\($0.id)", title: $0.name, detail: ComposerInput.word(.label, $0.name),
+                                   action: .label($0.id))
+            }
+            let name = TaskLabel.cleanName(query.replacingOccurrences(of: "_", with: " "))
+            if !name.isEmpty, matchLabel(name) == nil {
+                return rows + [ComposerSuggestion(id: "lb-new", title: "Create label “\(name)”", action: .newLabel(name))]
+            }
+            return rows
         case .all:
             let all: [ComposerSuggestion] = [
                 .init(id: "all-sprint", title: "Sprint", detail: "#", action: .trigger(.sprint)),
@@ -291,6 +336,7 @@ extension TaskStore {
                 .init(id: "all-time", title: "Expected time", detail: "2h", action: .pickTime),
                 .init(id: "all-project", title: "Project", detail: "+", action: .trigger(.project)),
                 .init(id: "all-status", title: "Status", detail: "*", action: .trigger(.status)),
+                .init(id: "all-label", title: "Label", detail: "%", action: .trigger(.label)),
             ]
             let sprintless = projectId.map { !usesSprints($0) } ?? false
             return all.filter { matches($0.title) && !(sprintless && $0.id == "all-sprint") }
@@ -306,6 +352,10 @@ extension TaskStore {
             if let priority = draft.priority { setPriority(id, priority) }
             if let due = draft.dueDate { setDueDate(id, due) }
             if let minutes = draft.expectedMinutes { setExpectedMinutes(id, minutes) }
+            // %words naming no label yet become labels now
+            let made = draft.newLabelNames.compactMap { addLabel($0) }
+            let labelIds = draft.labelIds.filter { label($0) != nil } + made
+            if !labelIds.isEmpty { setLabels(id, labelIds) }
             if draft.pinToday {
                 addToToday([id], now: now)
                 // From the composer at the top (⌘N): first in My focus too
