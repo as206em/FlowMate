@@ -5,6 +5,8 @@ struct Milestone: Identifiable, Codable, Equatable, Sendable {
     var projectId: UUID
     var name: String
     var dueDate: Date?
+    /// Optional start: the milestone then shows as a bar from here to the due date on the timeline
+    var startDate: Date?
     /// Markdown description
     var notes: String
     /// Set by "Mark complete"
@@ -16,11 +18,12 @@ struct Milestone: Identifiable, Codable, Equatable, Sendable {
     static let unsetColor: UInt32 = 0
 
     init(id: UUID = UUID(), projectId: UUID, name: String, dueDate: Date? = nil,
-         notes: String = "", completedAt: Date? = nil, colorHex: UInt32 = Milestone.unsetColor) {
+         startDate: Date? = nil, notes: String = "", completedAt: Date? = nil, colorHex: UInt32 = Milestone.unsetColor) {
         self.id = id
         self.projectId = projectId
         self.name = name
         self.dueDate = dueDate
+        self.startDate = startDate
         self.notes = notes
         self.completedAt = completedAt
         self.colorHex = colorHex
@@ -56,7 +59,7 @@ struct Milestone: Identifiable, Codable, Equatable, Sendable {
         return choices.first { (counts[$0] ?? 0) == fewest } ?? choices[0]
     }
 
-    private enum CodingKeys: String, CodingKey { case id, projectId, name, dueDate, notes, completedAt, colorHex }
+    private enum CodingKeys: String, CodingKey { case id, projectId, name, dueDate, startDate, notes, completedAt, colorHex }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -64,6 +67,7 @@ struct Milestone: Identifiable, Codable, Equatable, Sendable {
         projectId = try c.decode(UUID.self, forKey: .projectId)
         name = c.decode(.name, or: "Untitled milestone")
         dueDate = c.decodeOptional(.dueDate)
+        startDate = c.decodeOptional(.startDate)
         notes = c.decode(.notes, or: "")
         completedAt = c.decodeOptional(.completedAt)
         // Before schema 8: none stored; migration picks one

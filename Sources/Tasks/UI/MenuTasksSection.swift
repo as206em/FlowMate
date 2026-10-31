@@ -406,7 +406,8 @@ struct MenuInProgressSection: View {
 
     var body: some View {
         let listed = store.menuInProgressTasks
-        let upNext = store.upNext()
+        // The "Up next" list was removed from the dropdown; only tasks in progress are listed
+        let upNext: [TaskItem] = []
         VStack(alignment: .leading, spacing: 4) {
             if !store.projects.isEmpty {
                 MenuTodaySummary()

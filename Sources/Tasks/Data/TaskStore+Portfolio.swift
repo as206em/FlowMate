@@ -337,10 +337,36 @@ extension TaskStore {
     /// One undo step; nothing happens for 0 days or a milestone without a date.
     @discardableResult
     func shiftMilestoneDue(_ id: UUID, byDays days: Int, calendar: Calendar = .current) -> Date? {
-        guard days != 0, let due = milestone(id)?.dueDate,
-              let moved = calendar.date(byAdding: .day, value: days, to: due) else { return nil }
-        setMilestoneDue(id, to: moved)
+        guard days != 0, let milestone = milestone(id), let due = milestone.dueDate,
+              var moved = calendar.date(byAdding: .day, value: days, to: due) else { return nil }
+        // With a start date this resizes the bar: the due date never goes before the start
+        if let start = milestone.startDate, moved < start { moved = start }
+        guard moved != due else { return nil }
+        setMilestoneDates(id, start: milestone.startDate, due: moved)
         return moved
+    }
+
+    /// Sets start and due together (one undo step). A start on or after the due date is dropped.
+    func setMilestoneDates(_ id: UUID, start: Date?, due: Date?, calendar: Calendar = .current) {
+        mutate("Change milestone dates") { ws in
+            guard let i = ws.milestones.firstIndex(where: { $0.id == id }) else { return }
+            ws.milestones[i].dueDate = due
+            if let start, let due, calendar.startOfDay(for: start) < calendar.startOfDay(for: due) {
+                ws.milestones[i].startDate = calendar.startOfDay(for: start)
+            } else {
+                ws.milestones[i].startDate = nil
+            }
+        }
+    }
+
+    /// Moves a milestone's whole bar (start and due) by whole days. Returns the new due date.
+    @discardableResult
+    func shiftMilestone(_ id: UUID, byDays days: Int, calendar: Calendar = .current) -> Date? {
+        guard days != 0, let milestone = milestone(id), let due = milestone.dueDate,
+              let newDue = calendar.date(byAdding: .day, value: days, to: due) else { return nil }
+        let newStart = milestone.startDate.flatMap { calendar.date(byAdding: .day, value: days, to: $0) }
+        setMilestoneDates(id, start: newStart, due: newDue)
+        return newDue
     }
 
     /// A milestone from the timeline's No date tray dropped on a day: it's due then. Returns its

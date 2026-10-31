@@ -102,8 +102,6 @@ final class TaskRowController: NSObject {
             })
             menu.addItem(.separator())
         } else {
-            menu.addItem(item("Open", key: "\r") { [weak model] in model?.openTask(id) })
-            menu.addItem(item("Rename", action: rename))
             if !task.isClosed || store.isRunning(id) {
                 menu.addItem(item(store.isRunning(id) ? "Pause timer" : "Start timer", key: " ") { [weak store] in store?.toggleTimer(id) })
                 if !task.isClosed {
@@ -134,6 +132,8 @@ final class TaskRowController: NSObject {
                 model.showUndoToast(done ? "\(subject) marked done" : "\(subject) reopened", store: store)
             }
         })
+        // A single ticket's menu stays short; property pickers remain on their keys and in the panel
+        guard selection else { return menu }
         menu.addItem(.separator())
 
         for action in TaskQuickAction.allCases {
@@ -145,15 +145,6 @@ final class TaskRowController: NSObject {
                 guard let model, let store else { return }
                 // After the menu has closed, so the picker can take the keyboard
                 DispatchQueue.main.async { model.presentQuickPicker(action, ids: ids, store: store) }
-            })
-        }
-        menu.addItem(.separator())
-        if !selection {
-            menu.addItem(item("Duplicate", key: "d", modifiers: .command) { [weak model, weak store] in
-                if let model, let store { model.duplicateTask(id, store: store) }
-            })
-            menu.addItem(item("Delete task", key: "\u{8}", modifiers: .command) { [weak model, weak store] in
-                if let model, let store { model.deleteTask(id, store: store) }
             })
         }
         return menu

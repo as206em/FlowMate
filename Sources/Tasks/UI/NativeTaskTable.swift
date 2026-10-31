@@ -519,7 +519,8 @@ struct NativeTaskTable: NSViewRepresentable {
         table.addTableColumn(column)
         table.registerForDraggedTypes([.string])
         table.setDraggingSourceOperationMask(.move, forLocal: true)
-        table.draggingDestinationFeedbackStyle = .regular
+        // A gap opens between rows (no blue line running past the table)
+        table.draggingDestinationFeedbackStyle = .gap
 
         let scroll = NSScrollView()
         scroll.documentView = table

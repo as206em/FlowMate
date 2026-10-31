@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // The project panel's settings: the icon picker, the capacity field, and the defaults for new
 // tasks and for opening the project (see TaskStore+Capacity.swift).
@@ -33,6 +34,7 @@ struct ProjectIconButton: View {
         .focusPointerCursor()
         .popover(isPresented: $picking, arrowEdge: .bottom) {
             ProjectIconPicker(project: project) { icon in
+                if case let .image(old)? = project.icon, icon != project.icon { ProjectIconFiles.remove(old) }
                 store.setProjectIcon(project.id, icon)
                 picking = false
             }
@@ -44,6 +46,7 @@ struct ProjectIconButton: View {
         switch project.icon {
         case .emoji?: return "Emoji"
         case .symbol?: return "Symbol"
+        case .image?: return "Picture"
         case nil: return "Letter \(project.initial)"
         }
     }
@@ -55,6 +58,7 @@ struct ProjectIconPicker: View {
     let pick: (ProjectIcon?) -> Void
 
     @State private var typed = ""
+    @State private var uploadError: String?
 
     static let emoji = ["🚀", "🧭", "🛠️", "📦", "🧪", "📱", "💻", "🌐", "🎨", "✍️", "📚", "🎯",
                         "📈", "💡", "🔒", "⚡️", "🌱", "🏠", "🎧", "🎮", "🧩", "🗂️", "🧾", "❤️"]
@@ -88,6 +92,24 @@ struct ProjectIconPicker: View {
                     .onSubmit(useTyped)
                     .onChange(of: typed) { _ in if ProjectIcon.emoji(from: typed) != nil { useTyped() } }
             }
+            Button(action: uploadPicture) {
+                HStack(spacing: 8) {
+                    Image(systemName: "photo").font(.system(size: 12, weight: .semibold)).foregroundColor(Focus.text2)
+                    Text("Upload a picture…").font(Focus.control).foregroundColor(Focus.text)
+                    Text("PNG, JPG or SVG").font(Focus.meta).foregroundColor(Focus.text3)
+                    if case .image? = project.icon {
+                        Spacer(minLength: 0)
+                        Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundColor(Focus.text2)
+                    }
+                }
+                .padding(.horizontal, 6)
+                .frame(height: Focus.controlHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if let uploadError {
+                Text(uploadError).font(Focus.meta).foregroundColor(Focus.risk)
+            }
             FocusCaption(text: "Emoji")
             LazyVGrid(columns: columns, alignment: .leading, spacing: 4) {
                 ForEach(Self.emoji, id: \.self) { emoji in
@@ -111,6 +133,22 @@ struct ProjectIconPicker: View {
         .frame(width: 290)
         .background(Focus.raised)
         .focusLight()
+    }
+
+    /// Asks for a PNG, JPG or SVG; the picture becomes the project's icon.
+    private func uploadPicture() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = ProjectIconFiles.allowedExtensions.compactMap { UTType(filenameExtension: $0) }
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Choose a picture for \(project.name)"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if let file = ProjectIconFiles.importImage(from: url) {
+            uploadError = nil
+            pick(.image(file))
+        } else {
+            uploadError = "That file couldn't be read as a picture."
+        }
     }
 
     private func useTyped() {

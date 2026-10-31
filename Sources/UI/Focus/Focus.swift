@@ -266,6 +266,16 @@ struct FocusProjectTile: View {
 
     var body: some View {
         let color = Color(hex: colorHex)
+        if case let .image(file)? = icon, let picture = ProjectIconFiles.image(named: file) {
+            // An uploaded picture fills the tile on its own, without the color wash behind it
+            Image(nsImage: picture)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.28))
+                .accessibilityHidden(true)
+        } else {
         Group {
             switch icon {
             case let .emoji(emoji)?:
@@ -283,6 +293,7 @@ struct FocusProjectTile: View {
         .frame(width: size, height: size)
         .background(RoundedRectangle(cornerRadius: size * 0.28).fill(color.opacity(0.18)))
         .accessibilityHidden(true)
+        }
     }
 }
 

@@ -84,7 +84,7 @@ struct GeneralSettingsView: View {
 
             FocusSection(
                 title: "Timers",
-                subtitle: "Timers never stop each other or stop by themselves. ⌥-click a play button (or ⌥Space) to run only that one; ⇧Space in the window pauses all."
+                subtitle: "Timers never stop each other, and stop by themselves only when you're away. ⌥-click a play button (or ⌥Space) to run only that one; ⇧Space in the window pauses all."
             ) {
                 VStack(alignment: .leading, spacing: 14) {
                     Toggle(isOn: Binding(
@@ -107,6 +107,22 @@ struct GeneralSettingsView: View {
                             selection: Binding(
                                 get: { tasks.preferences.longRunPromptMinutes },
                                 set: { tasks.setLongRunPromptMinutes($0) }
+                            )
+                        )
+                        .fixedSize()
+                    }
+
+                    FocusLabeled(
+                        label: "Stop timers when I'm away for",
+                        hint: "No key press or mouse move for this long stops every running timer, and the idle minutes aren't counted"
+                    ) {
+                        FocusTabs(
+                            options: WorkspacePreferences.idleStopChoices.map { minutes in
+                                (value: minutes, label: minutes == 0 ? "Never" : "\(minutes)m")
+                            },
+                            selection: Binding(
+                                get: { tasks.preferences.idleStopMinutes },
+                                set: { tasks.setIdleStopMinutes($0) }
                             )
                         )
                         .fixedSize()

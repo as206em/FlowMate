@@ -260,7 +260,8 @@ final class TodayTests: XCTestCase {
         XCTAssertFalse(next.contains(inProgress), "already listed under In progress")
         XCTAssertFalse(next.contains(backlog))
         XCTAssertEqual(store.upNext(limit: 2, now: now).map(\.id), [overdue, due])
-        XCTAssertEqual(store.menuBrowseItems(now: now).items.suffix(5), next.map { MenuRowItem.upNext($0) })
+        // The menu bar dropdown no longer lists Up next
+        XCTAssertFalse(store.menuBrowseItems(now: now).items.contains { if case .upNext = $0 { return true } else { return false } })
         XCTAssertEqual(store.menuTodaySummary(now: now), "Today 0m · 2 due · 1 overdue")
     }
 

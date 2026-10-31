@@ -227,16 +227,13 @@ struct TaskContextMenu: View {
                 .keyboardShortcut(.delete, modifiers: .command)
             Divider()
         } else {
-            Button("Open") { model.openTask(task.id) }
-                .keyboardShortcut(.return, modifiers: [])
-            if let rename {
-                Button("Rename", action: rename)
-            }
             if !task.isClosed || store.isRunning(task.id) {
                 Button(store.isRunning(task.id) ? "Pause timer" : "Start timer") { store.toggleTimer(task.id) }
                     .keyboardShortcut(.space, modifiers: [])
             }
             if !task.isClosed {
+                Button("Start, pausing all others") { store.startTimerExclusively(task.id) }
+                    .keyboardShortcut(.space, modifiers: .option)
                 Button(store.isInFocus(task) ? "Remove from Today" : "Add to Today") { model.toggleToday([task.id], store: store) }
                     .keyboardShortcut("t", modifiers: .command)
             }
@@ -251,6 +248,8 @@ struct TaskContextMenu: View {
             }
         }
         .keyboardShortcut("x", modifiers: [])
+        // A single ticket's menu stays short; property pickers remain on their keys and in the panel
+        if selection {
         Divider()
         ForEach(TaskQuickAction.allCases.filter { $0 != .project || store.projects.count > 1 }) { action in
             Button(action == .timeSpent ? "Adjust time…" : action.title + "…") {
@@ -259,13 +258,6 @@ struct TaskContextMenu: View {
             .keyboardShortcut(KeyEquivalent(Character(action.menuKeyEquivalent.lowercased())),
                               modifiers: action == .project ? .shift : [])
         }
-        if !selection {
-            Divider()
-            // ⌘D and ⌘⌫ are handled by TasksKeyMonitor for the selected task
-            Button("Duplicate") { model.duplicateTask(task.id, store: store) }
-                .keyboardShortcut("d", modifiers: .command)
-            Button("Delete task") { model.deleteTask(task.id, store: store) }
-                .keyboardShortcut(.delete, modifiers: .command)
         }
     }
 }

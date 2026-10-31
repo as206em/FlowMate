@@ -88,12 +88,10 @@ extension TaskStore {
         return (running, paused)
     }
 
-    /// Menu rows top to bottom, as ↑/↓ walk them: running timers, the paused In progress tasks,
-    /// then Up next.
+    /// Menu rows top to bottom, as ↑/↓ walk them: running timers, then the paused In progress tasks.
     func menuBrowseItems(now: Date = Date()) -> MenuBrowseModel {
         let listed = menuInProgressTasks
-        return MenuBrowseModel(items: listed.running.map { .running($0.id) } + listed.paused.map { .task($0.id) }
-                               + upNext(now: now).map { .upNext($0.id) })
+        return MenuBrowseModel(items: listed.running.map { .running($0.id) } + listed.paused.map { .task($0.id) })
     }
 
     /// The line at the top of the menu's tasks: "Today 3h 20m · 2 due · 1 overdue".

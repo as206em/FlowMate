@@ -136,6 +136,11 @@ extension TaskStore {
     func setLongRunPromptMinutes(_ minutes: Int) {
         mutate(recordsUndo: false) { $0.preferences.longRunPromptMinutes = max(0, minutes) }
     }
+
+    /// 0 turns idle stopping off.
+    func setIdleStopMinutes(_ minutes: Int) {
+        mutate(recordsUndo: false) { $0.preferences.idleStopMinutes = max(0, minutes) }
+    }
 }
 
 // MARK: - Fixing tracked time

@@ -389,6 +389,17 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         let size: CGFloat = 18
         let tile = NSRect(x: cell.minX, y: cell.midY - size / 2, width: size, height: size)
         let color = Self.projectColor(hex)
+        if case let .image(file)? = display.projectIcon, let picture = ProjectIconFiles.image(named: file) {
+            // An uploaded picture fills the tile, with no color wash behind it
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(roundedRect: tile, xRadius: size * 0.28, yRadius: size * 0.28).addClip()
+            picture.draw(in: tile, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            NSGraphicsContext.restoreGraphicsState()
+            let textX = tile.maxX + 7
+            drawText(name, font: Style.meta, color: Style.text3,
+                     in: NSRect(x: textX, y: cell.minY, width: max(0, cell.maxX - textX), height: cell.height))
+            return
+        }
         color.withAlphaComponent(0.18).setFill()
         NSBezierPath(roundedRect: tile, xRadius: size * 0.28, yRadius: size * 0.28).fill()
         switch display.projectIcon {

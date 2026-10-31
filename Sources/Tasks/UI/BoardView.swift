@@ -22,21 +22,6 @@ struct BoardView: View {
             // Columns stay below as drop targets; this says why they're empty
             if let reason = model.boardEmptyReason(store) {
                 TasksEmptyStateView(reason: reason, board: true)
-            } else if let caption = model.boardCaption(store) {
-                // Board shows only the active sprint; say what it leaves out
-                HStack(spacing: 4) {
-                    Text(caption)
-                        .font(Focus.meta)
-                        .foregroundColor(Focus.text3)
-                        .lineLimit(1)
-                    if let projectId = model.scope.projectId, model.boardWaitingCount(store) > 0 {
-                        FocusCrumb(text: "Plan in Sprints", help: "Open the Sprints view") {
-                            model.showSprints(of: projectId)
-                        }
-                    }
-                }
-                .padding(.top, -8)
-                .padding(.bottom, -6)
             }
             let needed = CGFloat(columns.count) * Self.minColumnWidth + CGFloat(max(0, columns.count - 1)) * Self.columnSpacing
             Group {

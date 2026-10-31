@@ -727,24 +727,15 @@ final class KeyboardSpeedTests: XCTestCase {
         controller.model = model
         let menu = controller.makeMenu(task: a, rename: {})!
         func item(_ title: String) -> NSMenuItem? { menu.items.first { $0.title == title } }
-        XCTAssertEqual(item("Status…")?.keyEquivalent, "s")
-        XCTAssertEqual(item("Status…")?.keyEquivalentModifierMask, [])
-        XCTAssertEqual(item("Move to project…")?.keyEquivalent, "m")
-        XCTAssertEqual(item("Move to project…")?.keyEquivalentModifierMask, .shift)
+        // A single ticket's menu is short: timer, Today and done only
         XCTAssertEqual(item("Mark done")?.keyEquivalent, "x")
         XCTAssertEqual(item("Add to Today")?.keyEquivalentModifierMask, .command)
-        XCTAssertEqual(item("Duplicate")?.keyEquivalent, "d")
-        XCTAssertEqual(item("Delete task")?.keyEquivalentModifierMask, .command)
         XCTAssertEqual(item("Start timer")?.keyEquivalent, " ")
-
-        // Choosing one opens the same picker on that row (once the menu has closed)
-        let due = try XCTUnwrap(item("Due date…"))
-        _ = (try XCTUnwrap(due.target) as AnyObject).perform(try XCTUnwrap(due.action), with: due)
-        let exp = expectation(description: "picker")
-        DispatchQueue.main.async { DispatchQueue.main.async { exp.fulfill() } }
-        await fulfillment(of: [exp], timeout: 1)
-        XCTAssertEqual(model.quickPicker?.action, .due)
-        XCTAssertEqual(model.quickPicker?.taskIds, [a])
+        XCTAssertEqual(item("Start, pausing all others")?.keyEquivalentModifierMask, .option)
+        for removed in ["Open", "Rename", "Status…", "Priority…", "Due date…", "Expected time…", "Adjust time…",
+                        "Labels…", "Duplicate", "Delete task"] {
+            XCTAssertNil(item(removed), "\(removed) is not in the single-ticket menu")
+        }
     }
 
     func testEveryPickerKeyIsInTheHelpSheet() {

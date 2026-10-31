@@ -175,6 +175,8 @@ struct PastSprint: Identifiable, Codable, Equatable, Sendable {
 enum ProjectIcon: Codable, Equatable, Hashable, Sendable {
     case emoji(String)
     case symbol(String)
+    /// An uploaded picture: the file name inside the ProjectIcons folder (see ProjectIconFiles)
+    case image(String)
 
     /// An emoji icon from typed text: its first character, when that's an emoji. nil otherwise.
     static func emoji(from text: String) -> ProjectIcon? {
@@ -184,7 +186,7 @@ enum ProjectIcon: Codable, Equatable, Hashable, Sendable {
         return .emoji(String(first))
     }
 
-    private enum CodingKeys: String, CodingKey { case emoji, symbol }
+    private enum CodingKeys: String, CodingKey { case emoji, symbol, image }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -192,6 +194,8 @@ enum ProjectIcon: Codable, Equatable, Hashable, Sendable {
             self = .emoji(value)
         } else if let value: String = c.decodeOptional(.symbol), !value.isEmpty {
             self = .symbol(value)
+        } else if let value: String = c.decodeOptional(.image), !value.isEmpty {
+            self = .image(value)
         } else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Empty project icon"))
         }
@@ -202,6 +206,7 @@ enum ProjectIcon: Codable, Equatable, Hashable, Sendable {
         switch self {
         case let .emoji(value): try c.encode(value, forKey: .emoji)
         case let .symbol(value): try c.encode(value, forKey: .symbol)
+        case let .image(value): try c.encode(value, forKey: .image)
         }
     }
 }

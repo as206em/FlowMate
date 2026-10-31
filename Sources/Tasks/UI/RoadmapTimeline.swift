@@ -22,6 +22,15 @@ struct RoadmapTimeline: View {
     @State private var scrollX: CGFloat = 0
     /// A No date chip dragged over the canvas: the day it would land on
     @State private var dropDay: Date?
+    /// How far the axis reaches from today. It starts wide and grows as you scroll toward an
+    /// edge, so the timeline feels endless (up to a drawing-size cap).
+    @State private var reachBefore = 180
+    @State private var reachAfter = 365
+    @State private var growthLocked = false
+
+    private static let growthStep = 180
+    private static let growthMargin: CGFloat = 800
+    private static let maxWidth: CGFloat = 14_000
 
     /// The projects drawn: the one on screen, or every active project in sidebar order.
     private var lanes: [Project] {
@@ -41,8 +50,9 @@ struct RoadmapTimeline: View {
                 GeometryReader { geo in
                     let now = Date()
                     let scale = TimelineScale.fitting(axisDates(lanes, milestones), now: now, zoom: model.timelineZoom,
-                                                      visibleWidth: geo.size.width)
-                    canvas(lanes, scale: scale, now: now, height: canvasHeight)
+                                                      visibleWidth: geo.size.width,
+                                                      reachBefore: reachBefore, reachAfter: reachAfter)
+                    canvas(lanes, scale: scale, now: now, height: canvasHeight, visibleWidth: geo.size.width)
                 }
             }
             .frame(height: canvasHeight)
@@ -54,7 +64,7 @@ struct RoadmapTimeline: View {
 
     /// Dates the axis must show: due dates, target dates and the current sprints.
     private func axisDates(_ lanes: [Project], _ milestones: [Milestone]) -> [Date] {
-        milestones.compactMap(\.dueDate) + lanes.compactMap(\.targetDate) + lanes.flatMap { [$0.sprint.startDate, $0.sprint.nextStartDate] }
+        milestones.compactMap(\.dueDate) + milestones.compactMap(\.startDate) + lanes.compactMap(\.targetDate) + lanes.flatMap { [$0.sprint.startDate, $0.sprint.nextStartDate] }
     }
 
     // MARK: - Lanes (sticky column)
@@ -81,7 +91,7 @@ struct RoadmapTimeline: View {
 
     // MARK: - Canvas
 
-    private func canvas(_ lanes: [Project], scale: TimelineScale, now: Date, height: CGFloat) -> some View {
+    private func canvas(_ lanes: [Project], scale: TimelineScale, now: Date, height: CGFloat, visibleWidth: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: true) {
                 ZStack(alignment: .topLeading) {
@@ -122,12 +132,35 @@ struct RoadmapTimeline: View {
                 .onDrop(of: [.plainText], delegate: TimelineDateDrop(scale: scale, store: store, model: model, dropDay: $dropDay))
             }
             .onAppear { scrollToStart(proxy) }
+            .onChange(of: scrollX) { x in growIfNeeded(x, scale: scale, visibleWidth: visibleWidth) }
             .onChange(of: model.timelineZoom) { _ in scrollToStart(proxy) }
             .onReceive(NotificationCenter.default.publisher(for: Self.scrollToTodayNotification)) { _ in scrollToStart(proxy) }
         }
     }
 
+    /// Near the left or right edge: reach further, keeping what's on screen where it is.
+    private func growIfNeeded(_ x: CGFloat, scale: TimelineScale, visibleWidth: CGFloat) {
+        guard !growthLocked, scale.width < Self.maxWidth else { return }
+        let step = Self.growthStep
+        if x < Self.growthMargin {
+            growthLocked = true
+            reachBefore += step
+            let shift = CGFloat(step) * scale.pointsPerDay
+            // After the wider canvas has laid out, scroll by the width added on the left
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                NotificationCenter.default.post(name: Self.scrollByNotification, object: nil, userInfo: ["dx": shift])
+            }
+        } else if x + visibleWidth > scale.width - Self.growthMargin {
+            growthLocked = true
+            reachAfter += step
+        } else {
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { growthLocked = false }
+    }
+
     static let space = "roadmap-timeline"
+    static let scrollByNotification = Notification.Name("FlowMate.timelineScrollBy")
     private let scrollAnchor = "timeline-start"
     /// Posted by the toolbar's Today button.
     static let scrollToTodayNotification = Notification.Name("FlowMate.timelineScrollToToday")
@@ -147,6 +180,10 @@ struct RoadmapTimeline: View {
         // A label stops before the next diamond and before the project's target date flag
         let target = project.targetDate.map { scale.x(for: $0) + 3 }
         return ZStack(alignment: .topLeading) {
+            // Bars (start to due) and the start grip sit under the diamonds
+            ForEach(dated, id: \.milestone.id) { item in
+                TimelineSpan(milestone: item.milestone, scale: scale, hovered: $hovered)
+            }
             ForEach(Array(dated.enumerated()), id: \.element.milestone.id) { index, item in
                 let limits = dated.map(\.x) + (target.map { [$0] } ?? [])
                 TimelineDiamond(
@@ -373,6 +410,128 @@ private struct TimelineAxis: View {
     }
 }
 
+// MARK: - Span (start to due)
+
+/// A milestone with a start date is a bar from start to due: drag the bar to move both dates, drag
+/// its left grip to change the start. A milestone without a start shows a grip beside its diamond
+/// (on hover) to give it one. The due date is the diamond's: drag it to resize the other end.
+private struct TimelineSpan: View {
+    @EnvironmentObject private var store: TaskStore
+    @EnvironmentObject private var model: TasksViewModel
+    let milestone: Milestone
+    let scale: TimelineScale
+    @Binding var hovered: UUID?
+
+    private enum Mode { case move, start }
+    @State private var mode: Mode?
+    @State private var translation: CGFloat = 0
+
+    private static let barHeight: CGFloat = 12
+    private static let gripWidth: CGFloat = 9
+
+    var body: some View {
+        if let due = milestone.dueDate {
+            let days = scale.dayOffset(forTranslation: translation)
+            let shift = CGFloat(days) * scale.pointsPerDay
+            let dueX = scale.x(for: due) + (mode == .move ? shift : 0)
+            let hasBar = milestone.startDate.map { $0 < due } ?? false
+            let startX = (milestone.startDate.map { scale.x(for: $0) } ?? scale.x(for: due)) + (mode == nil ? 0 : shift)
+            let color = Color(hex: milestone.colorHex == Milestone.unsetColor ? 0x64748B : milestone.colorHex)
+            let active = hovered == milestone.id || mode != nil
+            ZStack(alignment: .topLeading) {
+                if hasBar {
+                    let width = max(Self.gripWidth, dueX - startX)
+                    RoundedRectangle(cornerRadius: Self.barHeight / 2)
+                        .fill(color.opacity(milestone.isCompleted ? 0.14 : 0.24))
+                        .overlay(RoundedRectangle(cornerRadius: Self.barHeight / 2).strokeBorder(color.opacity(0.7), lineWidth: 1))
+                        .frame(width: width, height: Self.barHeight)
+                        .contentShape(Rectangle())
+                        .onHover { inside in
+                            if inside { hovered = milestone.id } else if hovered == milestone.id { hovered = nil }
+                        }
+                        .gesture(drag(.move))
+                        .offset(x: startX, y: (RoadmapTimeline.laneHeight - Self.barHeight) / 2)
+                    grip(color: color, visible: active)
+                        .gesture(drag(.start))
+                        .offset(x: startX - Self.gripWidth / 2, y: (RoadmapTimeline.laneHeight - 20) / 2)
+                } else if active {
+                    // No start yet: a grip left of the diamond; drag it left to set one
+                    grip(color: color, visible: true)
+                        .gesture(drag(.start))
+                        .offset(x: dueX - TimelineDiamond.size / 2 - Self.gripWidth - 6, y: (RoadmapTimeline.laneHeight - 20) / 2)
+                }
+                if let mode, let label = dragLabel(mode: mode, due: due, days: days) {
+                    Text(label)
+                        .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
+                        .foregroundColor(Focus.text)
+                        .padding(.horizontal, 8)
+                        .frame(height: 22)
+                        .background(RoundedRectangle(cornerRadius: Focus.radiusTag).fill(Focus.raised))
+                        .overlay(RoundedRectangle(cornerRadius: Focus.radiusTag).strokeBorder(Focus.lineStrong, lineWidth: 1))
+                        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                        .fixedSize()
+                        .offset(x: startX, y: 2)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+    }
+
+    private func grip(color: Color, visible: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(color.opacity(visible ? 0.9 : 0.35))
+            .frame(width: Self.gripWidth, height: 20)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push(); hovered = milestone.id } else { NSCursor.pop() }
+            }
+    }
+
+    private func drag(_ kind: Mode) -> some Gesture {
+        DragGesture(minimumDistance: 3, coordinateSpace: .named(RoadmapTimeline.space))
+            .onChanged { value in
+                mode = kind
+                translation = value.translation.width
+            }
+            .onEnded { value in
+                let days = scale.dayOffset(forTranslation: value.translation.width)
+                mode = nil
+                translation = 0
+                commit(kind, days: days)
+            }
+    }
+
+    private func commit(_ kind: Mode, days: Int) {
+        guard days != 0, let due = milestone.dueDate else { return }
+        switch kind {
+        case .move:
+            if let moved = store.shiftMilestone(milestone.id, byDays: days) {
+                model.showUndoToast("\(milestone.name) moved to \(SprintState.shortDate(moved))", store: store)
+            }
+        case .start:
+            let calendar = Calendar.current
+            let base = milestone.startDate ?? due
+            guard let start = calendar.date(byAdding: .day, value: days, to: base), start < due else { return }
+            store.setMilestoneDates(milestone.id, start: start, due: due)
+            model.showUndoToast("\(milestone.name) starts \(SprintState.shortDate(start))", store: store)
+        }
+    }
+
+    private func dragLabel(mode: Mode, due: Date, days: Int) -> String? {
+        let calendar = Calendar.current
+        switch mode {
+        case .move:
+            guard let newDue = calendar.date(byAdding: .day, value: days, to: due) else { return nil }
+            let start = milestone.startDate.flatMap { calendar.date(byAdding: .day, value: days, to: $0) }
+            return (start.map { SprintState.shortDate($0) + " → " } ?? "") + SprintState.shortDate(newDue)
+        case .start:
+            let base = milestone.startDate ?? due
+            guard let start = calendar.date(byAdding: .day, value: days, to: base) else { return nil }
+            return start < due ? SprintState.shortDate(start) + " → " + SprintState.shortDate(due) : nil
+        }
+    }
+}
+
 // MARK: - Diamond
 
 /// A rotated square filled from the bottom by progress, in the milestone's color: a `risk`
@@ -586,26 +745,28 @@ private struct NoDateChip: View {
     @State private var hovering = false
 
     var body: some View {
-        Button { model.showMilestone(milestone.id, store: store) } label: {
-            HStack(spacing: 7) {
-                if showProject, let project = store.project(milestone.projectId) {
-                    FocusProjectTile(project: project, size: 16)
-                }
-                MilestoneIcon(milestone, size: 11)
-                Text(milestone.name).font(Focus.control).foregroundColor(Focus.text2).lineLimit(1)
-                let progress = store.milestoneProgress(milestone.id)
-                Text(progress.short).font(Focus.meta.monospacedDigit()).foregroundColor(Focus.text3)
+        // Not a Button: a button swallows the mouse-down, so the drag never started
+        HStack(spacing: 7) {
+            if showProject, let project = store.project(milestone.projectId) {
+                FocusProjectTile(project: project, size: 16)
             }
-            .padding(.horizontal, 9)
-            .frame(height: Focus.controlHeight)
-            .background(RoundedRectangle(cornerRadius: Focus.radiusControl).fill(hovering ? Focus.hover : Focus.raised))
-            .overlay(RoundedRectangle(cornerRadius: Focus.radiusControl).strokeBorder(Focus.hairline, lineWidth: 1))
-            .contentShape(Rectangle())
+            MilestoneIcon(milestone, size: 11)
+            Text(milestone.name).font(Focus.control).foregroundColor(Focus.text2).lineLimit(1)
+            let progress = store.milestoneProgress(milestone.id)
+            Text(progress.short).font(Focus.meta.monospacedDigit()).foregroundColor(Focus.text3)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 9)
+        .frame(height: Focus.controlHeight)
+        .background(RoundedRectangle(cornerRadius: Focus.radiusControl).fill(hovering ? Focus.hover : Focus.raised))
+        .overlay(RoundedRectangle(cornerRadius: Focus.radiusControl).strokeBorder(Focus.hairline, lineWidth: 1))
+        .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .focusPointerCursor()
+        .onTapGesture { model.showMilestone(milestone.id, store: store) }
         .onDrag { NSItemProvider(object: TimelineDateDrop.payload(milestone.id) as NSString) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { model.showMilestone(milestone.id, store: store) }
         .help("Show \(milestone.name). Drag it onto the timeline, or right-click, to give it a due date.")
         .contextMenu {
             ForEach(DuePreset.allCases) { preset in
@@ -628,11 +789,22 @@ struct HorizontalScrollOffsetReader: NSViewRepresentable {
     final class ReaderView: NSView {
         var onChange: ((CGFloat) -> Void)?
         private var observer: NSObjectProtocol?
+        private var scrollByObserver: NSObjectProtocol?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             if let observer { NotificationCenter.default.removeObserver(observer) }
             observer = nil
+            if let scrollByObserver { NotificationCenter.default.removeObserver(scrollByObserver) }
+            scrollByObserver = nil
+            // The axis grew on the left: move the scroll position by the width added
+            scrollByObserver = NotificationCenter.default.addObserver(forName: RoadmapTimeline.scrollByNotification, object: nil,
+                                                                      queue: .main) { [weak self] note in
+                guard let dx = note.userInfo?["dx"] as? CGFloat, let scroll = self?.enclosingScrollView else { return }
+                let clip = scroll.contentView
+                clip.scroll(to: NSPoint(x: clip.bounds.origin.x + dx, y: clip.bounds.origin.y))
+                scroll.reflectScrolledClipView(clip)
+            }
             guard window != nil, let clip = enclosingScrollView?.contentView else { return }
             clip.postsBoundsChangedNotifications = true
             observer = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip,
@@ -648,7 +820,10 @@ struct HorizontalScrollOffsetReader: NSViewRepresentable {
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-        deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
+        deinit {
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            if let scrollByObserver { NotificationCenter.default.removeObserver(scrollByObserver) }
+        }
     }
 }
 

@@ -137,15 +137,37 @@ extension TaskStore {
     }
 }
 
+extension TaskStore {
+    /// No key press or mouse move for `idleSeconds`: when that reaches the idle setting, every
+    /// running timer stops at the moment the input stopped, so the idle minutes aren't counted.
+    /// Returns whether timers were stopped.
+    @discardableResult
+    func stopTimersForIdle(idleSeconds: TimeInterval, now: Date = Date()) -> Bool {
+        let minutes = preferences.idleStopMinutes
+        guard minutes > 0, idleSeconds >= TimeInterval(minutes * 60), !workspace.runningTimers.isEmpty else { return false }
+        pauseAllTimers(now: now.addingTimeInterval(-idleSeconds))
+        return true
+    }
+}
+
 /// Watches NSWorkspace sleep/wake and the screen lock for the app's task store.
 @MainActor
 final class SystemAwayMonitor {
     static let shared = SystemAwayMonitor()
     private var tokens: [NSObjectProtocol] = []
     private var distributedTokens: [NSObjectProtocol] = []
+    private var idleTimer: Timer?
 
     func start(store: TaskStore) {
         guard tokens.isEmpty else { return }
+        // Idle check: every 20 seconds, how long since the last key press or mouse move
+        idleTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak store] _ in
+            MainActor.assumeIsolated {
+                let anyInput = CGEventType(rawValue: ~0)!
+                let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
+                store?.stopTimersForIdle(idleSeconds: idle)
+            }
+        }
         let center = NSWorkspace.shared.notificationCenter
         tokens.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak store] _ in
             MainActor.assumeIsolated { store?.systemWillSleep() }

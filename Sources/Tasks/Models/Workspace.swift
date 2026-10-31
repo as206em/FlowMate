@@ -272,6 +272,9 @@ struct WorkspacePreferences: Codable, Equatable, Sendable {
     /// "Still working on X?" choices, in minutes (0 = never ask)
     static let longRunChoices = [0, 60, 120, 180, 240, 360]
     static let defaultLongRunMinutes = 180
+    /// Minutes without a key press or mouse move before running timers stop (0 = never)
+    static let idleStopChoices = [0, 5, 10, 15, 20, 30, 45, 60]
+    static let defaultIdleStopMinutes = 15
 
     /// The project the last task was added to; New task fields in All projects start there.
     var lastProjectId: UUID?
@@ -287,20 +290,25 @@ struct WorkspacePreferences: Codable, Equatable, Sendable {
     var longRunKeptAt: [UUID: Date]
     /// Sleep or lock stretches timers ran through, waiting for Keep or Discard sleep time.
     var pendingAway: [AwayGap]
+    /// Timers stop when there was no key press or mouse move for this many minutes, and the idle
+    /// minutes are not counted (0 = off).
+    var idleStopMinutes: Int
 
     init(lastProjectId: UUID? = nil, showsMenuBarClock: Bool = false,
          longRunPromptMinutes: Int = WorkspacePreferences.defaultLongRunMinutes,
-         sampleProjectIds: [UUID] = [], longRunKeptAt: [UUID: Date] = [:], pendingAway: [AwayGap] = []) {
+         sampleProjectIds: [UUID] = [], longRunKeptAt: [UUID: Date] = [:], pendingAway: [AwayGap] = [],
+         idleStopMinutes: Int = WorkspacePreferences.defaultIdleStopMinutes) {
         self.lastProjectId = lastProjectId
         self.showsMenuBarClock = showsMenuBarClock
         self.longRunPromptMinutes = max(0, longRunPromptMinutes)
         self.sampleProjectIds = sampleProjectIds
         self.longRunKeptAt = longRunKeptAt
         self.pendingAway = pendingAway
+        self.idleStopMinutes = max(0, idleStopMinutes)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case lastProjectId, showsMenuBarClock, longRunPromptMinutes, sampleProjectIds, longRunKeptAt, pendingAway
+        case lastProjectId, showsMenuBarClock, longRunPromptMinutes, sampleProjectIds, longRunKeptAt, pendingAway, idleStopMinutes
     }
 
     init(from decoder: Decoder) throws {
@@ -317,6 +325,7 @@ struct WorkspacePreferences: Codable, Equatable, Sendable {
         }, uniquingKeysWith: { a, _ in a })
         // Schema 11 and older: no waiting sleep prompt
         pendingAway = c.decodeLossyArray(.pendingAway)
+        idleStopMinutes = max(0, c.decode(.idleStopMinutes, or: WorkspacePreferences.defaultIdleStopMinutes))
     }
 
     func encode(to encoder: Encoder) throws {
@@ -328,6 +337,7 @@ struct WorkspacePreferences: Codable, Equatable, Sendable {
         let kept = Dictionary(longRunKeptAt.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { a, _ in a })
         try c.encode(kept, forKey: .longRunKeptAt)
         try c.encode(pendingAway, forKey: .pendingAway)
+        try c.encode(idleStopMinutes, forKey: .idleStopMinutes)
     }
 
     private struct LossyDate: Decodable {

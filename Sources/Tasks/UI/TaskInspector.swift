@@ -21,7 +21,6 @@ struct TaskInspector: View {
                     if !task.isClosed {
                         property("Today") { TaskTodayField(task: task) }
                     }
-                    property("Expected", key: "E") { expectedPicker }
                     property("Labels", key: "L") { TaskLabelsField(task: task) }
                     property("Project") { projectPicker }
                 }
@@ -78,6 +77,9 @@ struct TaskInspector: View {
                     AdjustTimeButton(task: task)
                 }
                 .padding(.top, -4)
+                // The expected time lives with the timer: click to change it
+                TimerExpectedButton(task: task)
+                    .padding(.top, -6)
                 if others > 0 {
                     Text("\(others) other \(others == 1 ? "task is" : "tasks are") running too. Timers never stop each other.")
                         .font(.system(size: 12))
@@ -161,10 +163,6 @@ struct TaskInspector: View {
         .accessibilityLabel("Sprint")
     }
 
-    /// Presets and a custom entry ("1h 15m") in a popover.
-    private var expectedPicker: some View {
-        TaskExpectedField(task: task)
-    }
 }
 
 /// The task's due date field; it turns red when overdue or due today.
@@ -222,8 +220,8 @@ private struct TaskTodayField: View {
     }
 }
 
-/// Field-sized button with the expected time; opens the presets and the custom entry.
-private struct TaskExpectedField: View {
+/// Under the large ring: "Expected 1h 30m"; click it for the presets and the custom entry (E).
+private struct TimerExpectedButton: View {
     let task: TaskItem
 
     @State private var open = false
@@ -231,20 +229,21 @@ private struct TaskExpectedField: View {
 
     var body: some View {
         Button { open = true } label: {
-            HStack(spacing: 7) {
+            HStack(spacing: 5) {
+                Text("Expected").font(.system(size: 12)).foregroundColor(Focus.text3)
                 Text(Focus.durationString(minutes: task.expectedMinutes))
-                    .font(Focus.control.monospacedDigit())
-                    .foregroundColor(Focus.text)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .foregroundColor(hovering || open ? Focus.text : Focus.text2)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
                     .foregroundColor(Focus.text3)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .focusField(focused: hovering || open)
+        .focusPointerCursor()
         .onHover { hovering = $0 }
+        .help("Change the expected time (E)")
         .accessibilityLabel("Expected time: \(Focus.durationString(minutes: task.expectedMinutes))")
         .popover(isPresented: $open, arrowEdge: .bottom) {
             TaskExpectedEditor(task: task) { open = false }

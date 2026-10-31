@@ -72,10 +72,11 @@ struct TimelineScale: Equatable {
     /// ago to twelve weeks ahead, widened to show every date with a week to spare, and starting on
     /// the first day of a week so week lines fall on the grid.
     static func fitting(_ dates: [Date], now: Date, zoom: TimelineZoom, visibleWidth: CGFloat,
+                        reachBefore: Int = defaultDaysBefore, reachAfter: Int = defaultDaysAfter,
                         calendar: Calendar = .current) -> TimelineScale {
         let today = calendar.startOfDay(for: now)
-        var first = calendar.date(byAdding: .day, value: -defaultDaysBefore, to: today) ?? today
-        var last = calendar.date(byAdding: .day, value: defaultDaysAfter, to: today) ?? today
+        var first = calendar.date(byAdding: .day, value: -max(reachBefore, defaultDaysBefore), to: today) ?? today
+        var last = calendar.date(byAdding: .day, value: max(reachAfter, defaultDaysAfter), to: today) ?? today
         for date in dates {
             let day = calendar.startOfDay(for: date)
             if let before = calendar.date(byAdding: .day, value: -margin, to: day), before < first { first = before }

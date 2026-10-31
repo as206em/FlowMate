@@ -492,6 +492,10 @@ struct TaskComposer: View {
         } else {
             added = Added(title: name, taskId: id)
             model.flash(id)
+            // The list redraws around the new row and can take the keyboard with it; keep the
+            // field focused so the next task can be typed straight away
+            DispatchQueue.main.async { focused = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { if isActive { focused = true } }
         }
     }
 }
