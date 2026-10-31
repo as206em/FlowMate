@@ -478,6 +478,9 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         XCTAssertEqual(model.tab, .list)
 
         model.select(.all)
-        XCTAssertFalse(model.perform(.tab4, store: store), "All projects has three tabs")
+        XCTAssertTrue(model.perform(.tab1, store: store))
+        XCTAssertEqual(model.tab, .overview, "All projects opens Overview with ⌘1")
+        XCTAssertTrue(model.perform(.tab4, store: store))
+        XCTAssertEqual(model.tab, .milestones)
     }
 }

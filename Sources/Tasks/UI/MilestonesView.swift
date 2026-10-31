@@ -11,9 +11,42 @@ struct MilestonesView: View {
     @State private var pendingDelete: Milestone?
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            toolbar
+            if model.milestonesLayout == .timeline {
+                RoadmapTimeline()
+            } else {
+                list
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .milestoneDeleteAlert($pendingDelete)
+    }
+
+    /// List / Timeline (remembered), and the timeline's zoom and Today.
+    private var toolbar: some View {
+        HStack(spacing: 10) {
+            FocusTabs(options: MilestonesLayout.allCases.map { (value: $0, label: $0.title) }, selection: $model.milestonesLayout)
+                .fixedSize()
+                .accessibilityLabel("Milestones layout")
+            Spacer(minLength: 12)
+            if model.milestonesLayout == .timeline {
+                Button("Today") {
+                    NotificationCenter.default.post(name: RoadmapTimeline.scrollToTodayNotification, object: nil)
+                }
+                .buttonStyle(.focus(.ghost))
+                .help("Scroll back to today")
+                FocusTabs(options: TimelineZoom.allCases.map { (value: $0, label: $0.title) }, selection: $model.timelineZoom)
+                    .fixedSize()
+                    .accessibilityLabel("Timeline zoom")
+            }
+        }
+    }
+
+    private var list: some View {
         let sections = store.milestonesByProject(in: model.scope)
         let grouped = model.scope.projectId == nil
-        VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 0) {
             if grouped {
                 ForEach(sections, id: \.project.id) { section in
                     sectionHeader(section.project, count: section.milestones.count)
@@ -32,8 +65,6 @@ struct MilestonesView: View {
                 panel(sections.first?.milestones ?? [], addRow: true)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .milestoneDeleteAlert($pendingDelete)
     }
 
     /// A project's section heading in All projects: its tile, name and milestone count. A click shows the project.

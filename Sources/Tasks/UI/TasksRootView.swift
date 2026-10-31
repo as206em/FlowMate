@@ -185,7 +185,7 @@ struct TasksRootView: View {
         switch model.effectiveTab {
         case .list: return true
         case .sprints: return model.scope.projectId.flatMap { store.project($0) } != nil
-        case .board, .milestones: return false
+        case .board, .milestones, .overview: return false
         }
     }
 
@@ -228,6 +228,8 @@ struct TasksRootView: View {
                 if let project { SprintPlanView(projectId: project.id) }
             case .milestones:
                 MilestonesView()
+            case .overview:
+                PortfolioOverview()
             }
         }
     }

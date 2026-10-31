@@ -603,7 +603,7 @@ private struct ComposerTimeChoices: View {
 }
 
 /// Lays children out left to right, wrapping onto new lines when the row is full.
-private struct FlowRow: Layout {
+struct FlowRow: Layout {
     var spacing: CGFloat = 6
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

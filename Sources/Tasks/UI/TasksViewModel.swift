@@ -6,10 +6,13 @@ import SwiftUI
 @MainActor
 final class TasksViewModel: ObservableObject {
     enum Tab: String, CaseIterable {
+        /// All projects only: a card per project (TaskStore.portfolio)
+        case overview
         case board, list, sprints, milestones
 
         var title: String {
             switch self {
+            case .overview: return "Overview"
             case .board: return "Board"
             case .list: return "List"
             case .sprints: return "Sprints"
@@ -86,6 +89,18 @@ final class TasksViewModel: ObservableObject {
     /// Projects whose milestones are listed under them in the sidebar.
     @Published var expandedProjects: Set<UUID> = [] {
         didSet { if expandedProjects != oldValue { saveWindowState() } }
+    }
+    /// All projects › Overview: how the project cards are ordered.
+    @Published var overviewSort: PortfolioSort = .attention {
+        didSet { if overviewSort != oldValue { saveWindowState() } }
+    }
+    /// Milestones tab: a list of rows, or the roadmap timeline (one choice for every scope).
+    @Published var milestonesLayout: MilestonesLayout = .list {
+        didSet { if milestonesLayout != oldValue { saveWindowState() } }
+    }
+    /// The roadmap timeline's zoom.
+    @Published var timelineZoom: TimelineZoom = .quarter {
+        didSet { if timelineZoom != oldValue { saveWindowState() } }
     }
     /// The sidebar's Archived section is open.
     @Published var showingArchived = false
@@ -186,8 +201,8 @@ final class TasksViewModel: ObservableObject {
     static func tabs(in scope: TaskScope) -> [Tab] {
         switch scope {
         case .today: return []
-        case .all: return [.board, .list, .milestones]
-        case .project: return Tab.allCases
+        case .all: return [.overview, .board, .list, .milestones]
+        case .project: return [.board, .list, .sprints, .milestones]
         case .milestone: return [.board, .list]
         }
     }
@@ -301,6 +316,21 @@ final class TasksViewModel: ObservableObject {
     /// "Show tasks" in a milestone panel or menu: the milestone's page.
     func showTasks(ofMilestone milestone: Milestone) {
         select(.milestone(milestone.id, projectId: milestone.projectId))
+    }
+
+    /// All projects › Overview (⌘K "Go to Overview").
+    func showOverview() {
+        select(.all)
+        tab = .overview
+    }
+
+    /// An Overview card's overdue count: the project's List showing only its overdue tasks.
+    func showOverdueTasks(of projectId: UUID) {
+        select(.project(projectId))
+        tab = .list
+        var filter = self.filter
+        filter.due = [.overdue]
+        self.filter = filter
     }
 
     /// Opens the project in the main view (Sprints tab) from a past-sprint link or the panel.
@@ -613,7 +643,7 @@ final class TasksViewModel: ObservableObject {
             return Self.sprintSlots
                 .filter { !isCollapsed(Self.sprintGroupKey($0)) }
                 .flatMap { store.sprintTasks(projectId: projectId, slot: $0) }
-        case .milestones:
+        case .milestones, .overview:
             return []
         }
     }
@@ -739,17 +769,26 @@ final class TasksViewModel: ObservableObject {
         /// nil: never saved (older state), so the defaults (Done collapsed) apply
         var collapsed: [String]?
         var expanded: [String] = []
+        var overviewSort: PortfolioSort = .attention
+        var milestonesLayout: MilestonesLayout = .list
+        var timelineZoom: TimelineZoom = .quarter
 
         init(scope: String = "all", tabs: [String: String] = [:], options: [String: TaskViewOptions] = [:],
-             collapsed: [String]? = nil, expanded: [String] = []) {
+             collapsed: [String]? = nil, expanded: [String] = [], overviewSort: PortfolioSort = .attention,
+             milestonesLayout: MilestonesLayout = .list, timelineZoom: TimelineZoom = .quarter) {
             self.scope = scope
             self.tabs = tabs
             self.options = options
             self.collapsed = collapsed
             self.expanded = expanded
+            self.overviewSort = overviewSort
+            self.milestonesLayout = milestonesLayout
+            self.timelineZoom = timelineZoom
         }
 
-        private enum CodingKeys: String, CodingKey { case scope, tabs, options, collapsed, expanded }
+        private enum CodingKeys: String, CodingKey {
+            case scope, tabs, options, collapsed, expanded, overviewSort, milestonesLayout, timelineZoom
+        }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -757,6 +796,9 @@ final class TasksViewModel: ObservableObject {
             tabs = c.decode(.tabs, or: [:])
             collapsed = c.decodeOptional(.collapsed)
             expanded = c.decode(.expanded, or: [])
+            overviewSort = c.decode(.overviewSort, or: .attention)
+            milestonesLayout = c.decode(.milestonesLayout, or: .list)
+            timelineZoom = c.decode(.timelineZoom, or: .quarter)
             // One broken entry doesn't lose the others
             let raw: [String: LossyOptions] = c.decode(.options, or: [:])
             options = raw.compactMapValues(\.value)
@@ -776,7 +818,10 @@ final class TasksViewModel: ObservableObject {
             tabs: tabByScope.mapValues(\.rawValue),
             options: options.filter { $0.value != .standard },
             collapsed: collapsedGroups.sorted(),
-            expanded: expandedProjects.map(\.uuidString).sorted()
+            expanded: expandedProjects.map(\.uuidString).sorted(),
+            overviewSort: overviewSort,
+            milestonesLayout: milestonesLayout,
+            timelineZoom: timelineZoom
         )
     }
 
@@ -795,6 +840,9 @@ final class TasksViewModel: ObservableObject {
         optionsByScope = state.options
         if let collapsed = state.collapsed { collapsedGroups = Set(collapsed) }
         expandedProjects = Set(state.expanded.compactMap(UUID.init(uuidString:)))
+        overviewSort = state.overviewSort
+        milestonesLayout = state.milestonesLayout
+        timelineZoom = state.timelineZoom
         let restoredScope = TaskScope(storageKey: state.scope) ?? .all
         scope = restoredScope
         let remembered = tabByScope[restoredScope.key] ?? (restoredScope.isMilestone ? .list : .board)
@@ -1023,7 +1071,7 @@ final class TasksViewModel: ObservableObject {
             return boardColumns(store).first.map { Self.boardComposerKey($0) }
         case .sprints:
             return scope.projectId == nil ? nil : Self.listComposerKey(Self.sprintGroupKey(.active))
-        case .milestones:
+        case .milestones, .overview:
             return nil
         }
     }
@@ -1035,7 +1083,7 @@ final class TasksViewModel: ObservableObject {
     /// long the group is.
     func startNewTask(_ store: TaskStore) {
         closePanel()
-        if effectiveTab == .milestones, !scope.isToday { tab = .list }
+        if effectiveTab == .milestones || effectiveTab == .overview, !scope.isToday { tab = .list }
         if let key = defaultComposerKey(store) {
             let group = String(key.dropFirst("composer-".count))
             if effectiveTab != .board, isCollapsed(group) { toggleGroup(group) }

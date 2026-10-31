@@ -13,6 +13,8 @@ enum PaletteCommand: Hashable, Sendable {
     case showOverdue
     case groupBy(TaskGrouping)
     case switchTab(TasksViewModel.Tab)
+    /// All projects › Overview, from anywhere
+    case goToOverview
     /// List or hide a project's milestones in the sidebar
     case toggleMilestones(UUID)
     case toggleArchived
@@ -135,7 +137,9 @@ extension TasksViewModel {
             commands.append(.showOverdue)
             commands += TaskGrouping.available(in: scope).filter { $0 != grouping || effectiveTab != .list }.map(PaletteCommand.groupBy)
         }
-        commands += tabs.filter { $0 != effectiveTab || scope.isToday }.map(PaletteCommand.switchTab)
+        if !(scope == .all && effectiveTab == .overview) { commands.append(.goToOverview) }
+        // Overview has its own command ("Go to Overview"), which works from any scope
+        commands += tabs.filter { ($0 != effectiveTab || scope.isToday) && $0 != .overview }.map(PaletteCommand.switchTab)
         if let projectId = scope.projectId, !scope.isMilestone, store.project(projectId)?.isArchived == false {
             commands.append(.completeSprint(projectId))
         }
@@ -157,6 +161,7 @@ extension TasksViewModel {
         case .showOverdue: return "Show overdue tasks"
         case let .groupBy(grouping): return "Group by \(grouping.title.lowercased())"
         case let .switchTab(tab): return "Switch to \(tab.title)"
+        case .goToOverview: return "Go to Overview"
         case let .toggleMilestones(id): return isProjectExpanded(id) ? "Hide milestones of \(name(id)) in the sidebar" : "Show milestones of \(name(id)) in the sidebar"
         case .toggleArchived: return showingArchived ? "Hide archived projects" : "Show archived projects"
         case .pauseAllTimers: return "Pause all timers"
@@ -187,6 +192,7 @@ extension TasksViewModel {
         case .showOverdue: return ["late", "filter"]
         case .groupBy: return ["grouping"]
         case let .switchTab(tab): return [tab.title, "view"]
+        case .goToOverview: return ["portfolio", "all projects", "dashboard", "slipping"]
         case .toggleMilestones: return ["sidebar", "expand", "collapse"]
         case .toggleArchived: return ["sidebar", "archive"]
         case .pauseAllTimers: return ["stop timers"]
@@ -208,6 +214,7 @@ extension TasksViewModel {
         case .newTask: return ["⌘", "N"]
         case .newProject: return ["⇧", "⌘", "N"]
         case let .switchTab(tab): return tabs.firstIndex(of: tab).map { ["⌘", "\($0 + 1)"] } ?? []
+        case .goToOverview: return scope == .all ? ["⌘", "1"] : []
         case .pauseAllTimers: return ["⇧", "Space"]
         case .showShortcuts: return ["⌘", "/"]
         case .focusSidebar: return ["⌘", "0"]
@@ -278,6 +285,8 @@ extension TasksViewModel {
         case let .switchTab(tab):
             closePanel()
             self.tab = tab
+        case .goToOverview:
+            showOverview()
         case let .toggleMilestones(projectId):
             toggleProjectExpanded(projectId)
         case .toggleArchived:

@@ -432,7 +432,7 @@ extension TasksViewModel {
             guard let projectId = scope.projectId else { return nil }
             return (Self.sprintSlots.filter { !isCollapsed(Self.sprintGroupKey($0)) }
                 .map { store.sprintTasks(projectId: projectId, slot: $0).map(\.id) }, false)
-        case .milestones:
+        case .milestones, .overview:
             return nil
         }
     }
