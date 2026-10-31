@@ -49,6 +49,10 @@ Open the main window with **Open FlowMate** in the menu bar dropdown (`⌘O`).
 
 Task data is saved on your Mac in `~/Library/Application Support/FlowMate/workspace.json` (with a `.bak` copy of the last good file). All reads and writes go through the `WorkspaceRepository` protocol (`Sources/Tasks/Data/`), so a backend can replace local storage later.
 
+## Updates
+
+FlowMate updates itself (Sparkle 2) from GitHub Releases: Settings › Updates has **Check for updates**, automatic checks and downloads, and backups. Before every update installs, your tasks and settings are copied to `Backups/` next to your data (the newest 5 are kept), and **Restore…** puts one back. See `docs/RELEASING.md` for how releases are built.
+
 ## Using FlowMate
 
 1. Select some text in any app.

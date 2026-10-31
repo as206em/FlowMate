@@ -1,0 +1,43 @@
+name: Import signing certificate
+description: >
+  Imports a Developer ID Application certificate (.p12) into a temporary keychain.
+  Outputs the identity name, or an empty string when no certificate was provided
+  (forks and pull requests have no secrets), so callers can fall back to ad-hoc signing.
+inputs:
+  p12-base64:
+    description: Base64 of the .p12 file
+    required: false
+  p12-password:
+    description: Password of the .p12 file
+    required: false
+outputs:
+  identity:
+    description: Name of the imported signing identity, empty when none
+    value: ${{ steps.import.outputs.identity }}
+runs:
+  using: composite
+  steps:
+    - id: import
+      shell: bash
+      env:
+        P12_BASE64: ${{ inputs.p12-base64 }}
+        P12_PASSWORD: ${{ inputs.p12-password }}
+      run: |
+        if [ -z "$P12_BASE64" ]; then
+          echo "No signing certificate provided - builds will be ad-hoc signed"
+          echo "identity=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+        KEYCHAIN_PASSWORD=$(uuidgen)
+        echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN"
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+        security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+        security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+        rm -f "$RUNNER_TEMP/cert.p12"
+        IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -1)
+        if [ -z "$IDENTITY" ]; then echo "::error::No Developer ID Application identity in the certificate"; exit 1; fi
+        echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"

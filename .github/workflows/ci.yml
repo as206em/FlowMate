@@ -1,0 +1,66 @@
+name: Build
+
+# Every push (and pull request): run the tests, build the universal app, sign it and keep the
+# result as a downloadable artifact. Releases are a separate workflow (release.yml, on v* tags).
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Test
+        run: swift test
+
+      - name: Import signing certificate
+        id: cert
+        uses: ./.github/actions/import-signing-cert
+        with:
+          p12-base64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          p12-password: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+
+      - name: Build and sign
+        env:
+          NO_LAUNCH: "1"
+          UNIVERSAL: "1"
+          # Developer ID when the secrets exist, ad-hoc ("-") for forks and pull requests
+          SIGN_IDENTITY: ${{ steps.cert.outputs.identity || '-' }}
+        run: ./build-app.sh
+
+      - name: Verify signature
+        run: |
+          codesign --verify --deep --strict --verbose=2 FlowMate.app
+          codesign -dvv FlowMate.app 2>&1 | grep -E "Authority|Signature|TeamIdentifier" || true
+          lipo -archs FlowMate.app/Contents/MacOS/FlowMate
+
+      - name: Package
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          ditto -c -k --sequesterRsrc --keepParent FlowMate.app "FlowMate-$SHORT.zip"
+          echo "ARTIFACT=FlowMate-$SHORT.zip" >> "$GITHUB_ENV"
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlowMate-${{ github.sha }}
+          path: ${{ env.ARTIFACT }}
+          retention-days: 14
+          if-no-files-found: error
