@@ -18,7 +18,7 @@ struct TasksSidebar: View {
 
             HStack(spacing: 9) {
                 FocusAppTile()
-                Text("FlowMate").font(.system(size: 14, weight: .semibold)).foregroundColor(Focus.text)
+                Text(AppChannel.current.displayName).font(.system(size: 14, weight: .semibold)).foregroundColor(Focus.text)
                 Spacer(minLength: 0)
                 FocusIconButton(systemName: "questionmark", label: "Keyboard shortcuts (⌘/)", size: 24) {
                     model.showingShortcuts.toggle()

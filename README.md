@@ -1,6 +1,17 @@
 # FlowMate
 
-A macOS menu bar app for a solo engineer running many projects: a task manager with timers that run side by side, plus AI proofreading. Select text in any app, press a shortcut, and FlowMate fixes typos and grammar using a local Ollama model or OpenAI.
+A very opinionated flow partner for macOS. It does the two things I use all day, task management and proofreading, and stays out of the way while I work.
+
+FlowMate lives in the menu bar. It manages tasks for one person running many projects, with timers that run side by side. It also proofreads selected text in any app with one shortcut, using a local Ollama model or OpenAI.
+
+**The opinions it's built on**
+
+- **Menu bar first.** Start a timer, add a task or proofread without opening a window.
+- **Keyboard first.** Single keys edit a task, ⌘K jumps anywhere, and one quick-add language works in every New task box.
+- **Many projects, one person.** Today gathers what matters across every project, and starting a timer never stops another.
+- **Your data stays on your Mac.** Tasks and settings are plain JSON files, API keys live in the Keychain, and proofreading can run fully offline with Ollama.
+- **Review, then replace.** Proofreading shows the changes before it touches your text, unless you turn that off.
+- **One look.** Light only, nothing to theme.
 
 Requires macOS 13 (Ventura) or later.
 
@@ -101,11 +112,11 @@ FlowMate connects to `http://127.0.0.1:11434`. Any other installed model can be 
 ./build-app.sh
 ```
 
-This creates `FlowMate.app`, signs it, and opens it. Move it to `/Applications` so **Launch at login** works.
+This creates `FlowMate Dev.app`, signs it, and opens it. It quits a running FlowMate Dev first, never the released FlowMate.
 
-`build-app.sh` quits any running FlowMate first.
+**Dev and release are separate apps.** A local build is *FlowMate Dev* (`com.asem-mkl.FlowMate.dev`, "DEV" next to its menu bar icon): its tasks, settings and logs live in `~/Library/Application Support/FlowMate Dev`, its API keys under the Keychain service `com.asem-mkl.FlowMate.dev`, and it has its own Accessibility and notification permissions and login item. It never updates itself. The released FlowMate (`com.asem-mkl.FlowMate`, built only by the release workflow with `CHANNEL=production`) keeps `~/Library/Application Support/FlowMate`, so both can run side by side. Give the dev copy different global shortcuts in its Settings if both run at once, or a shortcut fires in both.
 
-For development you can also use `swift build`, `swift run` and `swift test`. Launch at login only works from the app bundle. To try a build without touching your real tasks, settings or logs, point it at another folder: `FLOWMATE_DATA_DIR=/tmp/flowmate .build/debug/FlowMate` (workspace.json, config.json and logs/ go there, and it doesn't ask for Accessibility at launch); `FLOWMATE_WORKSPACE_FILE=/tmp/flowmate/workspace.json` moves only the task data. Note that `build-app.sh` quits any running FlowMate and opens the new bundle on your real data.
+For development you can also use `swift build`, `swift run` and `swift test`; these count as dev too and use the FlowMate Dev folder. Launch at login only works from the app bundle. To try a build on throwaway data, point it at another folder: `FLOWMATE_DATA_DIR=/tmp/flowmate .build/debug/FlowMate` (workspace.json, config.json and logs/ go there, and it doesn't ask for Accessibility at launch); `FLOWMATE_WORKSPACE_FILE=/tmp/flowmate/workspace.json` moves only the task data.
 
 ## Installing on another Mac
 
@@ -146,7 +157,7 @@ Settings are stored in `~/Library/Application Support/FlowMate/config.json`:
 
 Settings missing from the file (for example after an update) get their default values. If the file can't be read at all, it is copied to `config.json.bak` before defaults are used.
 
-The OpenAI API key is stored in the login Keychain (service `com.asem-mkl.FlowMate`), not in the file. Keys found in older config files are moved to the Keychain automatically.
+The OpenAI API key is stored in the login Keychain (service `com.asem-mkl.FlowMate`, or `com.asem-mkl.FlowMate.dev` for FlowMate Dev), not in the file. Keys found in older config files are moved to the Keychain automatically.
 
 Logs are written to `~/Library/Application Support/FlowMate/logs` and kept for 7 days. They don't contain the text you proofread. Settings → Maintenance can open or clear them, or reset all settings.
 

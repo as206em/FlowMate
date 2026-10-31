@@ -253,7 +253,7 @@ struct StatusMenuView: View {
     private var header: some View {
         HStack(spacing: 9) {
             FocusAppTile(size: 20)
-            Text("FlowMate").font(.system(size: 14, weight: .semibold)).foregroundColor(Focus.text)
+            Text(AppChannel.current.displayName).font(.system(size: 14, weight: .semibold)).foregroundColor(Focus.text)
             Spacer(minLength: 8)
             connectionStatus
         }

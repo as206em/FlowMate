@@ -54,9 +54,12 @@ final class UpdateService: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     var lastCheck: Date? { controller?.updater.lastUpdateCheckDate }
 
-    /// Starts Sparkle (once, at launch). Not for a test copy running on other data.
+    /// Starts Sparkle (once, at launch). Only in the released app: an update from the release feed
+    /// would turn a dev build into the production app, on the production data. Not for a test
+    /// copy running on other data either.
     func start() {
-        guard controller == nil, Self.canUpdate, AppDataLocation.override == nil else { return }
+        guard controller == nil, AppChannel.current == .production, Self.canUpdate,
+              AppDataLocation.override == nil else { return }
         controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
         refreshBackups()
     }

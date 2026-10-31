@@ -37,6 +37,7 @@ jobs:
           p12-base64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
           p12-password: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
 
+      # A dev build ("FlowMate Dev.app"): a downloaded artifact runs on its own data, never the release's
       - name: Build and sign
         env:
           NO_LAUNCH: "1"
@@ -47,15 +48,15 @@ jobs:
 
       - name: Verify signature
         run: |
-          codesign --verify --deep --strict --verbose=2 FlowMate.app
-          codesign -dvv FlowMate.app 2>&1 | grep -E "Authority|Signature|TeamIdentifier" || true
-          lipo -archs FlowMate.app/Contents/MacOS/FlowMate
+          codesign --verify --deep --strict --verbose=2 "FlowMate Dev.app"
+          codesign -dvv "FlowMate Dev.app" 2>&1 | grep -E "Authority|Signature|TeamIdentifier" || true
+          lipo -archs "FlowMate Dev.app/Contents/MacOS/FlowMate Dev"
 
       - name: Package
         run: |
           SHORT=$(git rev-parse --short HEAD)
-          ditto -c -k --sequesterRsrc --keepParent FlowMate.app "FlowMate-$SHORT.zip"
-          echo "ARTIFACT=FlowMate-$SHORT.zip" >> "$GITHUB_ENV"
+          ditto -c -k --sequesterRsrc --keepParent "FlowMate Dev.app" "FlowMate-Dev-$SHORT.zip"
+          echo "ARTIFACT=FlowMate-Dev-$SHORT.zip" >> "$GITHUB_ENV"
 
       - name: Upload app
         uses: actions/upload-artifact@v4

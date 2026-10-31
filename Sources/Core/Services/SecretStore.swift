@@ -14,7 +14,7 @@ protocol SecretStore: AnyObject {
 final class KeychainSecretStore: SecretStore {
     private let service: String
 
-    init(service: String = "com.asem-mkl.FlowMate") {
+    init(service: String = AppChannel.current.keychainService) {
         self.service = service
     }
 

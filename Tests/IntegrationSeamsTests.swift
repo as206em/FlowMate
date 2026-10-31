@@ -455,12 +455,35 @@ final class IntegrationSeamsTests: XCTestCase {
 /// FLOWMATE_DATA_DIR moves every file FlowMate writes; without it nothing changes.
 final class AppDataLocationTests: XCTestCase {
     func testOverrideMovesTheDataFolderAndDefaultIsUnchanged() {
-        let normal = AppDataLocation.directory(environment: [:])
+        let normal = AppDataLocation.directory(environment: [:], channel: .production)
         XCTAssertEqual(normal.lastPathComponent, "FlowMate")
         XCTAssertTrue(normal.path.hasSuffix("Library/Application Support/FlowMate"))
-        XCTAssertEqual(AppDataLocation.directory(environment: ["FLOWMATE_DATA_DIR": "  "]), normal)
+        XCTAssertEqual(AppDataLocation.directory(environment: ["FLOWMATE_DATA_DIR": "  "], channel: .production), normal)
+        XCTAssertEqual(AppDataLocation.directory(environment: ["FLOWMATE_DATA_DIR": "/tmp/fm-qa"], channel: .production).path, "/tmp/fm-qa")
         XCTAssertEqual(AppDataLocation.directory(environment: ["FLOWMATE_DATA_DIR": "/tmp/fm-qa"]).path, "/tmp/fm-qa")
         XCTAssertEqual(AppDataLocation.directory(environment: ["FLOWMATE_DATA_DIR": "~/fm"]).path,
                        (NSHomeDirectory() as NSString).appendingPathComponent("fm"))
+    }
+}
+
+/// Dev builds keep their own data, Keychain entry and name, so they never touch the released app.
+final class AppChannelTests: XCTestCase {
+    func testOnlyTheReleaseBundleIDIsProduction() {
+        XCTAssertEqual(AppChannel.channel(bundleID: "com.asem-mkl.FlowMate"), .production)
+        XCTAssertEqual(AppChannel.channel(bundleID: "com.asem-mkl.FlowMate.dev"), .development)
+        XCTAssertEqual(AppChannel.channel(bundleID: nil), .development, "swift run has no bundle ID")
+        XCTAssertEqual(AppChannel.channel(bundleID: "com.apple.dt.xctest.tool"), .development)
+        // Tests never run as the released app
+        XCTAssertEqual(AppChannel.current, .development)
+    }
+
+    func testDevBuildsUseTheirOwnFolderAndKeychainEntry() {
+        let prod = AppDataLocation.directory(environment: [:], channel: .production)
+        let dev = AppDataLocation.directory(environment: [:], channel: .development)
+        XCTAssertNotEqual(prod, dev)
+        XCTAssertTrue(dev.path.hasSuffix("Library/Application Support/FlowMate Dev"))
+        XCTAssertNotEqual(AppChannel.production.keychainService, AppChannel.development.keychainService)
+        XCTAssertEqual(AppChannel.production.keychainService, "com.asem-mkl.FlowMate", "the release keeps its saved keys")
+        XCTAssertEqual(AppChannel.development.displayName, "FlowMate Dev")
     }
 }

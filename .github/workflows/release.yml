@@ -62,10 +62,15 @@ jobs:
 
       - name: Build and sign
         env:
+          # The released app: FlowMate.app, com.asem-mkl.FlowMate, the real data folder and updates
+          CHANNEL: production
           NO_LAUNCH: "1"
           UNIVERSAL: "1"
           SIGN_IDENTITY: ${{ steps.cert.outputs.identity }}
-        run: ./build-app.sh
+        run: |
+          ./build-app.sh
+          ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" FlowMate.app/Contents/Info.plist)
+          [ "$ID" = "com.asem-mkl.FlowMate" ] || { echo "::error::Release built with bundle ID $ID"; exit 1; }
 
       - name: Notarize
         env:

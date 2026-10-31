@@ -57,7 +57,7 @@ class ConfigurationManager: ObservableObject {
     
     // MARK: - Private Methods
     
-    /// Application Support/FlowMate, or FLOWMATE_DATA_DIR when set (AppDataLocation)
+    /// Application Support/FlowMate (FlowMate Dev for dev builds), or FLOWMATE_DATA_DIR when set (AppDataLocation)
     public static var configDirectory: URL {
         AppDataLocation.directory
     }

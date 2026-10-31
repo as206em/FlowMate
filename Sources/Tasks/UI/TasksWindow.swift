@@ -38,7 +38,7 @@ enum TasksWindow {
             defer: false
         )
         window.identifier = identifier
-        window.title = "FlowMate"
+        window.title = AppChannel.current.displayName
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.appearance = NSAppearance(named: .aqua)

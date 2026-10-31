@@ -26,7 +26,9 @@ struct UpdatesSettingsView: View {
                         .disabled(!updates.isAvailable)
                     }
                     if !updates.isAvailable {
-                        Text("Updates are off in this build. They work in the packaged FlowMate.app from a release.")
+                        Text(AppChannel.current == .production
+                             ? "Updates are off in this build. They work in the packaged FlowMate.app from a release."
+                             : "Updates are off in FlowMate Dev. Only the released FlowMate updates itself.")
                             .font(Focus.meta).foregroundColor(Focus.text3)
                     } else if let last = updates.lastCheck {
                         Text("Last checked \(last.formatted(date: .abbreviated, time: .shortened))")
