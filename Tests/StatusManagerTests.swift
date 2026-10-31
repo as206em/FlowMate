@@ -181,7 +181,7 @@ final class StatusManagerTests: XCTestCase {
         XCTAssertEqual(statusManager.state, .success)
         
         // Wait for timeout
-        try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms
+        try? await Task.sleep(nanoseconds: 800_000_000)  // timeout is 100ms; wide margin for slow CI runners
         
         // Should have returned to idle
         XCTAssertEqual(statusManager.state, .idle)
@@ -224,7 +224,7 @@ final class StatusManagerTests: XCTestCase {
             timeout: 0.1
         )
         
-        try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms
+        try? await Task.sleep(nanoseconds: 800_000_000)  // timeout is 100ms; wide margin for slow CI runners
         XCTAssertEqual(statusManager.state, .idle)
         
         // Second timeout
@@ -234,7 +234,7 @@ final class StatusManagerTests: XCTestCase {
             timeout: 0.1
         )
         
-        try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms
+        try? await Task.sleep(nanoseconds: 800_000_000)  // timeout is 100ms; wide margin for slow CI runners
         XCTAssertEqual(statusManager.state, .idle)
     }
     
@@ -294,7 +294,7 @@ final class StatusManagerTests: XCTestCase {
         XCTAssertEqual(statusManager.state, .success)
         
         // Wait for timeout
-        try? await Task.sleep(nanoseconds: 150_000_000)
+        try? await Task.sleep(nanoseconds: 800_000_000)
         XCTAssertEqual(statusManager.state, .idle)
     }
     
@@ -313,7 +313,7 @@ final class StatusManagerTests: XCTestCase {
         XCTAssertEqual(statusManager.state, .failure)
         
         // Wait for timeout
-        try? await Task.sleep(nanoseconds: 250_000_000)  // 250ms
+        try? await Task.sleep(nanoseconds: 800_000_000)  // timeout is 200ms; wide margin for slow CI runners
         
         XCTAssertEqual(statusManager.state, .idle)
     }

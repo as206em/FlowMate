@@ -22,6 +22,7 @@ struct SettingsView: View {
                 case .notifications: NotificationsSettingsView()
                 case .proofreading: ProofreadingSettingsView()
                 case .aiProviders: AIProvidersSettingsView()
+                case .updates: UpdatesSettingsView()
                 case .maintenance: MaintenanceSettingsView()
                 }
             }

@@ -6,6 +6,7 @@ enum SettingsTab: Hashable, CaseIterable {
     case notifications
     case proofreading
     case aiProviders
+    case updates
     case maintenance
 
     var displayName: String {
@@ -14,6 +15,7 @@ enum SettingsTab: Hashable, CaseIterable {
         case .notifications: return "Notifications"
         case .proofreading: return "Proofreading"
         case .aiProviders: return "AI providers"
+        case .updates: return "Updates"
         case .maintenance: return "Maintenance"
         }
     }
@@ -25,6 +27,7 @@ enum SettingsTab: Hashable, CaseIterable {
         case .notifications: return "bell"
         case .proofreading: return "pencil.line"
         case .aiProviders: return "cpu"
+        case .updates: return "arrow.down.circle"
         case .maintenance: return "wrench.and.screwdriver"
         }
     }

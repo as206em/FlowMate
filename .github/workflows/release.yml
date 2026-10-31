@@ -1,0 +1,116 @@
+name: Release
+
+# Run it from the Actions tab ("Run workflow") or: gh workflow run release.yml
+# The version is 1.1.<run number> unless you type one in. The workflow creates the tag itself.
+#   builds a universal app, signs it with Developer ID, notarizes it, attaches FlowMate-1.2.0.zip
+#   to a GitHub Release and adds it to the Sparkle appcast (gh-pages branch), which installed
+#   copies of FlowMate read to offer the update.
+#
+# Secrets (Settings > Secrets and variables > Actions): see docs/RELEASING.md
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (empty = 1.1.<run number>)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: |
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+          [ -n "$VERSION" ] || VERSION="1.1.${{ github.run_number }}"
+          echo "TAG=v$VERSION" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          # Sparkle compares this number to decide what is newer: it must only ever grow
+          echo "BUILD_NUMBER=$(date -u +%Y%m%d%H%M)" >> "$GITHUB_ENV"
+          echo "ZIP=FlowMate-$VERSION.zip" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: swift test
+
+      - name: Import signing certificate
+        id: cert
+        uses: ./.github/actions/import-signing-cert
+        with:
+          p12-base64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          p12-password: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+
+      - name: Require signing and update keys
+        env:
+          IDENTITY: ${{ steps.cert.outputs.identity }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          [ -n "$IDENTITY" ] || { echo "::error::DEVELOPER_ID_P12_BASE64 / DEVELOPER_ID_P12_PASSWORD are not set"; exit 1; }
+          [ -n "$SPARKLE_PRIVATE_KEY" ] || { echo "::error::SPARKLE_PRIVATE_KEY is not set"; exit 1; }
+          [ -s Resources/SparklePublicKey.txt ] || { echo "::error::Resources/SparklePublicKey.txt is missing"; exit 1; }
+
+      - name: Build and sign
+        env:
+          NO_LAUNCH: "1"
+          UNIVERSAL: "1"
+          SIGN_IDENTITY: ${{ steps.cert.outputs.identity }}
+        run: ./build-app.sh
+
+      - name: Notarize
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent FlowMate.app notarize.zip
+          xcrun notarytool submit notarize.zip \
+            --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple FlowMate.app
+          spctl -a -vv FlowMate.app
+          rm notarize.zip
+
+      - name: Package and sign the update
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent FlowMate.app "$ZIP"
+          OUT=$(echo "$SPARKLE_PRIVATE_KEY" | .build/artifacts/sparkle/Sparkle/bin/sign_update --ed-key-file - "$ZIP")
+          echo "$OUT"
+          echo "ED_SIGNATURE=$(echo "$OUT" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')" >> "$GITHUB_ENV"
+          echo "LENGTH=$(stat -f%z "$ZIP")" >> "$GITHUB_ENV"
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" --jq .body > notes.md
+          gh release create "$TAG" "$ZIP" --target "$GITHUB_SHA" --title "FlowMate $VERSION" --notes-file notes.md
+
+      - name: Publish appcast (gh-pages)
+        run: |
+          [ -n "$ED_SIGNATURE" ] || { echo "::error::No Sparkle signature"; exit 1; }
+          URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$ZIP"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin gh-pages > /dev/null; then
+            git fetch origin gh-pages
+            git worktree add pages FETCH_HEAD
+            git -C pages checkout -B gh-pages
+          else
+            git worktree add --orphan -b gh-pages pages
+          fi
+          python3 scripts/update-appcast.py pages/appcast.xml "$VERSION" "$BUILD_NUMBER" "$URL" "$LENGTH" "$ED_SIGNATURE" --notes-file notes.md
+          touch pages/.nojekyll
+          git -C pages add -A
+          git -C pages commit -m "Appcast: FlowMate $VERSION"
+          git -C pages push origin gh-pages
