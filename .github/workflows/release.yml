@@ -39,6 +39,7 @@ jobs:
           # Sparkle compares this number to decide what is newer: it must only ever grow
           echo "BUILD_NUMBER=$(date -u +%Y%m%d%H%M)" >> "$GITHUB_ENV"
           echo "ZIP=FlowMate-$VERSION.zip" >> "$GITHUB_ENV"
+          echo "DMG=FlowMate-$VERSION.dmg" >> "$GITHUB_ENV"
 
       - name: Test
         run: swift test
@@ -89,12 +90,31 @@ jobs:
           echo "ED_SIGNATURE=$(echo "$OUT" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')" >> "$GITHUB_ENV"
           echo "LENGTH=$(stat -f%z "$ZIP")" >> "$GITHUB_ENV"
 
+      # The download for people: open it and drag FlowMate to Applications.
+      # (The zip above is what installed copies use to update themselves.)
+      - name: Disk image
+        env:
+          IDENTITY: ${{ steps.cert.outputs.identity }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          mkdir dmg-root
+          ditto FlowMate.app dmg-root/FlowMate.app
+          ln -s /Applications dmg-root/Applications
+          hdiutil create -volname "FlowMate" -srcfolder dmg-root -ov -format UDZO "$DMG"
+          codesign --force --sign "$IDENTITY" --timestamp "$DMG"
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$DMG"
+          spctl -a -t open --context context:primary-signature -vv "$DMG"
+
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" --jq .body > notes.md
-          gh release create "$TAG" "$ZIP" --target "$GITHUB_SHA" --title "FlowMate $VERSION" --notes-file notes.md
+          gh release create "$TAG" "$DMG" "$ZIP" --target "$GITHUB_SHA" --title "FlowMate $VERSION" --notes-file notes.md
 
       - name: Publish appcast (gh-pages)
         run: |
