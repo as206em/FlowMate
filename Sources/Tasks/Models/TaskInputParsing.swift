@@ -244,11 +244,15 @@ private extension String {
 
 // MARK: - Quick add tokens
 
-/// What the New task field understood: the title plus any tokens.
+/// What a one-line New task box understood (the menu bar search, the global box, the List's
+/// field): the title plus any tokens. It reads the same words as the composer (ComposerInput):
 /// - `!high` `!med` `!low` (also `!h` `!m` `!l`, `!1`–`!3`): priority
 /// - `@beta` or `@"beta launch"`: milestone (matched by name in the target project)
-/// - `due:fri`, `due:nov18`, `due:"nov 18"`: due date (anything TaskDateParser reads)
-/// - `~90m`, `~1h30m`, `~1.5h`: expected time
+/// - `+atlas` or `+"side project"`: project (the task goes there, and it becomes the remembered one)
+/// - `#now` `#next` `#backlog`: sprint
+/// - `*review` or `*"in review"`: status (matched by name in the target project's workflow)
+/// - `due:fri`, `due:nov18`, `due:"nov 18"`, `today`, `tomorrow`: due date
+/// - `~90m`, `2h`, `1h30m`: expected time
 /// Unrecognised tokens stay in the title, so nothing typed is lost.
 struct QuickAddInput: Equatable, Sendable {
     var title: String
@@ -256,63 +260,31 @@ struct QuickAddInput: Equatable, Sendable {
     var milestoneQuery: String?
     var dueDate: Date?
     var expectedMinutes: Int?
+    var projectQuery: String?
+    var slot: SprintSlot?
+    var statusQuery: String?
 
-    var hasTokens: Bool { priority != nil || milestoneQuery != nil || dueDate != nil || expectedMinutes != nil }
+    var hasTokens: Bool {
+        priority != nil || milestoneQuery != nil || dueDate != nil || expectedMinutes != nil
+            || projectQuery != nil || slot != nil || statusQuery != nil
+    }
 
     static func parse(_ text: String, now: Date = Date(), calendar: Calendar = .current) -> QuickAddInput {
         var result = QuickAddInput(title: "")
         var kept: [String] = []
-        for token in tokens(text) {
-            let lower = token.lowercased()
-            if lower.hasPrefix("!"), let priority = priority(String(lower.dropFirst())) {
-                result.priority = priority
-            } else if token.hasPrefix("@"), token.count > 1 {
-                result.milestoneQuery = unquoted(String(token.dropFirst()))
-                    .replacingOccurrences(of: "_", with: " ")
-            } else if lower.hasPrefix("due:"), token.count > 4,
-                      let date = TaskDateParser.parse(unquoted(String(token.dropFirst(4)))
-                        .replacingOccurrences(of: "_", with: " "), now: now, calendar: calendar) {
-                result.dueDate = date
-            } else if token.hasPrefix("~"), let minutes = TaskDurationParser.minutes(String(token.dropFirst())), minutes > 0 {
-                result.expectedMinutes = minutes
-            } else {
-                kept.append(token)
+        for word in ComposerInput.words(text) {
+            switch ComposerInput.token(word, now: now, calendar: calendar) {
+            case let .priority(priority)?: result.priority = priority
+            case let .milestone(name)?: result.milestoneQuery = name
+            case let .due(date)?: result.dueDate = date
+            case let .minutes(minutes)?: result.expectedMinutes = minutes
+            case let .project(name)?: result.projectQuery = name
+            case let .slot(slot)?: result.slot = slot
+            case let .status(name)?: result.statusQuery = name
+            case nil: kept.append(word)
             }
         }
         result.title = kept.joined(separator: " ")
         return result
-    }
-
-    private static func priority(_ word: String) -> TaskPriority? {
-        switch word {
-        case "high", "hi", "h", "1": return .high
-        case "medium", "med", "m", "2": return .medium
-        case "low", "lo", "l", "3": return .low
-        default: return nil
-        }
-    }
-
-    /// Splits on spaces, keeping `"quoted text"` (after @ or due:) inside one token.
-    private static func tokens(_ text: String) -> [String] {
-        var tokens: [String] = []
-        var current = ""
-        var quoted = false
-        for character in text {
-            if character == "\"" {
-                quoted.toggle()
-                current.append(character)
-            } else if character.isWhitespace, !quoted {
-                if !current.isEmpty { tokens.append(current) }
-                current = ""
-            } else {
-                current.append(character)
-            }
-        }
-        if !current.isEmpty { tokens.append(current) }
-        return tokens
-    }
-
-    private static func unquoted(_ text: String) -> String {
-        text.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
     }
 }

@@ -61,7 +61,7 @@ final class TaskComposerTests: XCTestCase {
         XCTAssertEqual(milestones.first?.title, "◆ Beta launch")
         XCTAssertEqual(milestones.last?.action, .newMilestone("be"), "a new name can be created")
         XCTAssertEqual(store.composerSuggestions(.priority, query: "1", projectId: pid).map(\.action), [.priority(.high)])
-        XCTAssertEqual(store.composerSuggestions(.all, query: "", projectId: pid).count, 6)
+        XCTAssertEqual(store.composerSuggestions(.all, query: "", projectId: pid).count, 7, "status (*) is one of them")
     }
 
     func testAddTaskAppliesTheDraftInOneUndoStep() async {

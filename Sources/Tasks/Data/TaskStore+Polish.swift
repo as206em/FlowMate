@@ -110,14 +110,4 @@ extension TaskStore {
     /// Where the menu's quick add goes: the last project used (remembered across launches),
     /// else the first project. Never depends on which timer happens to run.
     var menuQuickAddTarget: Project? { defaultProject }
-
-    /// What a quick-add line will do, in words: ["High", "◆ Beta", "Due Fri", "1h 30m"].
-    func quickAddPreview(_ text: String, projectId: UUID, now: Date = Date()) -> [String] {
-        let input = QuickAddInput.parse(text, now: now)
-        let milestone = input.milestoneQuery.map { matchMilestone($0, projectId: projectId)?.name ?? "No milestone “\($0)”" }
-        return [input.priority?.title,
-                milestone.map { "◆ " + $0 },
-                input.dueDate.map { "Due " + TaskDates.dueLabel($0, now: now) },
-                input.expectedMinutes.map { Focus.durationString(minutes: $0) }].compactMap { $0 }
-    }
 }

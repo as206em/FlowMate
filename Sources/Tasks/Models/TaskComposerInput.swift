@@ -1,15 +1,17 @@
 import Foundation
 
-// The New task composer's typing rules: words it recognises move out of the title into the
-// property row below it (sprint, milestone, priority, due, time, project), and a word starting
-// with # @ ! + or / opens a menu to pick from. Pure functions, so they're easy to test.
+// The one typing language of every New task field: the composer, the menu bar search and the
+// global quick-add box (QuickAddInput reads it with these same rules). Words it recognises move
+// out of the title into the task's properties, and a word starting with # @ ! + * or / opens a
+// menu to pick from (Tab completes it in the one-line boxes). Pure functions, easy to test.
 //
 //   2h  90m  1h30m  1.5h  ~45m   expected time
 //   #now #next #backlog          sprint (#active, #sprint, #current and #later also work)
-//   @beta                        milestone (matched by name in the project)
+//   @beta  @"beta launch"        milestone (matched by name in the project; _ stands for a space)
 //   !high !med !low  !1 !2 !3    priority
 //   due:fri  today  tomorrow     due date (due: takes anything TaskDateParser reads)
-//   +atlas                       project
+//   +atlas  +"side project"      project
+//   *review  *"in review"        status (matched by name in the project's workflow)
 //   /                            a menu of all of the above
 
 /// The properties the composer has collected for the next task. nil means "not set".
@@ -62,6 +64,7 @@ enum ComposerToken: Equatable {
     case priority(TaskPriority)
     case due(Date)
     case project(String)
+    case status(String)
 }
 
 /// A word that opens a picking menu.
@@ -70,6 +73,7 @@ enum ComposerTrigger: Character, CaseIterable {
     case milestone = "@"
     case priority = "!"
     case project = "+"
+    case status = "*"
     case all = "/"
 }
 
@@ -78,17 +82,27 @@ enum ComposerInput {
     static func token(_ word: String, now: Date = Date(), calendar: Calendar = .current) -> ComposerToken? {
         let lower = word.lowercased()
         guard let first = lower.first else { return nil }
+        /// The name after a prefix: quotes taken off, `_` read as a space
+        func name(_ dropping: Int = 1) -> String {
+            unquoted(String(word.dropFirst(dropping))).replacingOccurrences(of: "_", with: " ")
+                .trimmingCharacters(in: .whitespaces)
+        }
         switch first {
         case "#":
             return slot(String(lower.dropFirst())).map(ComposerToken.slot)
         case "@":
-            let name = String(word.dropFirst()).replacingOccurrences(of: "_", with: " ")
+            let name = name()
             return name.isEmpty ? nil : .milestone(name)
         case "!":
             return priority(String(lower.dropFirst())).map(ComposerToken.priority)
         case "+":
-            let name = String(word.dropFirst()).replacingOccurrences(of: "_", with: " ")
+            let name = name()
             return name.isEmpty ? nil : .project(name)
+        case "*":
+            // A letter must follow, so "*" alone or "**bold**" stays text
+            let name = name()
+            guard let initial = name.first, initial.isLetter || initial.isNumber else { return nil }
+            return .status(name)
         case "~":
             guard let minutes = TaskDurationParser.minutes(String(lower.dropFirst())), minutes > 0 else { return nil }
             return .minutes(minutes)
@@ -96,7 +110,8 @@ enum ComposerInput {
             break
         }
         if lower.hasPrefix("due:"), lower.count > 4,
-           let date = TaskDateParser.parse(String(lower.dropFirst(4)).replacingOccurrences(of: "_", with: " "), now: now, calendar: calendar) {
+           let date = TaskDateParser.parse(unquoted(String(lower.dropFirst(4))).replacingOccurrences(of: "_", with: " "),
+                                           now: now, calendar: calendar) {
             return .due(date)
         }
         if ["today", "tomorrow", "tmr", "tmrw"].contains(lower), let date = TaskDateParser.parse(lower, now: now, calendar: calendar) {
@@ -108,6 +123,35 @@ enum ComposerInput {
             return .minutes(minutes)
         }
         return nil
+    }
+
+    /// Splits on spaces, keeping `"quoted text"` (after @, +, * or due:) inside one word.
+    static func words(_ text: String) -> [String] {
+        var words: [String] = []
+        var current = ""
+        var quoted = false
+        for character in text {
+            if character == "\"" {
+                quoted.toggle()
+                current.append(character)
+            } else if character.isWhitespace, !quoted {
+                if !current.isEmpty { words.append(current) }
+                current = ""
+            } else {
+                current.append(character)
+            }
+        }
+        if !current.isEmpty { words.append(current) }
+        return words
+    }
+
+    static func unquoted(_ text: String) -> String {
+        text.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+    }
+
+    /// How a picked name is written as a word: spaces become `_` so it stays one word.
+    static func word(_ trigger: ComposerTrigger, _ name: String) -> String {
+        String(trigger.rawValue) + name.split(whereSeparator: \.isWhitespace).joined(separator: "_")
     }
 
     static func slot(_ word: String) -> SprintSlot? {
@@ -157,7 +201,7 @@ enum ComposerInput {
         return (result, tokens)
     }
 
-    /// The word being typed at the end of the text when it starts with # @ ! + or /:
+    /// The word being typed at the end of the text when it starts with # @ ! + * or /:
     /// the trigger and what follows it ("#ne" → sprint, "ne").
     static func activeTrigger(_ text: String) -> (trigger: ComposerTrigger, query: String)? {
         guard let last = text.split(separator: " ", omittingEmptySubsequences: false).last,
@@ -180,6 +224,7 @@ struct ComposerSuggestion: Identifiable, Equatable {
         case newMilestone(String)
         case priority(TaskPriority)
         case project(UUID)
+        case status(WorkflowStatus)
         /// "/" menu: switch to that trigger's menu
         case trigger(ComposerTrigger)
         /// "/" menu: open the due date or time picker
@@ -230,6 +275,10 @@ extension TaskStore {
         case .project:
             return projects.filter { matches($0.name) }
                 .map { ComposerSuggestion(id: "pr-\($0.id)", title: $0.name, action: .project($0.id)) }
+        case .status:
+            guard let projectId, let project = project(projectId) else { return [] }
+            return project.statuses.filter { matches($0.name) }
+                .map { ComposerSuggestion(id: "st-\($0.id)", title: $0.name, detail: $0.category.title, action: .status($0)) }
         case .all:
             let all: [ComposerSuggestion] = [
                 .init(id: "all-sprint", title: "Sprint", detail: "#", action: .trigger(.sprint)),
@@ -238,6 +287,7 @@ extension TaskStore {
                 .init(id: "all-due", title: "Due date", detail: "due:fri", action: .pickDue),
                 .init(id: "all-time", title: "Expected time", detail: "2h", action: .pickTime),
                 .init(id: "all-project", title: "Project", detail: "+", action: .trigger(.project)),
+                .init(id: "all-status", title: "Status", detail: "*", action: .trigger(.status)),
             ]
             return all.filter { matches($0.title) }
         }

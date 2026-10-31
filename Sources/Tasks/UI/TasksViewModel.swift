@@ -18,9 +18,10 @@ final class TasksViewModel: ObservableObject {
         }
     }
 
-    /// A text field a shortcut wants focused (⌘N, ⇧⌘N, ⌘F). The id makes repeated requests distinct.
+    /// A text field a shortcut wants focused (⌘N, ⇧⌘N, ⌘F, the palette's New milestone). The id
+    /// makes repeated requests distinct.
     struct FocusRequest: Equatable {
-        enum Field { case newTask, newProject, search }
+        enum Field: Equatable { case newTask, newProject, search, newMilestone(UUID) }
         let field: Field
         let id = UUID()
     }
@@ -129,6 +130,21 @@ final class TasksViewModel: ObservableObject {
     @Published var toast: Toast?
     /// The keyboard shortcuts popover (⌘/ or the ? button)
     @Published var showingShortcuts = false
+    /// The single-key picker that's open (S, P, M, R, D, E, T, ⇧M), anchored to its row or the bulk bar
+    @Published var quickPicker: QuickPickerRequest?
+    /// ⌘0: the sidebar has the keyboard; this item has the focus ring (↑↓ move, ↵ shows it, Esc leaves)
+    @Published var sidebarCursor: TaskScope?
+    /// The ⌘K palette is open
+    @Published var showingPalette = false
+    @Published var paletteQuery = "" {
+        didSet { if paletteQuery != oldValue { paletteHighlight = nil } }
+    }
+    /// The palette row ↑/↓ moved to; nil means its first row
+    @Published var paletteHighlight: MenuSearchItem?
+    /// The tasks a palette action applies to, kept from when the palette opened
+    var paletteTargets: [UUID] = []
+    /// Items picked from the palette, newest first ("project:<id>", "task:<id>", …)
+    private(set) var paletteRecents: [String] = []
 
     /// Task being dragged. Set when a drag starts so drops don't need to decode the item provider.
     var draggingTaskId: UUID?
@@ -137,11 +153,20 @@ final class TasksViewModel: ObservableObject {
     private var adjustingSelection = false
 
     /// Where the scope, tabs and filters are kept between launches (nil: not kept, as in tests).
-    private let defaults: UserDefaults?
+    let defaults: UserDefaults?
     private let stateKey: String
     private var restoring = false
 
     nonisolated static let windowStateKey = "FlowMate.tasksWindowState"
+    nonisolated static let paletteRecentsKey = "FlowMate.paletteRecents"
+
+    /// Remembers a palette pick for the empty palette's Recent list (up to 8).
+    func rememberPaletteItem(_ key: String) {
+        paletteRecents.removeAll { $0 == key }
+        paletteRecents.insert(key, at: 0)
+        if paletteRecents.count > 8 { paletteRecents.removeLast(paletteRecents.count - 8) }
+        defaults?.set(paletteRecents, forKey: Self.paletteRecentsKey)
+    }
 
     /// - Parameter defaults: restores the last scope, the tab per scope and the filters per scope
     ///   from here, and saves them on every change. UI state only; the workspace file isn't touched.
@@ -149,6 +174,7 @@ final class TasksViewModel: ObservableObject {
         self.defaults = defaults
         self.stateKey = stateKey
         restoreWindowState()
+        paletteRecents = defaults?.stringArray(forKey: Self.paletteRecentsKey) ?? []
     }
 
     /// Sprints only exists in project scope, and a milestone's page has only Board and List;
@@ -183,6 +209,7 @@ final class TasksViewModel: ObservableObject {
         // Today has no tabs: the tab stays for the next scope
         if !scope.isToday { tab = Self.tab(remembered, in: scope) }
         selectedTaskId = nil
+        sidebarCursor = nil
         if case let .milestone(_, projectId) = scope { expandedProjects.insert(projectId) }
         closePanel()
     }

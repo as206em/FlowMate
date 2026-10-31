@@ -45,6 +45,12 @@ final class AppState: ObservableObject {
     @Published private(set) var quickAddShortcut: String = ""
     /// Set when a new quick-add shortcut can't be used (invalid, or taken by proofreading)
     @Published var quickAddShortcutError: String?
+    /// Global shortcut that pauses the last started timer or resumes the last one ("" = off)
+    @Published private(set) var timerShortcut: String = ""
+    @Published var timerShortcutError: String?
+    /// Global shortcut that opens the menu bar panel with its search focused ("" = off)
+    @Published private(set) var menuSearchShortcut: String = ""
+    @Published var menuSearchShortcutError: String?
     @Published var showDiffByDefault: Bool = true
     @Published var showDialog: Bool = true
     @Published var proofreadingProvider: AIProvider = .ollama
@@ -99,6 +105,8 @@ final class AppState: ObservableObject {
     // Service dependencies
     private let keyboardShortcutManager: KeyboardShortcutManagerProtocol
     private let quickAddShortcutManager: KeyboardShortcutManagerProtocol
+    private let timerShortcutManager: KeyboardShortcutManagerProtocol
+    private let menuSearchShortcutManager: KeyboardShortcutManagerProtocol
     private let clipboardService: ClipboardServiceProtocol
     private let promptBuilder: PromptBuilderProtocol
     private let proofreadingService: ProofreadingServiceProtocol
@@ -120,6 +128,8 @@ final class AppState: ObservableObject {
         statusManager: StatusManager,
         keyboardShortcutManager: KeyboardShortcutManagerProtocol? = nil,
         quickAddShortcutManager: KeyboardShortcutManagerProtocol? = nil,
+        timerShortcutManager: KeyboardShortcutManagerProtocol? = nil,
+        menuSearchShortcutManager: KeyboardShortcutManagerProtocol? = nil,
         clipboardService: ClipboardServiceProtocol? = nil,
         promptBuilder: PromptBuilderProtocol? = nil,
         proofreadingService: ProofreadingServiceProtocol? = nil
@@ -130,6 +140,14 @@ final class AppState: ObservableObject {
         self.keyboardShortcutManager = keyboardShortcutManager ?? KeyboardShortcutManager()
         // Also works while FlowMate's own windows are in front
         self.quickAddShortcutManager = quickAddShortcutManager ?? KeyboardShortcutManager(
+            alsoWhenActive: true,
+            passesThroughLocally: { MainActor.assumeIsolated { ShortcutRecorder.isRecording } }
+        )
+        self.timerShortcutManager = timerShortcutManager ?? KeyboardShortcutManager(
+            alsoWhenActive: true,
+            passesThroughLocally: { MainActor.assumeIsolated { ShortcutRecorder.isRecording } }
+        )
+        self.menuSearchShortcutManager = menuSearchShortcutManager ?? KeyboardShortcutManager(
             alsoWhenActive: true,
             passesThroughLocally: { MainActor.assumeIsolated { ShortcutRecorder.isRecording } }
         )
@@ -144,6 +162,9 @@ final class AppState: ObservableObject {
         updateAIService()
         setupKeyboardShortcut()
         setupQuickAddShortcut()
+        setupTimerShortcut()
+        setupMenuSearchShortcut()
+        TasksViewModel.openSettings = { [weak self] in self?.showSettings(nil) }
         checkConnection()
         refreshLaunchAtLogin()
         applyAppearance()
@@ -155,6 +176,8 @@ final class AppState: ObservableObject {
     deinit {
         keyboardShortcutManager.removeShortcut()
         quickAddShortcutManager.removeShortcut()
+        timerShortcutManager.removeShortcut()
+        menuSearchShortcutManager.removeShortcut()
         monitorTask?.cancel()
     }
 
@@ -181,6 +204,15 @@ final class AppState: ObservableObject {
         // A file edited by hand could give both features the same keys; proofreading keeps them
         if KeyboardShortcutManager.isSameShortcut(quickAddShortcut, keyboardShortcut) {
             quickAddShortcut = ""
+        }
+        // The task hotkeys never take keys another feature uses
+        timerShortcut = config.app.timerShortcut
+        if [keyboardShortcut, quickAddShortcut].contains(where: { KeyboardShortcutManager.isSameShortcut(timerShortcut, $0) }) {
+            timerShortcut = ""
+        }
+        menuSearchShortcut = config.app.menuSearchShortcut
+        if [keyboardShortcut, quickAddShortcut, timerShortcut].contains(where: { KeyboardShortcutManager.isSameShortcut(menuSearchShortcut, $0) }) {
+            menuSearchShortcut = ""
         }
         appearance = config.app.theme
         maxHistoryItems = config.app.maxHistoryItems
@@ -306,6 +338,8 @@ final class AppState: ObservableObject {
             // A global key monitor created before access was granted doesn't receive events
             setupKeyboardShortcut()
             setupQuickAddShortcut()
+            setupTimerShortcut()
+            setupMenuSearchShortcut()
         }
     }
 
@@ -364,6 +398,10 @@ final class AppState: ObservableObject {
             shortcutError = "\(KeyboardShortcutManager.displayString(for: shortcut)) already opens Quick add. Pick another, or change Quick add in General."
             return
         }
+        if let taken = shortcutOwner(shortcut, except: .proofreading) {
+            shortcutError = "\(KeyboardShortcutManager.displayString(for: shortcut)) is already \(taken). Pick another."
+            return
+        }
         if setupKeyboardShortcut(shortcut) {
             keyboardShortcut = shortcut
             configurationManager.updateProofreadingConfig { $0.keyboardShortcut = shortcut }
@@ -411,12 +449,116 @@ final class AppState: ObservableObject {
                 quickAddShortcutError = "\(KeyboardShortcutManager.displayString(for: shortcut)) is the proofreading shortcut. Pick another."
                 return false
             }
+            if let taken = shortcutOwner(shortcut, except: .quickAdd) {
+                quickAddShortcutError = "\(KeyboardShortcutManager.displayString(for: shortcut)) is already \(taken). Pick another."
+                return false
+            }
         }
         quickAddShortcutError = nil
         quickAddShortcut = shortcut
         setupQuickAddShortcut()
         configurationManager.updateAppSettings { $0.quickAddShortcut = shortcut }
         return true
+    }
+
+    // MARK: - Task hotkeys (timer, menu bar search)
+
+    /// The global shortcuts, so two features never listen for the same keys.
+    enum GlobalShortcut { case proofreading, quickAdd, timer, menuSearch }
+
+    /// What already uses these keys, in words ("the proofreading shortcut"), or nil.
+    func shortcutOwner(_ shortcut: String, except kind: GlobalShortcut) -> String? {
+        let owners: [(GlobalShortcut, String, String)] = [
+            (.proofreading, keyboardShortcut, "the proofreading shortcut"),
+            (.quickAdd, quickAddShortcut, "the Quick add shortcut"),
+            (.timer, timerShortcut, "the timer shortcut"),
+            (.menuSearch, menuSearchShortcut, "the menu bar search shortcut"),
+        ]
+        return owners.first { $0.0 != kind && !$0.1.isEmpty && KeyboardShortcutManager.isSameShortcut(shortcut, $0.1) }?.2
+    }
+
+    @discardableResult
+    private func setupTimerShortcut() -> Bool {
+        TasksShortcutsHelp.timerShortcutKeys = timerShortcut.isEmpty ? nil : Self.keyCaps(timerShortcut)
+        guard !timerShortcut.isEmpty else {
+            timerShortcutManager.removeShortcut()
+            return true
+        }
+        return timerShortcutManager.setupShortcut(timerShortcut) {
+            Task { @MainActor in
+                guard !ShortcutRecorder.isRecording else { return }
+                AppState.toggleLastTimer()
+            }
+        }
+    }
+
+    /// The timer hotkey: pauses the timer started last, or resumes the task worked on last, and
+    /// says which in the menu bar panel's note.
+    @MainActor
+    static func toggleLastTimer(store: TaskStore? = nil) {
+        let store = store ?? .shared
+        guard let result = store.toggleLastTimer(), let task = store.task(result.taskId) else { return }
+        MenuState.shared.added = MenuState.AddedNote(
+            message: (result.running ? "Resumed " : "Paused ") + "“\(task.title)”",
+            taskId: task.id
+        )
+    }
+
+    @discardableResult
+    private func setupMenuSearchShortcut() -> Bool {
+        TasksShortcutsHelp.menuSearchShortcutKeys = menuSearchShortcut.isEmpty ? nil : Self.keyCaps(menuSearchShortcut)
+        guard !menuSearchShortcut.isEmpty else {
+            menuSearchShortcutManager.removeShortcut()
+            return true
+        }
+        return menuSearchShortcutManager.setupShortcut(menuSearchShortcut) {
+            Task { @MainActor in
+                guard !ShortcutRecorder.isRecording else { return }
+                MenuBarPanel.openWithSearch()
+            }
+        }
+    }
+
+    /// Sets the "Pause or resume the last timer" hotkey; "" turns it off. Refused (with
+    /// timerShortcutError) when invalid or used by another feature. Returns true when applied.
+    @discardableResult
+    func updateTimerShortcut(_ shortcut: String) -> Bool {
+        let shortcut = shortcut.trimmingCharacters(in: .whitespaces)
+        if let error = validateTaskHotkey(shortcut, kind: .timer) {
+            timerShortcutError = error
+            return false
+        }
+        timerShortcutError = nil
+        timerShortcut = shortcut
+        setupTimerShortcut()
+        configurationManager.updateAppSettings { $0.timerShortcut = shortcut }
+        return true
+    }
+
+    /// Sets the "Open the menu bar search" hotkey; "" turns it off. Same rules as the timer one.
+    @discardableResult
+    func updateMenuSearchShortcut(_ shortcut: String) -> Bool {
+        let shortcut = shortcut.trimmingCharacters(in: .whitespaces)
+        if let error = validateTaskHotkey(shortcut, kind: .menuSearch) {
+            menuSearchShortcutError = error
+            return false
+        }
+        menuSearchShortcutError = nil
+        menuSearchShortcut = shortcut
+        setupMenuSearchShortcut()
+        configurationManager.updateAppSettings { $0.menuSearchShortcut = shortcut }
+        return true
+    }
+
+    private func validateTaskHotkey(_ shortcut: String, kind: GlobalShortcut) -> String? {
+        guard !shortcut.isEmpty else { return nil }
+        guard KeyboardShortcutManager.isValidShortcut(shortcut) else {
+            return "Use a modifier (⌘, ⌥, ⌃ or ⇧) plus one key, or a function key."
+        }
+        if let taken = shortcutOwner(shortcut, except: kind) {
+            return "\(KeyboardShortcutManager.displayString(for: shortcut)) is already \(taken). Pick another."
+        }
+        return nil
     }
 
     func updateCurrentPrompt(_ prompt: String) {

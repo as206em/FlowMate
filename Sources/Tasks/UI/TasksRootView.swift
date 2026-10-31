@@ -10,6 +10,8 @@ struct TasksRootView: View {
             TasksSidebar()
             main
         }
+        .overlay { paletteLayer }
+        .background(QuickPickerHost(model: model, store: store))
         .frame(minWidth: 980, minHeight: 640)
         .background(Focus.canvas)
         .ignoresSafeArea()
@@ -62,6 +64,7 @@ struct TasksRootView: View {
                 TaskFilterBar()
             }
             notices
+            PaletteHint()
             LongRunBanner()
             AwayBanner()
             if model.scope.isToday, !showsFirstProject {
@@ -114,6 +117,24 @@ struct TasksRootView: View {
             toastLayer
                 .padding(.bottom, 22 + (model.isMultiSelecting && !model.isPanelOpen ? Focus.actionBarHeight + 10 : 0))
                 .animation(Focus.menuAnimation, value: model.isMultiSelecting)
+        }
+    }
+
+    // MARK: - ⌘K palette
+
+    /// The palette over everything, with a light scrim; a click outside closes it.
+    @ViewBuilder
+    private var paletteLayer: some View {
+        if model.showingPalette {
+            ZStack(alignment: .top) {
+                Focus.scrim
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.closePalette() }
+                    .accessibilityHidden(true)
+                CommandPalette()
+                    .padding(.top, 70)
+            }
+            .transition(.opacity)
         }
     }
 

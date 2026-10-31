@@ -434,7 +434,11 @@ final class TaskFindEditBatch2Tests: XCTestCase {
 
         XCTAssertTrue(model.perform(.open, store: store))
         XCTAssertEqual(model.openTaskId, c)
-        XCTAssertFalse(model.perform(.selectPrevious, store: store), "arrows scroll the open panel")
+        // ↑/↓ with the panel open move the selection; the panel follows
+        XCTAssertTrue(model.perform(.selectPrevious, store: store))
+        XCTAssertEqual(model.openTaskId, b)
+        XCTAssertTrue(model.perform(.selectNext, store: store))
+        XCTAssertEqual(model.openTaskId, c)
 
         XCTAssertTrue(model.perform(.delete, store: store))
         XCTAssertNil(store.task(c))

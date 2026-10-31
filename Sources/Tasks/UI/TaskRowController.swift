@@ -19,7 +19,8 @@ final class TaskRowController: NSObject {
         case .status?:
             store.cycleStatus(id)
         case .timer? where !task.isClosed:
-            store.toggleTimer(id)
+            // ⌥-click: this timer runs, every other one pauses
+            if modifiers.contains(.option) { store.startTimerExclusively(id) } else { store.toggleTimer(id) }
         case .milestone?, .due?, .priority?, .time?:
             showEditor(column!, taskId: id, rect: rect, in: view)
         case .sprint? where task.sprintSlot != .closed:
@@ -72,123 +73,110 @@ final class TaskRowController: NSObject {
 
     // MARK: Context menu
 
+    /// The row's right-click menu. Each item shows the key that does the same from the keyboard;
+    /// the property items open the same single-key pickers (S, P, M, R, D, E, T, ⇧M).
     func makeMenu(task id: UUID, rename: @escaping () -> Void) -> NSMenu? {
         guard let store, let model, let task = store.task(id) else { return nil }
         let menu = NSMenu()
         menu.autoenablesItems = false
+        // The selection when this row is part of it, else just this row
+        let selection = model.isMultiSelecting && model.isSelected(id)
+        let ids = selection ? model.selectedIds(store) : [id]
 
-        if model.isMultiSelecting, model.isSelected(id) {
-            let count = model.selectedTaskIds.count
+        if selection {
+            let count = ids.count
             let header = NSMenuItem(title: "\(count) tasks selected", action: nil, keyEquivalent: "")
             header.isEnabled = false
             menu.addItem(header)
-            menu.addItem(item("Duplicate \(count) tasks") { [weak model, weak store] in
+            menu.addItem(item("Duplicate \(count) tasks", key: "d", modifiers: .command) { [weak model, weak store] in
                 if let model, let store { model.duplicateSelected(store) }
             })
-            menu.addItem(item("Delete \(count) tasks") { [weak model, weak store] in
+            menu.addItem(item("Delete \(count) tasks", key: "\u{8}", modifiers: .command) { [weak model, weak store] in
                 if let model, let store { model.deleteSelected(store) }
             })
-            let ids = model.selectedIds(store)
             let allPinned = ids.compactMap { store.task($0) }.allSatisfy { store.isInFocus($0) }
-            menu.addItem(item(allPinned ? "Remove \(count) tasks from Today" : "Add \(count) tasks to Today") { [weak model, weak store] in
+            menu.addItem(item(allPinned ? "Remove \(count) tasks from Today" : "Add \(count) tasks to Today", key: "t", modifiers: .command) {
+                [weak model, weak store] in
                 if let model, let store { model.toggleToday(ids, store: store) }
             })
             menu.addItem(.separator())
-        }
-
-        menu.addItem(item("Open") { [weak model] in model?.openTask(id) })
-        menu.addItem(item("Rename", action: rename))
-        if !task.isClosed || store.isRunning(id) {
-            menu.addItem(item(store.isRunning(id) ? "Pause timer" : "Start timer") { [weak store] in store?.toggleTimer(id) })
-        }
-        if !task.isClosed {
-            let pinned = store.isInFocus(task)
-            let today = item(pinned ? "Remove from Today" : "Add to Today") { [weak model, weak store] in
-                if let model, let store { model.toggleToday([id], store: store) }
+        } else {
+            menu.addItem(item("Open", key: "\r") { [weak model] in model?.openTask(id) })
+            menu.addItem(item("Rename", action: rename))
+            if !task.isClosed || store.isRunning(id) {
+                menu.addItem(item(store.isRunning(id) ? "Pause timer" : "Start timer", key: " ") { [weak store] in store?.toggleTimer(id) })
+                if !task.isClosed {
+                    menu.addItem(item("Start, pausing all others", key: " ", modifiers: .option) { [weak store] in
+                        store?.startTimerExclusively(id)
+                    })
+                }
             }
-            today.keyEquivalent = "t"
-            today.keyEquivalentModifierMask = .command
-            menu.addItem(today)
-            if model.scope.isToday, store.isOverdue(task) || store.isDueToday(task) || pinned {
-                menu.addItem(item("Move to tomorrow") { [weak model, weak store] in
-                    if let model, let store { model.moveToDay([id], .tomorrow, store: store) }
+            if !task.isClosed {
+                let pinned = store.isInFocus(task)
+                menu.addItem(item(pinned ? "Remove from Today" : "Add to Today", key: "t", modifiers: .command) { [weak model, weak store] in
+                    if let model, let store { model.toggleToday([id], store: store) }
                 })
+                if model.scope.isToday, store.isOverdue(task) || store.isDueToday(task) || pinned {
+                    menu.addItem(item("Move to tomorrow") { [weak model, weak store] in
+                        if let model, let store { model.moveToDay([id], .tomorrow, store: store) }
+                    })
+                }
             }
         }
-        menu.addItem(.separator())
-
-        let workflow = store.project(task.projectId)?.statuses ?? []
-        menu.addItem(submenu("Status", workflow.map { status in
-            item(status.name, checked: status.id == task.statusId) { [weak store] in store?.setStatus(id, status) }
-        }))
-        menu.addItem(submenu("Priority", TaskPriority.ordered.map { priority in
-            item(priority.title, checked: priority == task.priority) { [weak store] in store?.setPriority(id, priority) }
-        }))
-
-        var milestoneItems = [item("No milestone", checked: task.milestoneId == nil) { [weak store] in store?.setMilestone(id, nil) }]
-        let milestones = store.milestones(of: task.projectId).filter { !$0.isCompleted || $0.id == task.milestoneId }
-        if !milestones.isEmpty { milestoneItems.append(.separator()) }
-        milestoneItems += milestones.map { milestone in
-            item(milestone.name, checked: milestone.id == task.milestoneId) { [weak store] in store?.setMilestone(id, milestone.id) }
-        }
-        menu.addItem(submenu("Milestone", milestoneItems))
-
-        menu.addItem(submenu("Sprint", SprintSlot.plannable.map { slot in
-            item(store.sprintLabel(slot, projectId: task.projectId), checked: slot == task.sprintSlot) { [weak store] in
-                store?.setSprintSlot(id, slot)
+        let allDone = ids.compactMap { store.task($0) }.allSatisfy { $0.statusCategory == .done }
+        menu.addItem(item(allDone ? "Reopen" : "Mark done", key: "x") { [weak store, weak model] in
+            guard let store, let model else { return }
+            let before = store.lastUndoId
+            let done = store.toggleDone(ids)
+            if store.lastUndoId != before {
+                let subject = ids.count == 1 ? "Task" : TaskStore.taskCount(ids.count)
+                model.showUndoToast(done ? "\(subject) marked done" : "\(subject) reopened", store: store)
             }
-        }))
-
-        var dueItems = DuePreset.allCases.map { preset in
-            item(preset.title) { [weak store] in store?.setDueDate(id, preset.date()) }
-        }
-        if task.dueDate != nil {
-            dueItems.append(.separator())
-            dueItems.append(item("Clear") { [weak store] in store?.setDueDate(id, nil) })
-        }
-        menu.addItem(submenu("Due date", dueItems))
-
-        if store.projects.count > 1 {
-            menu.addItem(submenu("Move to project", store.projects.map { project in
-                item(project.name, enabled: project.id != task.projectId) { [weak store] in store?.setProject(id, project.id) }
-            }))
-        }
-        menu.addItem(item("Adjust time…") { [weak model] in model?.adjustingTimeTaskId = id })
+        })
         menu.addItem(.separator())
-        menu.addItem(item("Duplicate") { [weak model, weak store] in
-            if let model, let store { model.duplicateTask(id, store: store) }
-        })
-        menu.addItem(item("Delete task") { [weak model, weak store] in
-            if let model, let store { model.deleteTask(id, store: store) }
-        })
+
+        for action in TaskQuickAction.allCases {
+            if action == .project, store.projects.count < 2 { continue }
+            if action == .sprint, task.sprintSlot == .closed, !selection { continue }
+            let title = action == .timeSpent ? "Adjust time…" : action.title + "…"
+            let modifiers: NSEvent.ModifierFlags = action == .project ? .shift : []
+            menu.addItem(item(title, key: action.menuKeyEquivalent.lowercased(), modifiers: modifiers) { [weak model, weak store] in
+                guard let model, let store else { return }
+                // After the menu has closed, so the picker can take the keyboard
+                DispatchQueue.main.async { model.presentQuickPicker(action, ids: ids, store: store) }
+            })
+        }
+        menu.addItem(.separator())
+        if !selection {
+            menu.addItem(item("Duplicate", key: "d", modifiers: .command) { [weak model, weak store] in
+                if let model, let store { model.duplicateTask(id, store: store) }
+            })
+            menu.addItem(item("Delete task", key: "\u{8}", modifiers: .command) { [weak model, weak store] in
+                if let model, let store { model.deleteTask(id, store: store) }
+            })
+        }
         return menu
     }
 
-    private func item(_ title: String, checked: Bool = false, enabled: Bool = true,
-                      action: @escaping () -> Void) -> NSMenuItem {
-        let item = ClosureMenuItem(title: title, handler: action)
+    /// A menu item that runs a closure, showing `key` (with `modifiers`) as its shortcut.
+    private func item(_ title: String, key: String = "", modifiers: NSEvent.ModifierFlags = [], checked: Bool = false,
+                      enabled: Bool = true, action: @escaping () -> Void) -> NSMenuItem {
+        let item = ClosureMenuItem(title: title, keyEquivalent: key, modifiers: modifiers, handler: action)
         item.state = checked ? .on : .off
         item.isEnabled = enabled
         return item
     }
-
-    private func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
-        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        let menu = NSMenu(title: title)
-        menu.autoenablesItems = false
-        items.forEach(menu.addItem)
-        parent.submenu = menu
-        return parent
-    }
 }
 
-/// A menu item that runs a closure.
-private final class ClosureMenuItem: NSMenuItem {
+/// A menu item that runs a closure. Its key equivalent is shown in the menu (and works while the
+/// menu is open); the same key works on the selection once it's closed.
+final class ClosureMenuItem: NSMenuItem {
     private let handler: () -> Void
 
-    init(title: String, handler: @escaping () -> Void) {
+    init(title: String, keyEquivalent: String = "", modifiers: NSEvent.ModifierFlags = [], handler: @escaping () -> Void) {
         self.handler = handler
-        super.init(title: title, action: #selector(fire), keyEquivalent: "")
+        super.init(title: title, action: #selector(fire), keyEquivalent: keyEquivalent)
+        keyEquivalentModifierMask = modifiers
         target = self
     }
 

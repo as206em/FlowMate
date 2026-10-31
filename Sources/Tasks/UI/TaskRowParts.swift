@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -33,8 +34,14 @@ struct TaskTimerButton: View {
                 size: size,
                 label: task.title
             ) {
-                store.toggleTimer(task.id)
+                // ⌥-click: this timer runs, every other one pauses
+                if NSEvent.modifierFlags.contains(.option) {
+                    store.startTimerExclusively(task.id)
+                } else {
+                    store.toggleTimer(task.id)
+                }
             }
+            .help(store.isRunning(task.id) ? "Pause (⌥-click pauses the others instead)" : "Start the timer (⌥-click pauses every other one)")
         }
     }
 }
@@ -199,7 +206,8 @@ struct TaskTitleButton: View {
     }
 }
 
-/// Right-click actions for a task row or card.
+/// Right-click actions for a task card (list rows build the same menu in AppKit, see
+/// TaskRowController). Each item shows its key; the property items open the single-key pickers.
 struct TaskContextMenu: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
@@ -208,64 +216,57 @@ struct TaskContextMenu: View {
     var rename: (() -> Void)?
 
     var body: some View {
-        if model.isMultiSelecting, model.isSelected(task.id) {
-            let count = model.selectedTaskIds.count
+        let selection = model.isMultiSelecting && model.isSelected(task.id)
+        let ids = selection ? model.selectedIds(store) : [task.id]
+        if selection {
+            let count = ids.count
             Text("\(count) tasks selected")
             Button("Duplicate \(count) tasks") { model.duplicateSelected(store) }
+                .keyboardShortcut("d", modifiers: .command)
             Button("Delete \(count) tasks") { model.deleteSelected(store) }
+                .keyboardShortcut(.delete, modifiers: .command)
             Divider()
+        } else {
+            Button("Open") { model.openTask(task.id) }
+                .keyboardShortcut(.return, modifiers: [])
+            if let rename {
+                Button("Rename", action: rename)
+            }
+            if !task.isClosed || store.isRunning(task.id) {
+                Button(store.isRunning(task.id) ? "Pause timer" : "Start timer") { store.toggleTimer(task.id) }
+                    .keyboardShortcut(.space, modifiers: [])
+            }
+            if !task.isClosed {
+                Button(store.isInFocus(task) ? "Remove from Today" : "Add to Today") { model.toggleToday([task.id], store: store) }
+                    .keyboardShortcut("t", modifiers: .command)
+            }
         }
-        Button("Open") { model.openTask(task.id) }
-        if let rename {
-            Button("Rename", action: rename)
+        let allDone = ids.compactMap { store.task($0) }.allSatisfy { $0.statusCategory == .done }
+        Button(allDone ? "Reopen" : "Mark done") {
+            let before = store.lastUndoId
+            let done = store.toggleDone(ids)
+            if store.lastUndoId != before {
+                let subject = ids.count == 1 ? "Task" : TaskStore.taskCount(ids.count)
+                model.showUndoToast(done ? "\(subject) marked done" : "\(subject) reopened", store: store)
+            }
         }
-        if !task.isClosed || store.isRunning(task.id) {
-            Button(store.isRunning(task.id) ? "Pause timer" : "Start timer") { store.toggleTimer(task.id) }
-        }
+        .keyboardShortcut("x", modifiers: [])
         Divider()
-        Menu("Status") { TaskStatusMenuItems(task: task) }
-        Menu("Priority") {
-            ForEach(TaskPriority.ordered) { priority in
-                Button {
-                    store.setPriority(task.id, priority)
-                } label: {
-                    if priority == task.priority { Label(priority.title, systemImage: "checkmark") } else { Text(priority.title) }
-                }
+        ForEach(TaskQuickAction.allCases.filter { $0 != .project || store.projects.count > 1 }) { action in
+            Button(action == .timeSpent ? "Adjust time…" : action.title + "…") {
+                DispatchQueue.main.async { model.presentQuickPicker(action, ids: ids, store: store) }
             }
+            .keyboardShortcut(KeyEquivalent(Character(action.menuKeyEquivalent.lowercased())),
+                              modifiers: action == .project ? .shift : [])
         }
-        Menu("Milestone") { TaskMilestoneMenuItems(task: task) }
-        Menu("Sprint") {
-            ForEach(SprintSlot.plannable) { slot in
-                let title = store.sprintLabel(slot, projectId: task.projectId)
-                Button {
-                    store.setSprintSlot(task.id, slot)
-                } label: {
-                    if slot == task.sprintSlot { Label(title, systemImage: "checkmark") } else { Text(title) }
-                }
-            }
+        if !selection {
+            Divider()
+            // ⌘D and ⌘⌫ are handled by TasksKeyMonitor for the selected task
+            Button("Duplicate") { model.duplicateTask(task.id, store: store) }
+                .keyboardShortcut("d", modifiers: .command)
+            Button("Delete task") { model.deleteTask(task.id, store: store) }
+                .keyboardShortcut(.delete, modifiers: .command)
         }
-        Menu("Due date") {
-            ForEach(DuePreset.allCases) { preset in
-                Button(preset.title) { store.setDueDate(task.id, preset.date()) }
-            }
-            if task.dueDate != nil {
-                Divider()
-                Button("Clear") { store.setDueDate(task.id, nil) }
-            }
-        }
-        if store.projects.count > 1 {
-            Menu("Move to project") {
-                ForEach(store.projects) { project in
-                    Button(project.name) { store.setProject(task.id, project.id) }
-                        .disabled(project.id == task.projectId)
-                }
-            }
-        }
-        Button("Adjust time…") { model.adjustingTimeTaskId = task.id }
-        Divider()
-        // ⌘D and ⌘⌫ are handled by TasksKeyMonitor for the selected task
-        Button("Duplicate") { model.duplicateTask(task.id, store: store) }
-        Button("Delete task") { model.deleteTask(task.id, store: store) }
     }
 }
 

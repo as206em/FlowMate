@@ -19,13 +19,13 @@ struct TaskBulkBar: View {
                 .foregroundColor(Focus.text)
                 .padding(.horizontal, 8)
             FocusBarSeparator()
-            menuButton("Status", .status) { statusMenu(ids) }
-            menuButton("Priority", .priority) { priorityMenu }
-            menuButton("Milestone", .milestone) { milestoneMenu(ids) }
-            menuButton("Sprint", .sprint) { sprintMenu(ids) }
-            menuButton("Due", .due) { dueMenu }
+            menuButton("Status", .status, help: "Change the status (S)") { statusMenu(ids) }
+            menuButton("Priority", .priority, help: "Set the priority (P, or 1–3)") { priorityMenu }
+            menuButton("Milestone", .milestone, help: "Set the milestone (M)") { milestoneMenu(ids) }
+            menuButton("Sprint", .sprint, help: "Move to a sprint (R)") { sprintMenu(ids) }
+            menuButton("Due", .due, help: "Set the due date (D)") { dueMenu }
             if store.projects.count > 1 {
-                menuButton("Move to", .project) { projectMenu }
+                menuButton("Move to", .project, help: "Move to another project (⇧M)") { projectMenu }
             }
             FocusBarSeparator()
             let allPinned = ids.compactMap { store.task($0) }.allSatisfy { store.isInFocus($0) }
@@ -39,11 +39,16 @@ struct TaskBulkBar: View {
             FocusBarSeparator()
             FocusKey(text: "esc")
             FocusIconButton(systemName: "xmark", label: "Clear selection", size: 30) { model.clearSelection() }
+                .help("Clear the selection (esc or ⇧⌘A)")
         }
+        // Single-key pickers for the selection (S, P, M…) hang above the bar
+        .quickPickerAnchor(.bulk)
     }
 
-    private func menuButton<Content: View>(_ title: String, _ menu: Menu, @ViewBuilder content: @escaping () -> Content) -> some View {
+    private func menuButton<Content: View>(_ title: String, _ menu: Menu, help: String,
+                                           @ViewBuilder content: @escaping () -> Content) -> some View {
         FocusBarButton(title: title, menu: true) { open = menu }
+            .help(help)
             .popover(isPresented: Binding(get: { open == menu }, set: { if !$0, open == menu { open = nil } }), arrowEdge: .top) {
                 content()
                     .environmentObject(store)

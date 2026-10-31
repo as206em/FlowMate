@@ -57,11 +57,17 @@ final class MenuState: ObservableObject {
     /// Keyboard highlight while the search is empty (↑/↓ move, Space timer, ↵ open, ←/→ fold)
     @Published var highlight: MenuRowItem?
     @Published var added: AddedNote?
+    /// Changes when the "Menu bar search" hotkey opens the panel, so the field takes focus
+    @Published var focusSearch = UUID()
 }
 
 /// Keys the menu handles itself while the search field has focus.
 enum MenuKey: Equatable {
-    case up, down, left, right, space, escape
+    case up, down, left, right, space, escape, tab
+    /// ⌥Space: start the highlighted timer and pause every other one
+    case optionSpace
+    /// ⌘1–⌘9: the timer of the Nth listed task
+    case commandNumber(Int)
     case returnKey(command: Bool)
 }
 
@@ -83,6 +89,7 @@ struct MenuSearchField: View {
 
     @FocusState private var focused: Bool
     @State private var pickingTarget = false
+    @ObservedObject private var menuState = MenuState.shared
 
     var body: some View {
         HStack(spacing: 8) {
@@ -110,6 +117,7 @@ struct MenuSearchField: View {
         .overlay(alignment: .bottom) { FocusDivider() }
         .background(MenuSearchKeyMonitor(isActive: focused, handle: handleKey))
         .onAppear { DispatchQueue.main.async { focused = true } }
+        .onChange(of: menuState.focusSearch) { _ in DispatchQueue.main.async { focused = true } }
     }
 
     /// Where new tasks go, inside the field: the last project used. Click to change it.
@@ -189,7 +197,13 @@ private struct MenuSearchKeyMonitor: NSViewRepresentable {
         static func key(for event: NSEvent) -> MenuKey? {
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let plain = flags.subtracting([.numericPad, .function]).isEmpty
+            let mods = flags.intersection([.command, .option, .control, .shift])
+            if mods == .command, let digit = Int(event.charactersIgnoringModifiers ?? ""), (1...9).contains(digit) {
+                return .commandNumber(digit)
+            }
+            if mods == .option, event.keyCode == 49 { return .optionSpace }
             switch event.keyCode {
+            case 48 where plain: return .tab
             case 126 where plain: return .up
             case 125 where plain: return .down
             case 123 where plain: return .left
@@ -231,15 +245,18 @@ struct MenuSearchResults: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(Focus.text2)
                         .frame(width: 20, height: 20)
-                    let title = QuickAddInput.parse(q).title
-                    let parts = store.quickAddPreview(q, projectId: target.id)
+                    let plan = store.planQuickAdd(q, projectId: target.id)
+                    let title = plan.title
+                    // A +project word sends it elsewhere: the row names that project
+                    let destination = store.project(plan.projectId) ?? target
+                    let parts = store.quickAddPreview(q, projectId: target.id).filter { !$0.hasPrefix("→ ") }
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 0) {
                             (Text("Add “") + Text(title.isEmpty ? q : title).foregroundColor(Focus.text) + Text("” to "))
                                 .font(Focus.row)
                                 .foregroundColor(Focus.text2)
                                 .lineLimit(1)
-                            targetMenu(target)
+                            targetMenu(destination)
                         }
                         if !parts.isEmpty {
                             Text(parts.joined(separator: " · "))

@@ -1,21 +1,29 @@
 import Foundation
 
-/// A row in the menu bar search results that ↑/↓ can highlight and ↵ activates.
+/// A row in the menu bar search results (and the ⌘K palette) that ↑/↓ can highlight and ↵ activates.
 enum MenuSearchItem: Hashable, Sendable {
     /// "Add “x” to Project". Only this row (or ⌘↵) creates a task.
     case add
+    /// The Today page (palette)
+    case today
     case project(UUID)
     /// Opens the milestone's page
     case milestone(UUID)
     case task(UUID)
+    /// A command (palette)
+    case command(PaletteCommand)
 }
 
-/// The menu bar search results, in display order, and the keyboard highlight rules.
+/// The menu bar search results and the ⌘K palette's, in display order, and the keyboard
+/// highlight rules both share.
 struct MenuSearchResultsModel: Equatable {
     var canAdd: Bool
     var projects: [UUID]
     var milestones: [UUID] = []
     var tasks: [UUID]
+    /// The palette's one list, best match first (with Today and commands mixed in). When set it is
+    /// the display order instead of the grouped one.
+    var ranked: [MenuSearchItem]?
 
     init(canAdd: Bool, projects: [UUID], milestones: [UUID] = [], tasks: [UUID]) {
         self.canAdd = canAdd
@@ -24,9 +32,24 @@ struct MenuSearchResultsModel: Equatable {
         self.tasks = tasks
     }
 
-    /// Display order: the Add row, then projects, milestones, then tasks
+    /// The palette's list as ranked.
+    init(ranked: [MenuSearchItem]) {
+        self.init(canAdd: false, projects: [], tasks: [])
+        self.ranked = ranked
+        for item in ranked {
+            switch item {
+            case let .project(id): projects.append(id)
+            case let .milestone(id): milestones.append(id)
+            case let .task(id): tasks.append(id)
+            case .add, .today, .command: break
+            }
+        }
+    }
+
+    /// Display order: the Add row, then projects, milestones, then tasks (or the palette's ranking)
     var items: [MenuSearchItem] {
-        (canAdd ? [.add] : []) + projects.map(MenuSearchItem.project) + milestones.map(MenuSearchItem.milestone)
+        if let ranked { return ranked }
+        return (canAdd ? [.add] : []) + projects.map(MenuSearchItem.project) + milestones.map(MenuSearchItem.milestone)
             + tasks.map(MenuSearchItem.task)
     }
 
@@ -67,5 +90,32 @@ extension TaskStore {
                 .prefix(milestoneLimit).map(\.id)),
             tasks: searchTasks(q, limit: taskLimit).map(\.id)
         )
+    }
+
+    /// The palette's places, scored against the typed text (FuzzyMatch): Today, projects
+    /// (archived ones too, lower), milestones (open ones first) and tasks of every project (open
+    /// ones first; a task needs a closer match than a place, so a short query isn't all tasks).
+    func paletteMatches(_ query: String) -> [(item: MenuSearchItem, score: Int)] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        var matches: [(item: MenuSearchItem, score: Int)] = []
+        if let score = FuzzyMatch.score(q, in: ["Today", "My focus", "Due today", "Overdue"]) {
+            matches.append((.today, score + 5))
+        }
+        for project in allProjects {
+            guard let score = FuzzyMatch.score(q, in: project.name) else { continue }
+            matches.append((.project(project.id), score + (project.isArchived ? -60 : 4)))
+        }
+        let archived = Set(archivedProjects.map(\.id))
+        for milestone in workspace.milestones where !archived.contains(milestone.projectId) {
+            let projectName = self.project(milestone.projectId)?.name ?? ""
+            guard let score = FuzzyMatch.score(q, in: [milestone.name, projectName + " " + milestone.name]) else { continue }
+            matches.append((.milestone(milestone.id), score + (milestone.isCompleted ? -60 : 2)))
+        }
+        for task in tasks(in: .all) {
+            guard let score = FuzzyMatch.score(q, in: task.title), score >= 500 else { continue }
+            matches.append((.task(task.id), score - (task.isClosed ? 80 : 0)))
+        }
+        return matches
     }
 }

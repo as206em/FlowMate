@@ -31,7 +31,7 @@ struct TasksSidebar: View {
             .padding(.trailing, 2)
             .padding(.bottom, 14)
 
-            FocusSidebarItem(selected: model.scope == .today, action: { model.select(.today) }) {
+            FocusSidebarItem(selected: model.scope == .today, focused: model.sidebarCursor == .today, action: { model.select(.today) }) {
                 Image(systemName: "sun.max")
                     .font(.system(size: 13, weight: .medium))
                     .frame(width: 18)
@@ -52,7 +52,7 @@ struct TasksSidebar: View {
                 }
             }
 
-            FocusSidebarItem(selected: model.scope == .all, action: { model.select(.all) }) {
+            FocusSidebarItem(selected: model.scope == .all, focused: model.sidebarCursor == .all, action: { model.select(.all) }) {
                 Image(systemName: "square.grid.2x2")
                     .font(.system(size: 13, weight: .medium))
                     .frame(width: 18)
@@ -140,7 +140,7 @@ struct TasksSidebar: View {
             .accessibilityValue(model.showingArchived ? "Expanded" : "Collapsed")
             if model.showingArchived {
                 ForEach(archived) { project in
-                    FocusSidebarItem(selected: model.scope == .project(project.id), action: { model.clickSidebarProject(project.id) }) {
+                    FocusSidebarItem(selected: model.scope == .project(project.id), focused: model.sidebarCursor == .project(project.id), action: { model.clickSidebarProject(project.id) }) {
                         FocusProjectTile(name: project.name, colorHex: project.colorHex)
                             .opacity(0.6)
                         Text(project.name)
@@ -165,7 +165,7 @@ struct TasksSidebar: View {
         if renamingId == project.id {
             ProjectRenameField(project: project) { renamingId = nil }
         } else {
-            FocusSidebarItem(selected: model.scope == .project(project.id), action: { model.clickSidebarProject(project.id) }) {
+            FocusSidebarItem(selected: model.scope == .project(project.id), focused: model.sidebarCursor == .project(project.id), action: { model.clickSidebarProject(project.id) }) {
                 FocusProjectTile(name: project.name, colorHex: project.colorHex)
                 Text(project.name)
                     .lineLimit(1)
@@ -302,7 +302,8 @@ private struct SidebarMilestones: View {
             ForEach(milestones) { milestone in
                 let onScreen = model.scope.milestoneId == milestone.id
                 SidebarMilestoneRow(milestone: milestone,
-                                    selected: onScreen || model.dropTarget == SidebarMilestoneDrop.key(milestone.id)) {
+                                    selected: onScreen || model.dropTarget == SidebarMilestoneDrop.key(milestone.id),
+                                    focused: model.sidebarCursor == .milestone(milestone.id, projectId: project.id)) {
                     model.clickSidebarMilestone(milestone.id, store: store)
                 }
                 .help(onScreen ? "Click again for milestone details" : milestone.name)
@@ -369,6 +370,8 @@ private struct SidebarNewMilestoneField: View {
                 .accessibilityLabel("New milestone in \(project.name)")
                 .accessibilityHint("Return adds it. Shift-Return adds it and shows its page.")
         }
+        .onAppear(perform: takeFocusRequest)
+        .onChange(of: model.focusRequest) { _ in takeFocusRequest() }
         .padding(.leading, 26)
         .padding(.trailing, 8)
         .frame(height: 26)
@@ -376,10 +379,20 @@ private struct SidebarNewMilestoneField: View {
     }
 }
 
+extension SidebarNewMilestoneField {
+    /// The palette's "New milestone in Atlas"
+    fileprivate func takeFocusRequest() {
+        guard model.focusRequest?.field == .newMilestone(project.id) else { return }
+        model.focusRequest = nil
+        DispatchQueue.main.async { focused = true }
+    }
+}
+
 private struct SidebarMilestoneRow: View {
     @EnvironmentObject private var store: TaskStore
     let milestone: Milestone
     let selected: Bool
+    var focused = false
     let action: () -> Void
 
     @State private var hovering = false
@@ -402,6 +415,7 @@ private struct SidebarMilestoneRow: View {
             .padding(.trailing, 8)
             .frame(height: 26)
             .background(RoundedRectangle(cornerRadius: Focus.radiusControl).fill(selected ? Focus.raised : (hovering ? Focus.hover : .clear)))
+            .overlay(RoundedRectangle(cornerRadius: Focus.radiusControl).strokeBorder(focused ? Focus.text3 : .clear, lineWidth: 1.5))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

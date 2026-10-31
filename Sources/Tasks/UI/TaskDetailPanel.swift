@@ -14,6 +14,10 @@ struct TaskDetailPanel: View {
                 HStack(spacing: 0) {
                     SidePanelBody { TaskDetailBody(task: task) }
                     TaskInspector(task: task)
+                        // Single-key pickers (S, P, D…) hang under the top of the inspector
+                        .overlay(alignment: .top) {
+                            Color.clear.frame(height: 56).allowsHitTesting(false).quickPickerAnchor(.panel)
+                        }
                 }
             }
             .accessibilityElement(children: .contain)

@@ -31,7 +31,7 @@ struct GeneralSettingsView: View {
 
             FocusSection(
                 title: "Quick add",
-                subtitle: "A shortcut that opens a small New task box over any app. Tokens like !high, @milestone, due:fri and ~90m work there too."
+                subtitle: "A shortcut that opens a small New task box over any app. The same words as everywhere work there: !high, @milestone, +project, #next, *status, due:fri and ~90m (Tab completes them)."
             ) {
                 VStack(alignment: .leading, spacing: 10) {
                     ShortcutRecorder(shortcut: Binding(
@@ -61,8 +61,30 @@ struct GeneralSettingsView: View {
             }
 
             FocusSection(
+                title: "Task hotkeys",
+                subtitle: "Optional shortcuts that work over any app. Both are off until you record one."
+            ) {
+                VStack(alignment: .leading, spacing: 16) {
+                    hotkey(
+                        label: "Pause or resume the last timer",
+                        hint: "Pauses the timer you started last; with none running, starts the task you worked on last",
+                        shortcut: appState.timerShortcut,
+                        error: appState.timerShortcutError,
+                        set: { appState.updateTimerShortcut($0) }
+                    )
+                    hotkey(
+                        label: "Open the menu bar with search focused",
+                        hint: "Type to find a task, or add one with !high, @milestone, +project, #next and due:fri",
+                        shortcut: appState.menuSearchShortcut,
+                        error: appState.menuSearchShortcutError,
+                        set: { appState.updateMenuSearchShortcut($0) }
+                    )
+                }
+            }
+
+            FocusSection(
                 title: "Timers",
-                subtitle: "Timers never stop each other or stop by themselves."
+                subtitle: "Timers never stop each other or stop by themselves. ⌥-click a play button (or ⌥Space) to run only that one; ⇧Space in the window pauses all."
             ) {
                 VStack(alignment: .leading, spacing: 14) {
                     Toggle(isOn: Binding(
@@ -148,8 +170,28 @@ struct GeneralSettingsView: View {
         }
         .onAppear {
             appState.quickAddShortcutError = nil
+            appState.timerShortcutError = nil
+            appState.menuSearchShortcutError = nil
             appState.refreshLaunchAtLogin()
             appState.refreshAccessibilityPermission()
+        }
+    }
+
+    /// A labeled recorder for one optional hotkey, with Turn off and its error.
+    private func hotkey(label: String, hint: String, shortcut: String, error: String?,
+                        set: @escaping (String) -> Void) -> some View {
+        FocusLabeled(label: label, hint: hint) {
+            VStack(alignment: .leading, spacing: 8) {
+                ShortcutRecorder(shortcut: Binding(get: { shortcut }, set: { set($0) }))
+                    .frame(maxWidth: 360)
+                if let error {
+                    Text(error).font(.system(size: 12)).foregroundColor(Focus.risk)
+                }
+                if !shortcut.isEmpty {
+                    Button("Turn off") { set("") }
+                        .buttonStyle(.focus(.ghost))
+                }
+            }
         }
     }
 }

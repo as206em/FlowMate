@@ -1034,6 +1034,8 @@ struct FocusAppTile: View {
 /// Sidebar navigation item: hover fill, raised with a hairline when selected
 struct FocusSidebarItem<Label: View>: View {
     let selected: Bool
+    /// The keyboard is on this item (⌘0 in the tasks window): a focus ring
+    var focused = false
     let action: () -> Void
     @ViewBuilder let label: () -> Label
 
@@ -1052,7 +1054,7 @@ struct FocusSidebarItem<Label: View>: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: Focus.radiusControl)
-                        .strokeBorder(selected ? Focus.hairline : .clear, lineWidth: 1)
+                        .strokeBorder(focused ? Focus.text3 : (selected ? Focus.hairline : .clear), lineWidth: focused ? 1.5 : 1)
                 )
                 .contentShape(Rectangle())
         }

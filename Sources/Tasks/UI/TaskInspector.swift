@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The 320pt right column of the task panel: the large timer ring and the task's properties.
@@ -10,15 +11,15 @@ struct TaskInspector: View {
         SidePanelInspector {
                 timer
                 VStack(spacing: 6) {
-                    property("Status") { statusPicker }
-                    property("Priority") { priorityPicker }
-                    property("Milestone") { milestonePicker }
-                    property("Sprint") { sprintPicker }
-                    property("Due date") { TaskDueDateField(task: task) }
+                    property("Status", key: "S") { statusPicker }
+                    property("Priority", key: "P, or 1–3") { priorityPicker }
+                    property("Milestone", key: "M") { milestonePicker }
+                    property("Sprint", key: "R") { sprintPicker }
+                    property("Due date", key: "D") { TaskDueDateField(task: task) }
                     if !task.isClosed {
                         property("Today") { TaskTodayField(task: task) }
                     }
-                    property("Expected") { expectedPicker }
+                    property("Expected", key: "E") { expectedPicker }
                     property("Project") { projectPicker }
                 }
                 .padding(.top, 16)
@@ -41,6 +42,7 @@ struct TaskInspector: View {
                             .foregroundColor(Focus.risk)
                     }
                     .buttonStyle(.focus(.ghost))
+                    .help("Delete this task (⌘⌫). Undo brings it back.")
                 }
         }
     }
@@ -58,9 +60,13 @@ struct TaskInspector: View {
                     clock: Focus.clockString(store.elapsed(task, now: now)),
                     caption: "of \(Focus.durationString(minutes: task.expectedMinutes)) expected"
                 ) {
-                    store.toggleTimer(task.id)
+                    if NSEvent.modifierFlags.contains(.option) {
+                        store.startTimerExclusively(task.id)
+                    } else {
+                        store.toggleTimer(task.id)
+                    }
                 }
-                .help(running ? "Pause timer" : "Start timer")
+                .help(running ? "Pause timer (Space)" : "Start timer (Space). ⌥-click or ⌥Space pauses every other timer.")
                 HStack(spacing: 6) {
                     Text(running ? "Click the timer to pause" : "Click the timer to start")
                         .font(.system(size: 12))
@@ -84,8 +90,10 @@ struct TaskInspector: View {
 
     // MARK: Properties
 
-    private func property<Content: View>(_ label: String, @ViewBuilder content: @escaping () -> Content) -> some View {
+    private func property<Content: View>(_ label: String, key: String? = nil,
+                                         @ViewBuilder content: @escaping () -> Content) -> some View {
         SidePanelProperty(label: label, content: content)
+            .help(key.map { "\(label): press \($0) to change it from the keyboard" } ?? "")
     }
 
     private var statusPicker: some View {
@@ -128,7 +136,7 @@ struct TaskInspector: View {
             selection: Binding(get: { task.projectId }, set: { store.setProject(task.id, $0) }),
             title: { store.project($0)?.name ?? "" }
         )
-        .help(task.milestoneId == nil ? "Move to another project" : "Move to another project. The milestone is cleared.")
+        .help(task.milestoneId == nil ? "Move to another project (⇧M)" : "Move to another project (⇧M). The milestone is cleared.")
         .accessibilityLabel("Project")
     }
 

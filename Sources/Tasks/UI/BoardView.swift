@@ -230,6 +230,7 @@ struct TaskCard: View {
                               lineWidth: selected ? 1.5 : 1)
         )
         .contentShape(RoundedRectangle(cornerRadius: Focus.radiusCard))
+        .quickPickerAnchor(.task(task.id))
         .onHover { hovering = $0 }
         // One gesture, so a single click selects at once instead of waiting out the double-click time
         .onTapGesture {

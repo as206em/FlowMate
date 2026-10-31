@@ -32,7 +32,7 @@ struct TaskComposer: View {
     @State private var added: Added?
     @FocusState private var focused: Bool
 
-    enum Picker: Hashable { case project, sprint, milestone, priority, due, time }
+    enum Picker: Hashable { case project, status, sprint, milestone, priority, due, time }
 
     struct Added: Equatable {
         let title: String
@@ -138,7 +138,7 @@ struct TaskComposer: View {
                 .disabled(target == nil)
                 .onSubmit(submit)
                 .accessibilityLabel("New task title")
-                .accessibilityHint("Type 2h, #next, @milestone, !high or due:fri to set them. Return adds.")
+                .accessibilityHint("Type 2h, #next, @milestone, !high, *status, +project or due:fri to set them. Return adds.")
         }
         .padding(.horizontal, 12)
         .frame(height: Self.fieldHeight)
@@ -163,6 +163,26 @@ struct TaskComposer: View {
                             } label: {
                                 FocusProjectTile(name: project.name, colorHex: project.colorHex)
                                 Text(project.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Set by a *status word (the group's own status needs no chip: it's the column or group)
+            if let status = draft.status, preset != .status(status) {
+                ComposerPropertyButton(tint: .neutral, isSet: true, isOpen: binding(.status)) {
+                    WorkflowStatusIcon(status: status, size: 12)
+                    Text(status.name)
+                } popover: {
+                    FocusPopoverMenu(width: 210, maxHeight: 360) {
+                        ForEach(target.statuses) { option in
+                            FocusMenuItem(isSelected: option.id == status.id) {
+                                draft.status = option
+                                closePicker()
+                            } label: {
+                                WorkflowStatusIcon(status: option, size: 14)
+                                Text(option.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
                             }
                         }
                     }
@@ -273,7 +293,7 @@ struct TaskComposer: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(Focus.text)
             } else {
-                Text("Type 2h, #next, @milestone, !high or due:fri, or use the buttons. / lists everything.")
+                Text("Type 2h, #next, @milestone, !high, *status, +project or due:fri. / lists everything.")
                     .font(.system(size: 12))
                     .foregroundColor(Focus.text3)
                     .lineLimit(1)
@@ -355,6 +375,7 @@ struct TaskComposer: View {
             if let projectId = targetProject?.id { draft.milestoneId = store.addMilestone(projectId: projectId, name: name) }
         case let .priority(priority): draft.priority = priority
         case let .project(id): setProject(id)
+        case let .status(status): draft.status = status
         case let .trigger(trigger):
             title = rest + String(trigger.rawValue)
             highlight = 0
@@ -382,7 +403,8 @@ struct TaskComposer: View {
     private func accepts(_ token: ComposerToken, target: Project) -> Bool {
         switch token {
         case let .milestone(name): return store.matchMilestone(name, projectId: target.id) != nil
-        case let .project(name): return matchProject(name) != nil
+        case let .project(name): return store.matchProject(name) != nil
+        case let .status(name): return store.matchStatus(name, projectId: (targetProject ?? target).id) != nil
         default: return true
         }
     }
@@ -394,15 +416,9 @@ struct TaskComposer: View {
         case let .milestone(name): draft.milestoneId = store.matchMilestone(name, projectId: target.id)?.id
         case let .priority(priority): draft.priority = priority
         case let .due(date): draft.dueDate = date
-        case let .project(name): if let id = matchProject(name)?.id { setProject(id) }
+        case let .project(name): if let id = store.matchProject(name)?.id { setProject(id) }
+        case let .status(name): draft.status = store.matchStatus(name, projectId: (targetProject ?? target).id)
         }
-    }
-
-    private func matchProject(_ name: String) -> Project? {
-        func key(_ s: String) -> String { s.lowercased().filter { $0.isLetter || $0.isNumber } }
-        let q = key(name)
-        guard !q.isEmpty else { return nil }
-        return store.projects.first { key($0.name) == q } ?? store.projects.first { key($0.name).hasPrefix(q) }
     }
 
     private func setProject(_ id: UUID) {

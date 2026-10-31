@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The floating "New task" box the global quick-add shortcut opens (Settings › General).
 /// It floats above every app without bringing FlowMate forward: type, ↵ adds (with the New task
-/// tokens !high @milestone due:fri ~90m), ⇧↵ adds and opens the task, Esc or a click elsewhere closes.
+/// tokens !high @milestone +project #next *status due:fri ~90m; Tab completes the word being
+/// typed), ⇧↵ adds and opens the task, Esc or a click elsewhere closes.
 @MainActor
 enum QuickAddPanel {
     private static var panel: QuickAddWindow?
@@ -107,6 +108,8 @@ final class QuickAddBoxModel: ObservableObject {
         guard let projectId, let outcome = store.quickAddTask(text, projectId: projectId) else { return nil }
         let name = store.project(outcome.projectId)?.name ?? "project"
         added = (["Added to \(name)"] + outcome.applied).joined(separator: " · ")
+        // A +project word made that project the one new tasks go to
+        self.projectId = outcome.projectId
         text = ""
         return outcome.taskId
     }
@@ -165,13 +168,19 @@ struct QuickAddBox: View {
 
     @ViewBuilder
     private func field(_ target: Project) -> some View {
-        TextField("What needs doing?  !high  @milestone  due:fri  ~1h", text: $model.text)
+        TextField("What needs doing?  !high  @milestone  +project  due:fri  ~1h", text: $model.text)
             .textFieldStyle(.plain)
             .font(.system(size: 17))
             .foregroundColor(Focus.text)
             .focused($focused)
             .onSubmit(submit)
             .onExitCommand { QuickAddPanel.close() }
+            .background(KeyDownMonitor(isActive: focused) { event in
+                // Tab completes the word after # @ ! + or * with the first match
+                guard event.keyCode == 48, event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else { return false }
+                if let completed = store.completeQuickAdd(model.text, projectId: target.id) { model.text = completed }
+                return true
+            })
             .padding(.horizontal, 14)
             .frame(height: 52)
             .accessibilityLabel("New task title")
@@ -186,13 +195,20 @@ struct QuickAddBox: View {
                 Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundColor(Focus.ok)
                 Text(added).font(.system(size: 12)).foregroundColor(Focus.text2).lineLimit(1)
             } else {
-                FocusProjectTile(name: target.name, colorHex: target.colorHex, size: 14)
-                Text(([target.name] + store.quickAddPreview(model.text, projectId: target.id)).joined(separator: " · "))
+                // A +project word sends it elsewhere: the line names that project
+                let destination = store.quickAddTarget(model.text, projectId: target.id) ?? target
+                let preview = store.quickAddPreview(model.text, projectId: target.id).filter { !$0.hasPrefix("→ ") }
+                FocusProjectTile(name: destination.name, colorHex: destination.colorHex, size: 14)
+                Text(([destination.name] + preview).joined(separator: " · "))
                     .font(.system(size: 12))
                     .foregroundColor(Focus.text2)
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
+            if let active = ComposerInput.activeTrigger(model.text), active.trigger != .all,
+               store.completeQuickAdd(model.text, projectId: target.id) != nil {
+                FocusKey(text: "⇥ complete")
+            }
             FocusKey(text: "↵ add")
             FocusKey(text: "⇧↵ add and open")
             FocusKey(text: "esc")

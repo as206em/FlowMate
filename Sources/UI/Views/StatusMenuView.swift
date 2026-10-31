@@ -115,6 +115,10 @@ struct StatusMenuView: View {
     /// What the keys do right now, inside the field
     private var keyHint: String? {
         if isSearching {
+            if let active = ComposerInput.activeTrigger(query), active.trigger != .all,
+               store.completeQuickAdd(query, projectId: target?.id) != nil {
+                return "⇥ complete"
+            }
             guard let current = currentHighlight else { return target == nil ? nil : "⌘↵ add" }
             return current == .add ? "↵ add" : "↵ open"
         }
@@ -131,6 +135,16 @@ struct StatusMenuView: View {
             case let .returnKey(command): submit(command: command)
             case .escape:
                 query = ""
+            case .tab:
+                // Completes #, @, !, + or * with the first match ("@be" → "@Beta_launch ")
+                guard let completed = store.completeQuickAdd(query, projectId: target?.id) else { return true }
+                query = completed
+            case let .commandNumber(n):
+                let tasks = searchResults.tasks.compactMap { store.task($0) }
+                guard tasks.indices.contains(n - 1) else { return false }
+                let task = tasks[n - 1]
+                guard !task.isClosed || store.isRunning(task.id) else { return true }
+                store.toggleTimer(task.id)
             default: return false
             }
             return true
@@ -144,6 +158,18 @@ struct StatusMenuView: View {
             guard let current else { return false }
             store.toggleTimer(current.taskId)
             return true
+        case .optionSpace:
+            guard let current else { return false }
+            store.startTimerExclusively(current.taskId)
+            return true
+        case let .commandNumber(n):
+            // The Nth task listed (running, paused, then Up next)
+            let items = browse.items
+            guard items.indices.contains(n - 1) else { return false }
+            store.toggleTimer(items[n - 1].taskId)
+            return true
+        case .tab:
+            return false
         case .returnKey:
             guard let current else { return false }
             MenuNavigation.openTask(current.taskId)
@@ -177,6 +203,10 @@ struct StatusMenuView: View {
             MenuNavigation.openMilestone(id)
         case .task(let id):
             MenuNavigation.openTask(id)
+        case .today:
+            MenuNavigation.openToday()
+        case .command:
+            break
         }
     }
 
@@ -491,6 +521,34 @@ enum MenuBarPanel {
 
     private static var window: NSWindow? {
         NSApp.windows.first { $0.className.contains("MenuBarExtra") && $0.isVisible }
+    }
+
+    /// The "Menu bar search" hotkey: opens the panel (as a click on the menu bar icon would) with
+    /// the search field focused; when it's open already, focuses the field.
+    @MainActor
+    static func openWithSearch() {
+        if let window {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKey()
+        } else if let button = statusItemButton() {
+            button.performClick(nil)
+        }
+        DispatchQueue.main.async { MenuState.shared.focusSearch = UUID() }
+    }
+
+    /// FlowMate's menu bar icon (the MenuBarExtra's status item button)
+    @MainActor
+    private static func statusItemButton() -> NSButton? {
+        func find(_ view: NSView?) -> NSButton? {
+            guard let view else { return nil }
+            if let button = view as? NSButton { return button }
+            for sub in view.subviews { if let found = find(sub) { return found } }
+            return nil
+        }
+        for window in NSApp.windows where window.className.contains("NSStatusBarWindow") {
+            if let button = find(window.contentView) { return button }
+        }
+        return nil
     }
 
     /// Sizes the open panel to its content, keeping its top edge under the menu bar.

@@ -97,51 +97,6 @@ struct QuickAddOutcome: Equatable {
 }
 
 extension TaskStore {
-    /// Adds a task from the New task field: reads `!priority @milestone due:date ~time` tokens,
-    /// applies them (tokens beat the field's chips) and remembers the project. One undo step.
-    @discardableResult
-    func quickAddTask(
-        _ text: String,
-        projectId: UUID,
-        milestoneId: UUID? = nil,
-        sprintSlot: SprintSlot = .active,
-        now: Date = Date()
-    ) -> QuickAddOutcome? {
-        let input = QuickAddInput.parse(text, now: now)
-        guard project(projectId) != nil else { return nil }
-        var applied: [String] = []
-        var milestone = milestoneId
-        var unmatched: String?
-        if let query = input.milestoneQuery {
-            if let found = matchMilestone(query, projectId: projectId) {
-                milestone = found.id
-                applied.append(found.name)
-            } else {
-                unmatched = "@" + query
-            }
-        }
-        // A title made only of tokens keeps the text, so it's never lost
-        let title = input.title.isEmpty ? text : input.title
-        return undoGroup("Add task") { () -> QuickAddOutcome? in
-            guard let id = addTask(title: title, projectId: projectId, milestoneId: milestone,
-                                   sprintSlot: sprintSlot, now: now) else { return nil }
-            if let priority = input.priority {
-                setPriority(id, priority)
-                applied.insert(priority.title, at: 0)
-            }
-            if let due = input.dueDate {
-                setDueDate(id, due)
-                applied.append("Due " + TaskDates.dueLabel(due, now: now))
-            }
-            if let minutes = input.expectedMinutes {
-                setExpectedMinutes(id, minutes)
-                applied.append(TaskDurationParser.format(seconds: TimeInterval(minutes * 60)))
-            }
-            rememberProject(projectId)
-            return QuickAddOutcome(taskId: id, projectId: projectId, applied: applied, unmatchedMilestone: unmatched)
-        }
-    }
-
     /// The milestone a `@query` means: an exact name (ignoring case, spaces and punctuation),
     /// then a name starting with it, then one containing it. Open milestones win over completed ones.
     func matchMilestone(_ query: String, projectId: UUID) -> Milestone? {

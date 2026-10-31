@@ -495,7 +495,7 @@ struct NativeTaskTable: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSDraggingSource {
+    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSDraggingSource, TaskRowAnchorProvider {
         weak var table: NSTableView?
         private(set) var rows: [TaskTableRow] = []
         private var drops: [String: TaskGroupDrop] = [:]
@@ -552,6 +552,7 @@ struct NativeTaskTable: NSViewRepresentable {
             self.model = model
             controller.store = store
             controller.model = model
+            QuickPickerAnchors.register(table: self)
             self.drops = drops
             self.draggable = draggable
             let old = rows
@@ -620,6 +621,19 @@ struct NativeTaskTable: NSViewRepresentable {
                 table.scrollRowToVisible(index)
             }
             revealedFlashId = model.flashTaskId
+        }
+
+        // MARK: Picker anchor
+
+        /// The task's row, scrolled into view, for a single-key picker to hang from.
+        func anchor(forTask id: UUID) -> (view: NSView, rect: NSRect)? {
+            guard let table, let index = rows.firstIndex(where: {
+                if case let .task(info) = $0 { return info.task.id == id } else { return false }
+            }) else { return nil }
+            table.scrollRowToVisible(index)
+            let row = table.rect(ofRow: index)
+            // Under the title, where the eye is, rather than the middle of a wide row
+            return (table, NSRect(x: row.minX + TaskTableCell.sidePadding + 40, y: row.minY, width: 160, height: row.height))
         }
 
         // MARK: Data source and delegate
