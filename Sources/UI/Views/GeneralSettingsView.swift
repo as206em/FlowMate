@@ -76,7 +76,7 @@ struct GeneralSettingsView: View {
 
                     FocusLabeled(
                         label: "Ask “Still working on it?” after",
-                        hint: "A quiet prompt in the menu and the window, with Keep or Stop at…"
+                        hint: "A quiet prompt in the menu and the window, with Keep or Stop at… (and in Notification Center, see Notifications)"
                     ) {
                         FocusTabs(
                             options: WorkspacePreferences.longRunChoices.map { minutes in

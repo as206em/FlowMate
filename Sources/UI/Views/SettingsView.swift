@@ -19,6 +19,7 @@ struct SettingsView: View {
             Group {
                 switch selectedTab {
                 case .general: GeneralSettingsView()
+                case .notifications: NotificationsSettingsView()
                 case .proofreading: ProofreadingSettingsView()
                 case .aiProviders: AIProvidersSettingsView()
                 case .maintenance: MaintenanceSettingsView()

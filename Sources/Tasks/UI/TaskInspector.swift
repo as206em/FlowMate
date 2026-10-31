@@ -15,6 +15,9 @@ struct TaskInspector: View {
                     property("Milestone") { milestonePicker }
                     property("Sprint") { sprintPicker }
                     property("Due date") { TaskDueDateField(task: task) }
+                    if !task.isClosed {
+                        property("Today") { TaskTodayField(task: task) }
+                    }
                     property("Expected") { expectedPicker }
                     property("Project") { projectPicker }
                 }
@@ -164,6 +167,47 @@ private struct TaskDueDateField: View {
             risk: store.isOverdue(task) || store.isDueToday(task),
             accessibilityName: "Due date"
         ) { store.setDueDate(task.id, $0) }
+    }
+}
+
+/// Field-sized toggle: "Add to Today" (⌘T), or "In Today" (with "From yesterday" when it was
+/// pinned on an earlier day) and an × that removes it.
+private struct TaskTodayField: View {
+    @EnvironmentObject private var store: TaskStore
+    @EnvironmentObject private var model: TasksViewModel
+    let task: TaskItem
+
+    @State private var hovering = false
+
+    var body: some View {
+        let pinned = store.isInFocus(task)
+        Button { model.toggleToday([task.id], store: store) } label: {
+            HStack(spacing: 7) {
+                Image(systemName: pinned ? "sun.max.fill" : "sun.max")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(pinned ? Focus.progress : Focus.text3)
+                Text(pinned ? "In Today" : "Add to Today")
+                    .font(Focus.control)
+                    .foregroundColor(pinned ? Focus.text : Focus.text2)
+                if pinned, let carried = store.focusCarryLabel(task) {
+                    Text(carried).font(Focus.meta).foregroundColor(Focus.text3).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if pinned {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(hovering ? Focus.text : Focus.text3)
+                } else {
+                    FocusKey(text: "⌘T")
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusField(focused: hovering)
+        .onHover { hovering = $0 }
+        .help(pinned ? "Remove from Today (⌘T)" : "Pin to Today: it shows under My focus until it's done (⌘T)")
+        .accessibilityLabel(pinned ? "In Today. Remove from Today" : "Add to Today")
     }
 }
 

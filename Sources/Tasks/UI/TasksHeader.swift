@@ -11,7 +11,9 @@ struct TasksHeader: View {
         let project = model.scope.projectId.flatMap { store.project($0) }
         let milestone = model.scope.milestoneId.flatMap { store.milestone($0) }
         HStack(spacing: 14) {
-            if let milestone {
+            if model.scope.isToday {
+                TodayHeaderTitle()
+            } else if let milestone {
                 MilestoneHeaderTitle(milestone: milestone)
             } else if let project {
                 ProjectTitleButton(project: project)
@@ -30,12 +32,14 @@ struct TasksHeader: View {
                     .foregroundColor(Focus.text3)
                     .lineLimit(1)
             }
-            FocusTabs(
-                options: model.tabs.map { (value: $0, label: $0.title) },
-                selection: Binding(get: { model.effectiveTab }, set: { model.tab = $0 })
-            )
-            .fixedSize()
-            .padding(.leading, 4)
+            if !model.tabs.isEmpty {
+                FocusTabs(
+                    options: model.tabs.map { (value: $0, label: $0.title) },
+                    selection: Binding(get: { model.effectiveTab }, set: { model.tab = $0 })
+                )
+                .fixedSize()
+                .padding(.leading, 4)
+            }
             Spacer(minLength: 12)
         }
         .padding(.horizontal, 28)

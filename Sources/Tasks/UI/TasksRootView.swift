@@ -64,7 +64,10 @@ struct TasksRootView: View {
             notices
             LongRunBanner()
             AwayBanner()
-            if usesNativeTable {
+            if model.scope.isToday, !showsFirstProject {
+                // Today's sections scroll inside the native table, like List
+                TodayView()
+            } else if usesNativeTable {
                 // List and Sprints scroll inside their own native table (rows are recycled)
                 nativeTableContent
             } else {

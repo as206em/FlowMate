@@ -27,6 +27,13 @@ enum MenuNavigation {
         TasksWindow.show()
     }
 
+    /// Opens the Today page.
+    static func openToday() {
+        MenuBarPanel.close()
+        TasksWindow.viewModel.select(.today)
+        TasksWindow.show()
+    }
+
     static func openApp(focus: TasksViewModel.FocusRequest.Field? = nil) {
         MenuBarPanel.close()
         TasksWindow.show()
@@ -333,55 +340,165 @@ struct MenuSearchResults: View {
     }
 }
 
+/// "Today 3h 20m · 2 due" at the top of the menu's tasks; a click opens the Today page.
+struct MenuTodaySummary: View {
+    @EnvironmentObject private var store: TaskStore
+    @State private var hovering = false
+
+    var body: some View {
+        Button { MenuNavigation.openToday() } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "sun.max")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Focus.text2)
+                    .frame(width: 20)
+                LiveTime { now in
+                    let counts = store.dueCounts(now: now)
+                    Text(store.menuTodaySummary(now: now))
+                        .font(.system(size: 12.5, weight: .medium).monospacedDigit())
+                        .foregroundColor(counts.overdue > 0 ? Focus.riskTint.text : Focus.text2)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(hovering ? Focus.text2 : Focus.text3)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Focus.hover : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Open Today in FlowMate")
+        .accessibilityLabel("\(store.menuTodaySummary()). Open Today")
+    }
+}
+
 /// "In progress": every task in progress across all projects. Running timers come first, tinted,
 /// with their live clock; the paused ones follow. Click a row to open it; the ring starts or pauses.
+/// Then "Up next": overdue, due today and pinned tasks, then the top of the active sprints, each
+/// with a play ring, so a menu with nothing running still says what to start.
 struct MenuInProgressSection: View {
     @EnvironmentObject private var store: TaskStore
     @ObservedObject private var menu = MenuState.shared
 
     var body: some View {
         let listed = store.menuInProgressTasks
+        let upNext = store.upNext()
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                FocusCaption(text: "In progress")
-                if !listed.running.isEmpty {
-                    Text("· \(listed.running.count) running".uppercased())
-                        .font(Focus.caption)
-                        .tracking(0.5)
-                        .foregroundColor(Focus.liveText)
-                }
-                Spacer()
-                if !listed.running.isEmpty {
-                    Button("Pause all") { store.pauseAllTimers() }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 12))
-                        .foregroundColor(Focus.text3)
-                }
+            if !store.projects.isEmpty {
+                MenuTodaySummary()
+                    .padding(.bottom, 2)
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 4)
-            .padding(.bottom, 2)
-
-            // "Timers ran while your Mac slept 2h 05m · Keep · Discard"
-            if !store.awayGaps.isEmpty {
-                AwayPrompt(compact: true)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+            if !listed.running.isEmpty || !listed.paused.isEmpty || !store.awayGaps.isEmpty || upNext.isEmpty {
+                inProgress(listed, hasUpNext: !upNext.isEmpty)
             }
-
-            if listed.running.isEmpty && listed.paused.isEmpty {
-                emptyState
-            }
-            ForEach(listed.running) { task in
-                runningRow(task)
-                MenuLongRunLine(task: task)
-            }
-            ForEach(listed.paused) { task in
-                pausedRow(task)
+            if !upNext.isEmpty {
+                upNextSection(upNext)
             }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private func inProgress(_ listed: (running: [TaskItem], paused: [TaskItem]), hasUpNext: Bool) -> some View {
+        HStack(spacing: 6) {
+            FocusCaption(text: "In progress")
+            if !listed.running.isEmpty {
+                Text("· \(listed.running.count) running".uppercased())
+                    .font(Focus.caption)
+                    .tracking(0.5)
+                    .foregroundColor(Focus.liveText)
+            }
+            Spacer()
+            if !listed.running.isEmpty {
+                Button("Pause all") { store.pauseAllTimers() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12))
+                    .foregroundColor(Focus.text3)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
+
+        // "Timers ran while your Mac slept 2h 05m · Keep · Discard"
+        if !store.awayGaps.isEmpty {
+            AwayPrompt(compact: true)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+        }
+
+        if listed.running.isEmpty && listed.paused.isEmpty && !hasUpNext {
+            emptyState
+        }
+        ForEach(listed.running) { task in
+            runningRow(task)
+            MenuLongRunLine(task: task)
+        }
+        ForEach(listed.paused) { task in
+            pausedRow(task)
+        }
+    }
+
+    private func upNextSection(_ tasks: [TaskItem]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FocusCaption(text: "Up next")
+                .padding(.horizontal, 8)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+            ForEach(tasks) { task in
+                upNextRow(task)
+            }
+        }
+    }
+
+    /// Why a task is up next: "Overdue · Oct 28", "Due today", "Today" (pinned) or its sprint.
+    private func reason(_ task: TaskItem) -> (text: String, risk: Bool) {
+        if store.isOverdue(task), let due = task.dueDate { return ("Overdue · " + TaskDates.dueLabel(due), true) }
+        if store.isDueToday(task) { return ("Due today", true) }
+        if store.isInFocus(task) { return ("Today", false) }
+        return (store.sprintLabel(for: task), false)
+    }
+
+    private func upNextRow(_ task: TaskItem) -> some View {
+        let project = store.project(of: task)
+        let why = reason(task)
+        return HStack(spacing: 10) {
+            TaskTimerButton(task: task, size: 28)
+            Button { MenuNavigation.openTask(task.id) } label: {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(task.title)
+                        .font(Focus.row)
+                        .foregroundColor(Focus.text)
+                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        if let project {
+                            FocusProjectTile(name: project.name, colorHex: project.colorHex, size: 12)
+                            Text(project.name).lineLimit(1)
+                            Text("·")
+                        }
+                        Text(why.text)
+                            .foregroundColor(why.risk ? Focus.risk : Focus.text3)
+                            .lineLimit(1)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundColor(Focus.text3)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Open in FlowMate")
+            Text(Focus.durationString(minutes: task.expectedMinutes))
+                .font(.system(size: 12).monospacedDigit())
+                .foregroundColor(Focus.text3)
+        }
+        .modifier(MenuHover(highlighted: menu.highlight == .upNext(task.id)))
+        .id(MenuRowItem.upNext(task.id))
     }
 
     @ViewBuilder
@@ -394,7 +511,7 @@ struct MenuInProgressSection: View {
                 Button("Create a project") { MenuNavigation.openApp() }
                     .buttonStyle(.focus())
             } else {
-                Text("Nothing in progress. Start a timer on a task, or move one to a started status such as In progress.")
+                Text("Nothing in progress or planned. Pin tasks to Today in FlowMate (⌘T), or start a timer on any task.")
             }
         }
         .font(Focus.meta)

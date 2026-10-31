@@ -56,6 +56,8 @@ final class AppState: ObservableObject {
     @Published private(set) var appearance: String = "system"
     @Published private(set) var maxHistoryItems: Int = 50
     @Published private(set) var launchAtLogin: Bool = false
+    /// Settings › Notifications; TaskNotifications schedules from it
+    @Published private(set) var notificationSettings = NotificationSettings()
     @Published var launchAtLoginError: String?
 
     // Backward compatibility computed properties
@@ -182,6 +184,18 @@ final class AppState: ObservableObject {
         }
         appearance = config.app.theme
         maxHistoryItems = config.app.maxHistoryItems
+        notificationSettings = config.app.notifications
+        TaskNotifications.shared.settings = notificationSettings
+    }
+
+    /// Changes the notification settings, saves them and reschedules.
+    func updateNotificationSettings(_ change: (inout NotificationSettings) -> Void) {
+        var settings = notificationSettings
+        change(&settings)
+        guard settings != notificationSettings else { return }
+        notificationSettings = settings
+        configurationManager.updateAppSettings { $0.notifications = settings }
+        TaskNotifications.shared.settings = settings
     }
 
     private func updateAIService() {

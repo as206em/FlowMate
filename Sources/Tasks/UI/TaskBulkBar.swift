@@ -28,6 +28,12 @@ struct TaskBulkBar: View {
                 menuButton("Move to", .project) { projectMenu }
             }
             FocusBarSeparator()
+            let allPinned = ids.compactMap { store.task($0) }.allSatisfy { store.isInFocus($0) }
+            FocusBarButton(title: "Today", systemImage: allPinned ? "sun.max.fill" : "sun.max") {
+                model.toggleToday(ids, store: store)
+            }
+            .help(allPinned ? "Take the selected tasks off Today (⌘T)" : "Pin the selected tasks to Today (⌘T)")
+            FocusBarSeparator()
             FocusBarButton(title: "Delete", systemImage: "trash", risk: true) { model.deleteSelected(store) }
                 .help("Delete the selected tasks (⌘⌫)")
             FocusBarSeparator()

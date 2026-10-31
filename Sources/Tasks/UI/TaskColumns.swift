@@ -184,6 +184,8 @@ struct TaskTable: View {
     var caption: String = ""
     let rows: [TaskTableRow]
     let drops: [String: TaskGroupDrop]
+    /// Groups whose rows drag without taking drops (Today's sections, onto My focus)
+    var draggable: Set<String> = []
 
     var body: some View {
         let topPadding: CGFloat = model.showsFilterBar ? 16 : 24
@@ -207,7 +209,7 @@ struct TaskTable: View {
                     .overlay(alignment: .bottom) { FocusDivider() }
                     .padding(.horizontal, TaskTableCell.sidePadding)
                     .padding(.top, caption.isEmpty ? topPadding : 0)
-                NativeTaskTable(rows: rows, drops: drops, layout: layout, store: store, model: model)
+                NativeTaskTable(rows: rows, drops: drops, draggable: draggable, layout: layout, store: store, model: model)
             }
         }
     }

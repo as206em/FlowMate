@@ -138,9 +138,9 @@ final class MilestonePageTests: XCTestCase {
         model.clickSidebarMilestone(m, store: store)
         XCTAssertEqual(model.openDetail, .milestone(m), "a second click opens its panel")
 
-        // ⌥⌘↑ / ⌥⌘↓ walk All projects, the project and its listed milestone
+        // ⌥⌘↑ / ⌥⌘↓ walk Today, All projects, the project and its listed milestone
         model.select(.all)
-        XCTAssertEqual(model.sidebarScopes(store), [.all, .project(pid), .milestone(m, projectId: pid)])
+        XCTAssertEqual(model.sidebarScopes(store), [.today, .all, .project(pid), .milestone(m, projectId: pid)])
         XCTAssertTrue(model.perform(.nextScope, store: store))
         XCTAssertEqual(model.scope, .project(pid))
         XCTAssertTrue(model.perform(.nextScope, store: store))
@@ -227,7 +227,7 @@ final class MilestonePageTests: XCTestCase {
         """
         let decoder = LocalJSONWorkspaceRepository.makeDecoder()
         let ws = try decoder.decode(Workspace.self, from: Data(json.utf8)).migrated()
-        XCTAssertEqual(ws.schemaVersion, 8)
+        XCTAssertEqual(ws.schemaVersion, Workspace.currentSchemaVersion)
         XCTAssertEqual(ws.milestones.map(\.colorHex), [0x4EA1F5, 0x2DBE7A], "palette order, skipping the project's coral")
         XCTAssertEqual(ws.milestones[0].notes, "keep")
         XCTAssertEqual(ws.tasks[0].milestoneId, m2, "nothing else changes")

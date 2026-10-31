@@ -1,6 +1,7 @@
 import AppKit
+import UserNotifications
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Set activation policy for menu bar app to allow windows to receive focus
         NSApp.setActivationPolicy(.accessory)
@@ -10,6 +11,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             AppState.promptForAccessibilityAccess()
             // Timers that run through sleep or a locked screen ask whether that time counts
             SystemAwayMonitor.shared.start(store: TaskStore.shared)
+            // The morning summary, reminders and timer prompts in Notification Center
+            if UserNotificationClient.isAvailable { UNUserNotificationCenter.current().delegate = self }
+            TaskNotifications.shared.start(store: TaskStore.shared)
+        }
+    }
+
+    // MARK: - Notifications
+
+    /// Long-run and sleep prompts stay quiet while FlowMate is in front: its own prompt shows.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        let kind = notification.request.content.userInfo["kind"] as? String
+        // Delegate calls can come on another thread; NSApp is read on the main one
+        Task { @MainActor in
+            let show = !NSApp.isActive || TaskNotifications.presentsWhileActive(kind: kind)
+            completionHandler(show ? [.banner, .list, .sound] : [])
+        }
+    }
+
+    /// A click on a notification opens what it's about; its buttons (Keep going, Pause, Keep,
+    /// Discard sleep time) act without opening anything.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        let action = response.actionIdentifier
+        let info = response.notification.request.content.userInfo
+        let target = (info["target"] as? String) ?? ""
+        let taskId = (info["taskId"] as? String) ?? ""
+        Task { @MainActor in
+            let service = TaskNotifications.shared
+            if let open = service.handle(action: action, userInfo: ["target": target, "taskId": taskId]) {
+                service.open(open)
+            }
+            service.scheduleSoon()
+            completionHandler()
         }
     }
 

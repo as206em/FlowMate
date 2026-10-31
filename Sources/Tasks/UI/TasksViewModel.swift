@@ -159,6 +159,7 @@ final class TasksViewModel: ObservableObject {
 
     static func tabs(in scope: TaskScope) -> [Tab] {
         switch scope {
+        case .today: return []
         case .all: return [.board, .list, .milestones]
         case .project: return Tab.allCases
         case .milestone: return [.board, .list]
@@ -170,8 +171,8 @@ final class TasksViewModel: ObservableObject {
         tabs(in: scope).contains(tab) ? tab : .list
     }
 
-    /// The filter bar shows on List and Board.
-    var showsFilterBar: Bool { effectiveTab == .list || effectiveTab == .board }
+    /// The filter bar shows on List and Board (Today has neither).
+    var showsFilterBar: Bool { !scope.isToday && (effectiveTab == .list || effectiveTab == .board) }
 
     /// Shows a scope on the tab it was last used with (its filters are kept per scope too).
     /// A scope never visited keeps the current tab.
@@ -179,7 +180,8 @@ final class TasksViewModel: ObservableObject {
         // A milestone page opens on List the first time: it lists every task of the milestone
         let remembered = tabByScope[scope.key] ?? (scope.isMilestone ? .list : tab)
         self.scope = scope
-        tab = Self.tab(remembered, in: scope)
+        // Today has no tabs: the tab stays for the next scope
+        if !scope.isToday { tab = Self.tab(remembered, in: scope) }
         selectedTaskId = nil
         if case let .milestone(_, projectId) = scope { expandedProjects.insert(projectId) }
         closePanel()
@@ -280,10 +282,10 @@ final class TasksViewModel: ObservableObject {
         tab = .sprints
     }
 
-    /// The sidebar's items top to bottom: All projects, each project, and the milestones listed
-    /// under the projects that show them (⌥⌘↑ / ⌥⌘↓ walk this order).
+    /// The sidebar's items top to bottom: Today, All projects, each project, and the milestones
+    /// listed under the projects that show them (⌥⌘↑ / ⌥⌘↓ walk this order).
     func sidebarScopes(_ store: TaskStore) -> [TaskScope] {
-        var result: [TaskScope] = [.all]
+        var result: [TaskScope] = [.today, .all]
         for project in store.projects {
             result.append(.project(project.id))
             if isProjectExpanded(project.id) {
@@ -571,6 +573,9 @@ final class TasksViewModel: ObservableObject {
     /// Every task the current view shows, top to bottom, skipping collapsed groups.
     /// ↑/↓ walk this order.
     func visibleTasks(_ store: TaskStore, now: Date = Date()) -> [TaskItem] {
+        if scope.isToday {
+            return Self.todaySections(store.todayPlan(now: now)).filter { !isCollapsed($0.key) }.flatMap(\.tasks)
+        }
         switch effectiveTab {
         case .list:
             return listGroups(store, now: now).filter { !isCollapsed($0.id) }.flatMap(\.tasks)
@@ -766,13 +771,13 @@ final class TasksViewModel: ObservableObject {
         let restoredScope = TaskScope(storageKey: state.scope) ?? .all
         scope = restoredScope
         let remembered = tabByScope[restoredScope.key] ?? (restoredScope.isMilestone ? .list : .board)
-        tab = Self.tab(remembered, in: restoredScope)
+        tab = restoredScope.isToday ? (tabByScope[TaskScope.all.key] ?? .board) : Self.tab(remembered, in: restoredScope)
     }
 
     /// Drops remembered tabs and filters of projects that no longer exist (once data has loaded).
     private func forgetDeletedScopes(_ store: TaskStore) {
         guard store.isLoaded else { return }
-        let alive = Set(store.allProjects.map(\.id.uuidString) + ["all"]
+        let alive = Set(store.allProjects.map(\.id.uuidString) + ["all", "today"]
                         + store.workspace.milestones.map { TaskScope.milestone($0.id, projectId: $0.projectId).key })
         let tabs = tabByScope.filter { alive.contains($0.key) }
         if tabs != tabByScope { tabByScope = tabs; saveWindowState() }
@@ -981,6 +986,8 @@ final class TasksViewModel: ObservableObject {
     /// The composer ⌘N opens: the first group of the List (or the first column of the Board, the
     /// active sprint in Sprints). Its group is opened if it was collapsed.
     func defaultComposerKey(_ store: TaskStore) -> String? {
+        // Today: the composer of My focus, whose tasks are pinned for today
+        if scope.isToday { return Self.listComposerKey(Self.todayFocusKey) }
         switch effectiveTab {
         case .list:
             guard let group = listGroups(store).first(where: \.acceptsDrop) else { return nil }
@@ -1001,7 +1008,7 @@ final class TasksViewModel: ObservableObject {
     /// long the group is.
     func startNewTask(_ store: TaskStore) {
         closePanel()
-        if effectiveTab == .milestones { tab = .list }
+        if effectiveTab == .milestones, !scope.isToday { tab = .list }
         if let key = defaultComposerKey(store) {
             let group = String(key.dropFirst("composer-".count))
             if effectiveTab != .board, isCollapsed(group) { toggleGroup(group) }

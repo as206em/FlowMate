@@ -31,6 +31,14 @@ final class TaskRowController: NSObject {
         }
     }
 
+    /// The hover button at the end of the title.
+    func perform(_ action: RowQuickAction, task id: UUID) {
+        guard let store, let model else { return }
+        switch action {
+        case .tomorrow: model.moveToDay([id], .tomorrow, store: store)
+        }
+    }
+
     // MARK: Editors
 
     private func showEditor(_ column: TaskColumn, taskId: UUID, rect: NSRect, in view: NSView) {
@@ -80,6 +88,11 @@ final class TaskRowController: NSObject {
             menu.addItem(item("Delete \(count) tasks") { [weak model, weak store] in
                 if let model, let store { model.deleteSelected(store) }
             })
+            let ids = model.selectedIds(store)
+            let allPinned = ids.compactMap { store.task($0) }.allSatisfy { store.isInFocus($0) }
+            menu.addItem(item(allPinned ? "Remove \(count) tasks from Today" : "Add \(count) tasks to Today") { [weak model, weak store] in
+                if let model, let store { model.toggleToday(ids, store: store) }
+            })
             menu.addItem(.separator())
         }
 
@@ -87,6 +100,20 @@ final class TaskRowController: NSObject {
         menu.addItem(item("Rename", action: rename))
         if !task.isClosed || store.isRunning(id) {
             menu.addItem(item(store.isRunning(id) ? "Pause timer" : "Start timer") { [weak store] in store?.toggleTimer(id) })
+        }
+        if !task.isClosed {
+            let pinned = store.isInFocus(task)
+            let today = item(pinned ? "Remove from Today" : "Add to Today") { [weak model, weak store] in
+                if let model, let store { model.toggleToday([id], store: store) }
+            }
+            today.keyEquivalent = "t"
+            today.keyEquivalentModifierMask = .command
+            menu.addItem(today)
+            if model.scope.isToday, store.isOverdue(task) || store.isDueToday(task) || pinned {
+                menu.addItem(item("Move to tomorrow") { [weak model, weak store] in
+                    if let model, let store { model.moveToDay([id], .tomorrow, store: store) }
+                })
+            }
         }
         menu.addItem(.separator())
 

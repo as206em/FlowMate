@@ -13,6 +13,8 @@ enum TasksShortcut: Equatable, CaseIterable {
     /// ⌥⌘↑ / ⌥⌘↓: the sidebar item above or below (All projects, projects, listed milestones)
     case previousScope, nextScope
     case delete, duplicate
+    /// ⌘T: add the selected tasks to Today, or remove them
+    case toggleToday
     case help, clearSelection
 
     /// Shortcuts that still work while a text field has focus. The others belong to the text
@@ -87,6 +89,7 @@ enum TasksShortcut: Equatable, CaseIterable {
             case "n": return .newTask
             case "f": return .find
             case "d": return .duplicate
+            case "t": return .toggleToday
             case "/": return .help
             case "1": return .tab1
             case "2": return .tab2
@@ -137,6 +140,8 @@ extension TasksViewModel {
         case .newProject:
             requestFocus(.newProject)
         case .find:
+            // Today has no search: find in All projects
+            if scope.isToday { select(.all) }
             if !showsFilterBar { tab = .list }
             closePanel()
             requestFocus(.search)
@@ -182,6 +187,10 @@ extension TasksViewModel {
             }
             guard let id = targetTaskId(store) else { return false }
             duplicateTask(id, store: store)
+        case .toggleToday:
+            let ids = todayTargets(store)
+            guard !ids.isEmpty else { return false }
+            toggleToday(ids, store: store)
         case .help:
             showingShortcuts.toggle()
         case .clearSelection:

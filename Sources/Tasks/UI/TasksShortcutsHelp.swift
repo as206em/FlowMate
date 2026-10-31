@@ -36,6 +36,7 @@ struct TasksShortcutsHelp: View {
         Section(title: "Edit", shortcuts: [
             Shortcut(label: "Delete task", keys: ["⌘", "⌫"]),
             Shortcut(label: "Duplicate task", keys: ["⌘", "D"]),
+            Shortcut(label: "Add to Today or remove", keys: ["⌘", "T"]),
             Shortcut(label: "Undo", keys: ["⌘", "Z"]),
             Shortcut(label: "Redo", keys: ["⇧", "⌘", "Z"]),
             Shortcut(label: "Rename in the list", keys: ["Double-click"]),

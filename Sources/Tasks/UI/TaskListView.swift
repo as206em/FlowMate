@@ -176,6 +176,8 @@ enum TaskGroupDrop: Equatable {
     case slot(SprintSlot)
     /// List: set the group's value; place before the row only in manual order
     case group(TaskGroupValue, reorder: Bool)
+    /// Today's My focus: pin the task for today, placed before the row
+    case focus
 }
 
 /// What dropping a task on a group does. The group UI itself is built by TaskTableBuilder
@@ -186,6 +188,8 @@ enum TaskGroupSection {
         switch drop {
         case let .slot(slot): return .sprint(slot)
         case let .group(value, _): return value
+        // Today's composer adds to the active sprint (and pins the task, see ComposerDraft)
+        case .focus: return .sprint(.active)
         }
     }
 
@@ -196,6 +200,8 @@ enum TaskGroupSection {
             store.moveTask(id, toSlot: slot, before: before)
         case let .group(value, reorder):
             store.moveTask(id, to: value, before: before, reorder: reorder)
+        case .focus:
+            store.moveInFocus(id, before: before)
         }
     }
 }
@@ -203,14 +209,17 @@ enum TaskGroupSection {
 extension RowDisplay {
     /// Looks up everything a row shows that isn't on the task itself. The lookups are built once
     /// per table rebuild, not once per task.
+    /// `today`: rows of the Today page, which add "From yesterday" to pinned tasks carried over
+    /// and the "→ Tomorrow" hover button to overdue, due and pinned ones.
     @MainActor
-    static func maker(store: TaskStore, model: TasksViewModel) -> (TaskItem) -> RowDisplay {
+    static func maker(store: TaskStore, model: TasksViewModel, today: Bool = false) -> (TaskItem) -> RowDisplay {
         let projects = Dictionary(store.projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let milestones = Dictionary(store.workspace.milestones.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let workflows = Dictionary(store.allProjects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let running = store.workspace.runningTimers
         let selected = model.selectedTaskIds
         let flashing = model.flashTaskId
+        let now = Date()
         return { task in
             let project = projects[task.projectId]
             let workflow = workflows[task.projectId]
@@ -227,7 +236,11 @@ extension RowDisplay {
                 selected: selected.contains(task.id),
                 status: status,
                 nextStatusName: workflow?.statusAfter(status.id).name ?? "",
-                flashing: task.id == flashing
+                flashing: task.id == flashing,
+                note: today ? store.focusCarryLabel(task, now: now) : nil,
+                quickAction: today && !task.isClosed
+                    && (store.isOverdue(task, now: now) || store.isDueToday(task, now: now) || store.isInFocus(task, now: now))
+                    ? .tomorrow : nil
             )
         }
     }

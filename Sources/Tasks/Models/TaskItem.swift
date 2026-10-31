@@ -100,6 +100,12 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
     var sortIndex: Double
     /// The sprint number a `closed` task was closed in ("Sprint 3"); nil for older data.
     var closedSprintNumber: Int?
+    /// The day you pinned the task to Today ("Add to Today", ⌘T), as midnight of that day; nil when
+    /// it isn't pinned. An open task pinned on an earlier day stays in Today's My focus, labeled
+    /// "From yesterday", until it's done or unpinned.
+    var focusDate: Date?
+    /// Order inside Today's My focus (drag to reorder); lower comes first.
+    var focusIndex: Double
 
     init(
         id: UUID = UUID(),
@@ -118,7 +124,9 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         updatedAt: Date? = nil,
         sortIndex: Double = 0,
         closedSprintNumber: Int? = nil,
-        completedAt: Date? = nil
+        completedAt: Date? = nil,
+        focusDate: Date? = nil,
+        focusIndex: Double = 0
     ) {
         self.id = id
         self.projectId = projectId
@@ -138,6 +146,8 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         self.sortIndex = sortIndex
         self.closedSprintNumber = closedSprintNumber
         self.completedAt = status.category.isClosed ? (completedAt ?? self.updatedAt) : nil
+        self.focusDate = focusDate
+        self.focusIndex = focusIndex
     }
 
     /// Finished: done or canceled. Closed tasks have no timer, aren't overdue and collapse in List.
@@ -148,10 +158,13 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
     var subtasksDone: Int { subtasks.filter(\.isDone).count }
     /// "2/4", or nil when there are no subtasks
     var subtaskSummary: String? { subtasks.isEmpty ? nil : "\(subtasksDone)/\(subtasks.count)" }
+    /// Pinned to Today (on any day; see `focusDate`).
+    var isPinned: Bool { focusDate != nil }
 
     private enum CodingKeys: String, CodingKey {
         case id, projectId, milestoneId, sprintSlot, statusId, statusCategory, priority, title, notes, subtasks
         case dueDate, expectedMinutes, spentSeconds, createdAt, updatedAt, completedAt, sortIndex, closedSprintNumber
+        case focusDate, focusIndex
     }
 
     private enum LegacyKeys: String, CodingKey { case status }
@@ -187,5 +200,8 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         completedAt = c.decodeOptional(.completedAt)
         sortIndex = c.decode(.sortIndex, or: 0)
         closedSprintNumber = c.decodeOptional(.closedSprintNumber)
+        // Schema 8 and older: nothing is pinned to Today
+        focusDate = c.decodeOptional(.focusDate)
+        focusIndex = c.decode(.focusIndex, or: 0)
     }
 }

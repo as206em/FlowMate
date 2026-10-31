@@ -31,6 +31,27 @@ struct TasksSidebar: View {
             .padding(.trailing, 2)
             .padding(.bottom, 14)
 
+            FocusSidebarItem(selected: model.scope == .today, action: { model.select(.today) }) {
+                Image(systemName: "sun.max")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 18)
+                Text("Today").frame(maxWidth: .infinity, alignment: .leading)
+                let count = store.todayCount()
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 12).monospacedDigit())
+                        .foregroundColor(store.dueCounts().overdue > 0 ? Focus.risk : Focus.text3)
+                }
+            }
+            .help("Overdue, due today and pinned tasks across projects, with today's timers and time")
+            .onDrop(of: [.plainText], delegate: SidebarTodayDrop(store: store, model: model))
+            .overlay {
+                if model.dropTarget == SidebarTodayDrop.key {
+                    RoundedRectangle(cornerRadius: Focus.radiusControl)
+                        .strokeBorder(Focus.text3, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                }
+            }
+
             FocusSidebarItem(selected: model.scope == .all, action: { model.select(.all) }) {
                 Image(systemName: "square.grid.2x2")
                     .font(.system(size: 13, weight: .medium))
@@ -433,6 +454,35 @@ private struct SidebarProjectDrop: DropDelegate {
                 }
             }
         }
+        return true
+    }
+}
+
+/// The sidebar's Today row as a drop target: a task dropped on it is pinned to Today.
+private struct SidebarTodayDrop: DropDelegate {
+    let store: TaskStore
+    let model: TasksViewModel
+
+    static let key = "sidebar-today"
+
+    func validateDrop(info: DropInfo) -> Bool {
+        model.draggingTaskId != nil && info.hasItemsConforming(to: [.plainText])
+    }
+
+    func dropEntered(info: DropInfo) { model.dropTarget = Self.key }
+
+    func dropExited(info: DropInfo) {
+        if model.dropTarget == Self.key { model.dropTarget = nil }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        model.dropTarget = nil
+        let id = model.draggingTaskId
+        model.draggingTaskId = nil
+        guard let id, let task = store.task(id), !task.isClosed, !store.isInFocus(task) else { return false }
+        model.toggleToday([id], store: store)
         return true
     }
 }

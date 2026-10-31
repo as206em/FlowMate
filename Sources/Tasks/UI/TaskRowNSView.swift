@@ -31,6 +31,28 @@ struct RowDisplay: Equatable {
     var nextStatusName: String = ""
     /// Just added from the composer at the top: a brief wash
     var flashing = false
+    /// A quiet note after the title (Today: "From yesterday" on a task pinned on an earlier day)
+    var note: String?
+    /// A button shown at the end of the title while the row is hovered (Today: "→ Tomorrow")
+    var quickAction: RowQuickAction?
+}
+
+/// The hover button at the end of a row's title.
+enum RowQuickAction: Equatable {
+    /// Today: move the due date (and the pin) to tomorrow
+    case tomorrow
+
+    var title: String {
+        switch self {
+        case .tomorrow: return "→ Tomorrow"
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .tomorrow: return "Not today: move it to tomorrow"
+        }
+    }
 }
 
 final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
@@ -338,13 +360,26 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
     }
 
     private func drawTitle(_ task: TaskItem, _ display: RowDisplay, in cell: NSRect) {
+        var cell = cell
+        if let button = quickActionRect(in: cell), let action = display.quickAction {
+            drawQuickAction(action, in: button)
+            cell.size.width = max(0, button.minX - 8 - cell.minX)
+        }
         var titleWidth = cell.width
-        if let summary = task.subtaskSummary {
-            let countWidth = 13 + textWidth(summary, font: Style.count)
-            titleWidth = max(0, cell.width - countWidth - 10)
-            let titleDrawn = min(textWidth(task.title, font: Style.title), titleWidth)
-            let countX = cell.minX + titleDrawn + 10
-            drawSubtaskCount(summary, at: NSPoint(x: countX, y: cell.midY))
+        let summaryWidth = task.subtaskSummary.map { 13 + textWidth($0, font: Style.count) + 10 } ?? 0
+        let noteWidth = display.note.map { textWidth($0, font: Style.meta) + 10 } ?? 0
+        let extras = summaryWidth + noteWidth
+        if extras > 0 {
+            titleWidth = max(0, cell.width - extras)
+            var x = cell.minX + min(textWidth(task.title, font: Style.title), titleWidth) + 10
+            if let summary = task.subtaskSummary {
+                drawSubtaskCount(summary, at: NSPoint(x: x, y: cell.midY))
+                x += summaryWidth
+            }
+            if let note = display.note {
+                drawText(note, font: Style.meta, color: Style.text3,
+                         in: NSRect(x: x, y: cell.minY, width: max(0, cell.maxX - x), height: cell.height))
+            }
         }
         let running = display.runningSince != nil
         drawText(task.title,
@@ -352,6 +387,24 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
                  color: task.isClosed ? Style.text3 : Style.text,
                  in: NSRect(x: cell.minX, y: cell.minY, width: titleWidth, height: cell.height),
                  strikethrough: task.isClosed)
+    }
+
+    /// Where the hover button sits: the trailing end of the title cell, only while hovered.
+    private func quickActionRect(in titleCell: NSRect) -> NSRect? {
+        guard hovered, let action = info?.display.quickAction, !isRenaming else { return nil }
+        let width = textWidth(action.title, font: Style.tag) + 16
+        guard titleCell.width > width + 80 else { return nil }
+        return NSRect(x: titleCell.maxX - width, y: titleCell.midY - 12, width: width, height: 24)
+    }
+
+    private func drawQuickAction(_ action: RowQuickAction, in rect: NSRect) {
+        Style.raised.setFill()
+        let shape = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: Focus.radiusTag, yRadius: Focus.radiusTag)
+        shape.fill()
+        NSColor(Focus.lineStrong).setStroke()
+        shape.lineWidth = 1
+        shape.stroke()
+        drawText(action.title, font: Style.tag, color: Style.text2, in: rect.insetBy(dx: 8, dy: 0))
     }
 
     private func drawSubtaskCount(_ summary: String, at origin: NSPoint) {
@@ -532,6 +585,11 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         let point = convert(event.locationInWindow, from: nil)
         guard isInsidePanel(point) else { return }
         let hit = column(at: point)
+        if hit?.column == .title, let action = info.display.quickAction,
+           let button = quickActionRect(in: hit!.rect), button.contains(point) {
+            controller?.perform(action, task: info.task.id)
+            return
+        }
         controller?.click(task: info.task.id, column: hit?.column, rect: hit?.rect ?? bounds, in: self,
                           clickCount: event.clickCount, modifiers: event.modifierFlags,
                           rename: { [weak self] in self?.beginRename() })
@@ -554,7 +612,11 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         let task = info.task
         switch hit.column {
         case .status: return "\(info.display.status.name). Click for \(info.display.nextStatusName), right-click for all"
-        case .title: return "Click to open, double-click to rename"
+        case .title:
+            if let action = info.display.quickAction, let button = quickActionRect(in: hit.rect), button.contains(point) {
+                return action.help
+            }
+            return "Click to open, double-click to rename"
         case .project: return info.display.projectName ?? ""
         case .milestone: return "Change milestone"
         case .sprint: return task.sprintSlot == .closed ? info.display.sprintLabel : "Change sprint"

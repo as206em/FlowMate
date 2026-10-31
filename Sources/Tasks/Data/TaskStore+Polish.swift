@@ -47,10 +47,12 @@ enum MenuRowItem: Hashable, Sendable {
     case running(UUID)
     /// An In progress task whose timer is paused
     case task(UUID)
+    /// A task under Up next (overdue, due today, pinned, then the top of the active sprints)
+    case upNext(UUID)
 
     var taskId: UUID {
         switch self {
-        case let .running(id), let .task(id): return id
+        case let .running(id), let .task(id), let .upNext(id): return id
         }
     }
 }
@@ -86,10 +88,23 @@ extension TaskStore {
         return (running, paused)
     }
 
-    /// Menu rows top to bottom, as ↑/↓ walk them: running timers, then the paused In progress tasks.
-    func menuBrowseItems() -> MenuBrowseModel {
+    /// Menu rows top to bottom, as ↑/↓ walk them: running timers, the paused In progress tasks,
+    /// then Up next.
+    func menuBrowseItems(now: Date = Date()) -> MenuBrowseModel {
         let listed = menuInProgressTasks
-        return MenuBrowseModel(items: listed.running.map { .running($0.id) } + listed.paused.map { .task($0.id) })
+        return MenuBrowseModel(items: listed.running.map { .running($0.id) } + listed.paused.map { .task($0.id) }
+                               + upNext(now: now).map { .upNext($0.id) })
+    }
+
+    /// The line at the top of the menu's tasks: "Today 3h 20m · 2 due · 1 overdue".
+    func menuTodaySummary(now: Date = Date()) -> String {
+        let counts = dueCounts(now: now)
+        var parts = ["Today " + Focus.durationString(minutes: Int(trackedToday(now: now) / 60))]
+        if counts.dueToday > 0 { parts.append("\(counts.dueToday) due") }
+        if counts.overdue > 0 { parts.append("\(counts.overdue) overdue") }
+        let pinned = todayPlan(now: now).focus.count
+        if counts.dueToday == 0, counts.overdue == 0, pinned > 0 { parts.append("\(pinned) planned") }
+        return parts.joined(separator: " · ")
     }
 
     /// Where the menu's quick add goes: the last project used (remembered across launches),

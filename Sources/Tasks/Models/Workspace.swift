@@ -17,7 +17,8 @@ struct Workspace: Codable, Equatable, Sendable {
     ///    already done or canceled get their last update as completion date.
     /// 8: a color per milestone (Milestone.colorHex). Older milestones get one by walking the
     ///    palette within each project, skipping the project's own color.
-    static let currentSchemaVersion = 8
+    /// 9: tasks pinned to Today (TaskItem.focusDate, focusIndex). Older tasks decode as not pinned.
+    static let currentSchemaVersion = 9
 
     var schemaVersion: Int
     var projects: [Project]
@@ -70,6 +71,7 @@ struct Workspace: Codable, Equatable, Sendable {
         // 7: no time entries yet: reconcileTrackedTime (below) turns each task's total into one
         //    imported entry; normalizeCompletion dates closed tasks by their last update.
         // 8: milestones decode without a color; assignMilestoneColors (below) gives each one.
+        // 9: tasks decode with no focusDate (not pinned to Today); nothing to convert.
         ws.schemaVersion = Workspace.currentSchemaVersion
 
         let projectIds = Set(ws.projects.map(\.id))

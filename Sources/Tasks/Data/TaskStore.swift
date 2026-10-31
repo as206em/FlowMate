@@ -2,11 +2,12 @@ import AppKit
 import Combine
 import Foundation
 
-/// Which tasks a view shows: every project, or one.
 /// Which tasks a view shows: every project, one project, or one milestone's tasks (the
 /// milestone page). A milestone scope carries its project (milestones never change project), so
 /// everything that works inside one project (its workflow, its sprint) works on the page too.
+/// `today` is the Today page: its own sections across every project (TodayPlan), no tabs.
 enum TaskScope: Hashable, Sendable {
+    case today
     case all
     case project(UUID)
     case milestone(UUID, projectId: UUID)
@@ -14,7 +15,7 @@ enum TaskScope: Hashable, Sendable {
     /// The project on screen: the project, or the milestone's project. nil in All projects.
     var projectId: UUID? {
         switch self {
-        case .all: return nil
+        case .today, .all: return nil
         case let .project(id): return id
         case let .milestone(_, projectId): return projectId
         }
@@ -28,9 +29,12 @@ enum TaskScope: Hashable, Sendable {
 
     var isMilestone: Bool { milestoneId != nil }
 
+    var isToday: Bool { self == .today }
+
     /// Remembered tabs and filters are kept under this key ("all", a project id, "milestone-<id>").
     var key: String {
         switch self {
+        case .today: return "today"
         case .all: return "all"
         case let .project(id): return id.uuidString
         case let .milestone(id, _): return "milestone-\(id.uuidString)"
@@ -47,6 +51,8 @@ enum TaskScope: Hashable, Sendable {
     init?(storageKey: String) {
         if storageKey == "all" {
             self = .all
+        } else if storageKey == "today" {
+            self = .today
         } else if let id = UUID(uuidString: storageKey) {
             self = .project(id)
         } else if storageKey.hasPrefix("milestone-") {

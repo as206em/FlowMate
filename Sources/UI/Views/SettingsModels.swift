@@ -3,6 +3,7 @@ import Foundation
 // MARK: - Settings sections
 enum SettingsTab: Hashable, CaseIterable {
     case general
+    case notifications
     case proofreading
     case aiProviders
     case maintenance
@@ -10,6 +11,7 @@ enum SettingsTab: Hashable, CaseIterable {
     var displayName: String {
         switch self {
         case .general: return "General"
+        case .notifications: return "Notifications"
         case .proofreading: return "Proofreading"
         case .aiProviders: return "AI providers"
         case .maintenance: return "Maintenance"
@@ -20,6 +22,7 @@ enum SettingsTab: Hashable, CaseIterable {
     var icon: String {
         switch self {
         case .general: return "gearshape"
+        case .notifications: return "bell"
         case .proofreading: return "pencil.line"
         case .aiProviders: return "cpu"
         case .maintenance: return "wrench.and.screwdriver"

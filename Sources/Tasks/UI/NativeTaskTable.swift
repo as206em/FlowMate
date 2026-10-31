@@ -35,6 +35,31 @@ struct GroupHeaderInfo: Equatable {
     let open: Bool
     /// Space above the header, between groups
     let gap: CGFloat
+    /// Buttons at the right end of the header (Today: "Move all to today", "Pause all")
+    var actions: [GroupHeaderAction] = []
+    /// A hint that follows the running timers, after `hint` (Today's "Planned 5h 30m")
+    var liveHint: GroupLiveHint? = nil
+    /// The title in `risk` (Today's Overdue)
+    var risk = false
+}
+
+/// A button in a group header.
+enum GroupHeaderAction: Equatable {
+    case moveOverdueToToday, moveOverdueToTomorrow, pauseAll
+
+    var title: String {
+        switch self {
+        case .moveOverdueToToday: return "Move all to today"
+        case .moveOverdueToTomorrow: return "Tomorrow"
+        case .pauseAll: return "Pause all"
+        }
+    }
+}
+
+/// A header hint computed from the store as the clock runs.
+enum GroupLiveHint: Equatable {
+    /// "Planned 5h 30m": what's left of the tasks pinned to Today
+    case todayPlanned
 }
 
 struct TaskRowInfo: Equatable {
@@ -53,6 +78,8 @@ enum TaskTableRow: Equatable, Identifiable {
     case task(TaskRowInfo)
     case empty(group: String, text: String)
     case composer(group: String, preset: TaskGroupValue, isDefault: Bool, title: String)
+    /// Today's "Tracked today" panel: the total and a bar per project (drawn live)
+    case trackedToday
 
     var id: String {
         switch self {
@@ -62,6 +89,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case let .task(info): return "t-\(info.group)-\(info.task.id.uuidString)"
         case let .empty(group, _): return "e-" + group
         case let .composer(group, _, _, _): return "c-" + group
+        case .trackedToday: return "tracked-today"
         }
     }
 
@@ -72,7 +100,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case let .task(info): return info.group
         case let .empty(group, _): return group
         case let .composer(group, _, _, _): return group
-        case .spacer, .sectionTitle: return nil
+        case .spacer, .sectionTitle, .trackedToday: return nil
         }
     }
 
@@ -93,6 +121,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case .sectionTitle: return 50
         case .empty: return 52
         case .composer: return 44
+        case .trackedToday: return 120
         }
     }
 }
@@ -101,6 +130,12 @@ enum TaskTableRow: Equatable, Identifiable {
 struct TaskTableBuilder {
     private(set) var rows: [TaskTableRow] = []
     private(set) var drops: [String: TaskGroupDrop] = [:]
+    /// Groups whose rows can be dragged (to a group that takes drops) without taking drops themselves
+    private(set) var draggable: Set<String> = []
+
+    mutating func trackedToday() {
+        rows.append(.trackedToday)
+    }
 
     mutating func spacer(_ id: String, _ height: CGFloat) {
         rows.append(.spacer(id: id, height: height))
@@ -125,13 +160,19 @@ struct TaskTableBuilder {
         composerOnTop: Bool = false,
         open: Bool,
         gap: CGFloat,
+        actions: [GroupHeaderAction] = [],
+        liveHint: GroupLiveHint? = nil,
+        risk: Bool = false,
+        draggable: Bool = false,
         display: (TaskItem) -> RowDisplay
     ) {
         rows.append(.groupHeader(GroupHeaderInfo(
             key: key, title: title, hint: hint, colorHex: colorHex, statusKind: statusKind,
-            statusColorHex: statusColorHex, count: tasks.count, open: open, gap: gap
+            statusColorHex: statusColorHex, count: tasks.count, open: open, gap: gap,
+            actions: actions, liveHint: liveHint, risk: risk
         )))
         if let drop { drops[key] = drop }
+        if draggable { self.draggable.insert(key) }
         guard open else { return }
         let composer = drop.map {
             TaskTableRow.composer(group: key, preset: TaskGroupSection.preset($0), isDefault: composerIsDefault, title: title)
@@ -252,6 +293,8 @@ struct TaskTableCell: View {
             TaskComposer(key: TasksViewModel.listComposerKey(group), preset: preset, isDefault: isDefault, groupName: title)
                 .environment(\.composerReservesMenuSpace, true)
                 .padding(.top, 6)
+        case .trackedToday:
+            TodayTrackedPanel()
         }
     }
 }
@@ -262,10 +305,52 @@ private struct CellHeightKey: PreferenceKey {
 }
 
 private struct GroupHeaderRow: View {
+    @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
     let info: GroupHeaderInfo
 
     var body: some View {
+        HStack(spacing: 6) {
+            toggle
+            ForEach(Array(info.actions.enumerated()), id: \.offset) { index, action in
+                if index > 0 { Text("·").font(Focus.meta).foregroundColor(Focus.text3) }
+                Button(action.title) { perform(action) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(Focus.text2)
+                    .focusPointerCursor()
+                    .fixedSize()
+            }
+        }
+        .padding(.top, info.gap)
+        .padding(.trailing, info.actions.isEmpty ? 0 : 6)
+    }
+
+    private func perform(_ action: GroupHeaderAction) {
+        switch action {
+        case .moveOverdueToToday: model.moveAllOverdue(.today, store: store)
+        case .moveOverdueToTomorrow: model.moveAllOverdue(.tomorrow, store: store)
+        case .pauseAll: store.pauseAllTimers()
+        }
+    }
+
+    @ViewBuilder
+    private var liveHint: some View {
+        switch info.liveHint {
+        case .todayPlanned?:
+            LiveTime { now in
+                let planned = store.todayPlan(now: now).plannedSeconds
+                Text(planned > 0 ? "Planned \(Focus.durationString(minutes: Int((planned / 60).rounded(.up))))" : "")
+                    .font(Focus.meta.monospacedDigit())
+                    .foregroundColor(Focus.text3)
+                    .lineLimit(1)
+            }
+        case nil:
+            EmptyView()
+        }
+    }
+
+    private var toggle: some View {
         Button {
             model.toggleGroup(info.key)
         } label: {
@@ -281,15 +366,16 @@ private struct GroupHeaderRow: View {
                 if let kind = info.statusKind {
                     FocusStatusIcon(kind: kind, color: info.statusColorHex.map { Color(hex: $0) }, size: 15)
                 }
-                Text(info.title).font(Focus.groupTitle).foregroundColor(Focus.text).lineLimit(1)
+                Text(info.title).font(Focus.groupTitle).foregroundColor(info.risk ? Focus.risk : Focus.text).lineLimit(1)
                 Text("\(info.count)").font(Focus.row.monospacedDigit()).foregroundColor(Focus.text3)
+                liveHint
                 if !info.hint.isEmpty {
                     Text(info.hint).font(Focus.meta).foregroundColor(Focus.text3).lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 4)
-            .padding(.top, 4 + info.gap)
+            .padding(.top, 4)
             .padding(.bottom, 8)
             .contentShape(Rectangle())
         }
@@ -346,6 +432,7 @@ final class TaskNSTableView: NSTableView {
 struct NativeTaskTable: NSViewRepresentable {
     let rows: [TaskTableRow]
     let drops: [String: TaskGroupDrop]
+    var draggable: Set<String> = []
     let layout: TaskColumnLayout
     let store: TaskStore
     let model: TasksViewModel
@@ -393,7 +480,7 @@ struct NativeTaskTable: NSViewRepresentable {
         }
         table.dataSource = coordinator
         table.delegate = coordinator
-        coordinator.update(rows: rows, drops: drops, layout: layout, store: store, model: model)
+        coordinator.update(rows: rows, drops: drops, draggable: draggable, layout: layout, store: store, model: model)
         return scroll
     }
 
@@ -404,7 +491,7 @@ struct NativeTaskTable: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        context.coordinator.update(rows: rows, drops: drops, layout: layout, store: store, model: model)
+        context.coordinator.update(rows: rows, drops: drops, draggable: draggable, layout: layout, store: store, model: model)
     }
 
     @MainActor
@@ -412,6 +499,7 @@ struct NativeTaskTable: NSViewRepresentable {
         weak var table: NSTableView?
         private(set) var rows: [TaskTableRow] = []
         private var drops: [String: TaskGroupDrop] = [:]
+        private var draggable: Set<String> = []
         private var layout = TaskColumnLayout.standard
         private var store: TaskStore?
         private var model: TasksViewModel?
@@ -455,8 +543,8 @@ struct NativeTaskTable: NSViewRepresentable {
 
         // MARK: Updates
 
-        func update(rows newRows: [TaskTableRow], drops: [String: TaskGroupDrop], layout: TaskColumnLayout,
-                    store: TaskStore, model: TasksViewModel) {
+        func update(rows newRows: [TaskTableRow], drops: [String: TaskGroupDrop], draggable: Set<String> = [],
+                    layout: TaskColumnLayout, store: TaskStore, model: TasksViewModel) {
             if self.store !== store {
                 tickerSubscription = store.ticker.$now.sink { [weak self] _ in self?.tick() }
             }
@@ -465,6 +553,7 @@ struct NativeTaskTable: NSViewRepresentable {
             controller.store = store
             controller.model = model
             self.drops = drops
+            self.draggable = draggable
             let old = rows
             let layoutChanged = layout != self.layout
             self.layout = layout
@@ -628,7 +717,7 @@ struct NativeTaskTable: NSViewRepresentable {
             view.nowProvider = { [weak store] in store?.ticker.now ?? Date() }
             view.controller = controller
             view.onDragStart = { [weak model] id in model?.draggingTaskId = id }
-            view.dragSource = drops[info.group] != nil ? self : nil
+            view.dragSource = drops[info.group] != nil || draggable.contains(info.group) ? self : nil
         }
 
         /// Running rows redraw once a second for their clock and ring.
@@ -701,7 +790,7 @@ struct NativeTaskTable: NSViewRepresentable {
                 return header(info.key)
             case let .empty(group, _), let .composer(group, _, _, _):
                 return header(group)
-            case .spacer, .sectionTitle:
+            case .spacer, .sectionTitle, .trackedToday:
                 // Gap between groups: the group just above it
                 guard let group = rows[..<proposed].last(where: { $0.group != nil })?.group else { return nil }
                 return header(group)
@@ -711,7 +800,7 @@ struct NativeTaskTable: NSViewRepresentable {
         /// Whether a drop in the group can be placed before a given row
         private func reorders(_ group: String) -> Bool {
             switch drops[group] {
-            case .slot?: return true
+            case .slot?, .focus?: return true
             case let .group(_, reorder)?: return reorder
             case nil: return false
             }

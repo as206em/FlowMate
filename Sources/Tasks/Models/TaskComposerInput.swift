@@ -27,6 +27,8 @@ struct ComposerDraft: Equatable {
     var expectedMinutes: Int?
     /// Added from the composer pinned at the top of its group (⌘N): the task goes first
     var atTop = false
+    /// Added on the Today page: the task is pinned to Today
+    var pinToday = false
 
     /// Fills in what the composer's group and the scope give a new task: the group's value (its
     /// status, sprint, milestone, priority or project) and, on a milestone's page, that milestone.
@@ -34,6 +36,7 @@ struct ComposerDraft: Equatable {
         if let milestoneId = scope.milestoneId, projectId == nil || projectId == scope.projectId {
             self.milestoneId = milestoneId
         }
+        if scope.isToday { pinToday = true }
         switch preset {
         case let .status(status)?: self.status = status
         case let .category(category)?: self.category = category
@@ -249,6 +252,13 @@ extension TaskStore {
             if let priority = draft.priority { setPriority(id, priority) }
             if let due = draft.dueDate { setDueDate(id, due) }
             if let minutes = draft.expectedMinutes { setExpectedMinutes(id, minutes) }
+            if draft.pinToday {
+                addToToday([id], now: now)
+                // From the composer at the top (⌘N): first in My focus too
+                if draft.atTop, let first = todayPlan(now: now).focus.first(where: { $0.id != id }) {
+                    moveInFocus(id, before: first.id, now: now)
+                }
+            }
             if let status = draft.status {
                 setStatus(id, status, now: now)
             } else if let category = draft.category {
