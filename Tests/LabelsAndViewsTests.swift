@@ -34,8 +34,8 @@ final class LabelsAndViewsTests: XCTestCase {
          "runningTimers":{}, "timeEntries":[]}
         """
         let ws = try LocalJSONWorkspaceRepository.makeDecoder().decode(Workspace.self, from: Data(json.utf8)).migrated(now: t0)
-        XCTAssertEqual(Workspace.currentSchemaVersion, 11)
-        XCTAssertEqual(ws.schemaVersion, 11)
+        XCTAssertEqual(Workspace.currentSchemaVersion, 12)
+        XCTAssertEqual(ws.schemaVersion, 12)
         XCTAssertEqual(ws.tasks.map(\.title), ["Old task"], "nothing is lost")
         XCTAssertEqual(ws.tasks[0].labelIds, [])
         XCTAssertEqual(ws.labels, [])

@@ -467,6 +467,8 @@ struct FocusIconButton: View {
     let systemName: String
     let label: String
     var size: CGFloat = 28
+    /// The icon's color (Delete in a bar uses risk); text2 by default
+    var tint: Color? = nil
     let action: () -> Void
 
     @State private var hovering = false
@@ -475,7 +477,7 @@ struct FocusIconButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: size * 0.46, weight: .semibold))
-                .foregroundColor(Focus.text2)
+                .foregroundColor(tint ?? Focus.text2)
                 .frame(width: size, height: size)
                 .background(RoundedRectangle(cornerRadius: Focus.radiusControl).fill(hovering ? Focus.hover : .clear))
                 .contentShape(Rectangle())

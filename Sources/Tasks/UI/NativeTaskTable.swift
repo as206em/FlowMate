@@ -792,7 +792,11 @@ struct NativeTaskTable: NSViewRepresentable {
             view.info = info
             view.nowProvider = { [weak store] in store?.ticker.now ?? Date() }
             view.controller = controller
-            view.onDragStart = { [weak model] id in model?.draggingTaskId = id }
+            let group = info.group
+            view.onDragStart = { [weak model, weak self] id in
+                model?.draggingTaskId = id
+                self?.dragSourceGroup = group
+            }
             view.dragSource = drops[info.group] != nil || draggable.contains(info.group) ? self : nil
         }
 
@@ -830,7 +834,12 @@ struct NativeTaskTable: NSViewRepresentable {
 
         func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
             model?.draggingTaskId = nil
+            dragSourceGroup = nil
         }
+
+        /// The group the row being dragged was in: a task shows once per label when grouped by
+        /// label, so a drop between label groups needs it to know which label to take off.
+        private var dragSourceGroup: String?
 
         // MARK: Drop destination
 
@@ -902,8 +911,10 @@ struct NativeTaskTable: NSViewRepresentable {
                   let target = landing(row: row, operation: dropOperation),
                   let drop = drops[target.group] else { return false }
             model?.draggingTaskId = nil
+            let source = dragSourceGroup.flatMap { drops[$0] }
+            dragSourceGroup = nil
             guard id != target.before else { return false }
-            TaskGroupSection.perform(drop, id: id, before: target.before, store: store)
+            TaskGroupSection.perform(drop, id: id, before: target.before, from: source, store: store)
             return true
         }
     }

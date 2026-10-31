@@ -25,7 +25,9 @@ struct Workspace: Codable, Equatable, Sendable {
     ///     time log as they are now, marked approximate (addPastSprintStats).
     /// 11: labels (Workspace.labels, TaskItem.labelIds) and saved views (Workspace.savedViews).
     ///     Older files decode with none of either; nothing to convert.
-    static let currentSchemaVersion = 11
+    /// 12: the waiting "Timers ran while your Mac slept" prompt (preferences.pendingAway), so it
+    ///     survives a relaunch. Older files decode with none.
+    static let currentSchemaVersion = 12
 
     var schemaVersion: Int
     var projects: [Project]
@@ -89,6 +91,7 @@ struct Workspace: Codable, Equatable, Sendable {
         // 9: tasks decode with no focusDate (not pinned to Today); nothing to convert.
         // 10: past sprints get their numbers after the time log is reconciled (below).
         // 11: no labels or saved views yet (they decode as none); normalizeLabels drops dangling ids.
+        // 12: no waiting sleep prompt (decodes to none). Below: prompts keep only tasks that exist.
         let addStats = ws.schemaVersion < 10
         ws.schemaVersion = Workspace.currentSchemaVersion
 
@@ -104,6 +107,7 @@ struct Workspace: Codable, Equatable, Sendable {
         let taskIds = Set(ws.tasks.map(\.id))
         ws.runningTimers = ws.runningTimers.filter { taskIds.contains($0.key) }
         ws.preferences.longRunKeptAt = ws.preferences.longRunKeptAt.filter { ws.runningTimers[$0.key] != nil }
+        ws.normalizePreferences()
         ws.normalizeStatuses()
         ws.normalizeCompletion()
         ws.reconcileTrackedTime(now: now)
@@ -111,6 +115,29 @@ struct Workspace: Codable, Equatable, Sendable {
         ws.normalizeLabels()
         if addStats { ws.addPastSprintStats() }
         return ws
+    }
+
+    /// Preferences only point at things that exist: the last project used, sample projects, Keep
+    /// answers of timers still running, and a waiting sleep prompt (only the tasks that still
+    /// exist; one left with none goes away).
+    mutating func normalizePreferences() {
+        if let last = preferences.lastProjectId, !projects.contains(where: { $0.id == last }) {
+            preferences.lastProjectId = nil
+        }
+        if preferences.sampleProjectIds.contains(where: { id in !projects.contains { $0.id == id } }) {
+            preferences.sampleProjectIds.removeAll { id in !projects.contains { $0.id == id } }
+        }
+        if preferences.longRunKeptAt.keys.contains(where: { runningTimers[$0] == nil }) {
+            preferences.longRunKeptAt = preferences.longRunKeptAt.filter { runningTimers[$0.key] != nil }
+        }
+        guard !preferences.pendingAway.isEmpty else { return }
+        let taskIds = Set(tasks.map(\.id))
+        let gaps = preferences.pendingAway.compactMap { gap -> AwayGap? in
+            let ids = gap.taskIds.filter { taskIds.contains($0) }
+            return ids.isEmpty || gap.end <= gap.start ? nil
+                : AwayGap(id: gap.id, start: gap.start, end: gap.end, kind: gap.kind, taskIds: ids)
+        }
+        if gaps != preferences.pendingAway { preferences.pendingAway = gaps }
     }
 
     /// Schema 10: numbers for past sprints closed before they were stored. Planned is the expected
@@ -155,7 +182,8 @@ struct Workspace: Codable, Equatable, Sendable {
 
     /// Keeps labels and saved views consistent with the rest: one label per name (a duplicate's
     /// tasks move to the first), tasks only carry labels that exist (each once), and saved views
-    /// whose project or milestone is gone are dropped. Filters inside views keep only existing labels.
+    /// whose project or milestone is gone are dropped. Filters inside views keep only existing labels
+    /// and statuses.
     mutating func normalizeLabels() {
         if labels.isEmpty, savedViews.isEmpty, !tasks.contains(where: { !$0.labelIds.isEmpty }) { return }
         // Duplicate ids or names (hand-edited files): the first wins
@@ -183,6 +211,7 @@ struct Workspace: Codable, Equatable, Sendable {
         guard !savedViews.isEmpty else { return }
         let projectIds = Set(projects.map(\.id))
         let milestoneProjects = Dictionary(milestones.map { ($0.id, $0.projectId) }, uniquingKeysWith: { a, _ in a })
+        let statusIds = Set(projects.flatMap { $0.statuses.map(\.id) })
         var viewIds = Set<UUID>()
         let views = savedViews.compactMap { view -> SavedView? in
             guard viewIds.insert(view.id).inserted else { return nil }
@@ -194,6 +223,9 @@ struct Workspace: Codable, Equatable, Sendable {
             var view = view
             let labels = Set(view.options.filter.labels.map { merged[$0] ?? $0 }).intersection(valid)
             if labels != view.options.filter.labels { view.options.filter.labels = labels }
+            // A status deleted from every workflow can't match anything: the view forgets it
+            let statuses = view.options.filter.statuses.intersection(statusIds)
+            if statuses != view.options.filter.statuses { view.options.filter.statuses = statuses }
             return view
         }
         if views != savedViews { savedViews = views }
@@ -253,19 +285,22 @@ struct WorkspacePreferences: Codable, Equatable, Sendable {
     /// Running task -> when you last answered Keep to "Still working on it?". The prompt waits a
     /// full interval from then. Entries go away when that timer stops.
     var longRunKeptAt: [UUID: Date]
+    /// Sleep or lock stretches timers ran through, waiting for Keep or Discard sleep time.
+    var pendingAway: [AwayGap]
 
     init(lastProjectId: UUID? = nil, showsMenuBarClock: Bool = false,
          longRunPromptMinutes: Int = WorkspacePreferences.defaultLongRunMinutes,
-         sampleProjectIds: [UUID] = [], longRunKeptAt: [UUID: Date] = [:]) {
+         sampleProjectIds: [UUID] = [], longRunKeptAt: [UUID: Date] = [:], pendingAway: [AwayGap] = []) {
         self.lastProjectId = lastProjectId
         self.showsMenuBarClock = showsMenuBarClock
         self.longRunPromptMinutes = max(0, longRunPromptMinutes)
         self.sampleProjectIds = sampleProjectIds
         self.longRunKeptAt = longRunKeptAt
+        self.pendingAway = pendingAway
     }
 
     private enum CodingKeys: String, CodingKey {
-        case lastProjectId, showsMenuBarClock, longRunPromptMinutes, sampleProjectIds, longRunKeptAt
+        case lastProjectId, showsMenuBarClock, longRunPromptMinutes, sampleProjectIds, longRunKeptAt, pendingAway
     }
 
     init(from decoder: Decoder) throws {
@@ -280,6 +315,8 @@ struct WorkspacePreferences: Codable, Equatable, Sendable {
             guard let id = UUID(uuidString: key), let date = value.date else { return nil }
             return (id, date)
         }, uniquingKeysWith: { a, _ in a })
+        // Schema 11 and older: no waiting sleep prompt
+        pendingAway = c.decodeLossyArray(.pendingAway)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -290,6 +327,7 @@ struct WorkspacePreferences: Codable, Equatable, Sendable {
         try c.encode(sampleProjectIds, forKey: .sampleProjectIds)
         let kept = Dictionary(longRunKeptAt.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { a, _ in a })
         try c.encode(kept, forKey: .longRunKeptAt)
+        try c.encode(pendingAway, forKey: .pendingAway)
     }
 
     private struct LossyDate: Decodable {

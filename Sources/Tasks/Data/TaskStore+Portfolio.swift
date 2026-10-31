@@ -342,4 +342,15 @@ extension TaskStore {
         setMilestoneDue(id, to: moved)
         return moved
     }
+
+    /// A milestone from the timeline's No date tray dropped on a day: it's due then. Returns its
+    /// name, or nil when the milestone is gone or already has that date.
+    @discardableResult
+    func placeMilestone(_ id: UUID, on day: Date, calendar: Calendar = .current) -> String? {
+        guard let milestone = milestone(id) else { return nil }
+        let date = calendar.startOfDay(for: day)
+        guard milestone.dueDate.map({ !calendar.isDate($0, inSameDayAs: date) }) ?? true else { return nil }
+        setMilestoneDue(id, to: date)
+        return milestone.name
+    }
 }

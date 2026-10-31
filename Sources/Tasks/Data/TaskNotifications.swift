@@ -179,8 +179,8 @@ final class TaskNotifications: ObservableObject {
         guard self.store == nil else { return }
         self.store = store
         client.registerCategories()
+        // The sleep prompt (preferences.pendingAway) is part of the workspace
         store.$workspace.map { _ in () }
-            .merge(with: store.$awayGaps.map { _ in () })
             .sink { [weak self] in self?.scheduleSoon() }
             .store(in: &subscriptions)
         let center = NotificationCenter.default

@@ -5,9 +5,13 @@ import Foundation
 // they started). When that lasted a while, a quiet prompt asks: "Timers ran while your Mac slept
 // 2h 05m · Keep · Discard sleep time". Discard takes the away time out of those timers' sessions.
 
-/// A stretch the Mac was asleep or locked while timers ran.
-struct AwayGap: Identifiable, Equatable, Sendable {
-    enum Kind: Equatable, Sendable { case sleep, locked }
+/// A stretch the Mac was asleep or locked while timers ran. Waiting ones are stored with the
+/// workspace (WorkspacePreferences.pendingAway), so the prompt survives quitting FlowMate.
+struct AwayGap: Identifiable, Codable, Equatable, Sendable {
+    enum Kind: String, Equatable, Sendable, TolerantStringEnum {
+        case sleep, locked
+        static var fallback: Kind { .sleep }
+    }
 
     let id: UUID
     let start: Date
@@ -26,6 +30,17 @@ struct AwayGap: Identifiable, Equatable, Sendable {
 
     var duration: TimeInterval { max(0, end.timeIntervalSince(start)) }
     var interval: DateInterval { DateInterval(start: start, end: max(start, end)) }
+
+    private enum CodingKeys: String, CodingKey { case id, start, end, kind, taskIds }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.decode(.id, or: UUID())
+        start = try c.decode(Date.self, forKey: .start)
+        end = try c.decode(Date.self, forKey: .end)
+        kind = c.decode(.kind, or: .sleep)
+        taskIds = c.decodeLossyArray(.taskIds)
+    }
 }
 
 /// Follows sleep, wake, lock and unlock and says when an away stretch is over. Away starts at
@@ -79,8 +94,13 @@ extension TaskStore {
         guard let stretch, stretch.end.timeIntervalSince(stretch.start) >= Self.awayPromptThreshold else { return }
         let ids = runningTasks.map(\.id).filter { (startedAt($0) ?? .distantFuture) < stretch.start }
         guard !ids.isEmpty else { return }
-        awayGaps.append(AwayGap(start: stretch.start, end: stretch.end, kind: stretch.kind, taskIds: ids))
+        let gap = AwayGap(start: stretch.start, end: stretch.end, kind: stretch.kind, taskIds: ids)
+        // Not an undo step; stored so the prompt is still there after a relaunch
+        mutate(recordsUndo: false) { $0.preferences.pendingAway.append(gap) }
     }
+
+    /// Times the Mac slept (or was locked) while timers ran, waiting for Keep or Discard sleep time.
+    var awayGaps: [AwayGap] { workspace.preferences.pendingAway }
 
     /// Total away time waiting for an answer.
     var awayDuration: TimeInterval { awayGaps.reduce(0) { $0 + $1.duration } }
@@ -93,7 +113,8 @@ extension TaskStore {
 
     /// "Keep": the time counts as tracked.
     func keepAwayTime() {
-        awayGaps.removeAll()
+        guard !awayGaps.isEmpty else { return }
+        mutate(recordsUndo: false) { $0.preferences.pendingAway.removeAll() }
     }
 
     /// "Discard sleep time": each timer that ran through the gap loses it. A running session is
@@ -101,10 +122,12 @@ extension TaskStore {
     /// already stopped since is cut the same way. One undo step.
     func discardAwayTime() {
         let gaps = awayGaps
-        awayGaps.removeAll()
         guard !gaps.isEmpty else { return }
         let kind = gaps.contains { $0.kind == .sleep } ? "sleep" : "away"
+        // The prompt goes in the same change; undo puts the time back but not the prompt
+        // (preferences aren't undo steps, see TaskStore.restoring)
         mutate("Discard \(kind) time") { ws in
+            ws.preferences.pendingAway.removeAll()
             for gap in gaps {
                 for id in gap.taskIds where ws.tasks.contains(where: { $0.id == id }) {
                     ws.removeTrackedTime(id, in: gap.interval)

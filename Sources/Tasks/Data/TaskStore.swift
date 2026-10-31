@@ -118,9 +118,7 @@ final class TaskStore: ObservableObject {
     /// workspace preferences so it survives a relaunch; the prompt comes back one interval later.
     var longRunAcknowledged: [UUID: Date] { workspace.preferences.longRunKeptAt }
 
-    // Sleep and screen lock (TaskStore+Away.swift)
-    /// Times the Mac slept (or was locked) while timers ran, waiting for Keep or Discard sleep time.
-    @Published var awayGaps: [AwayGap] = []
+    // Sleep and screen lock (TaskStore+Away.swift; waiting prompts are awayGaps, stored in preferences)
     /// The sleep or lock in progress, if any.
     var away = AwayTracker()
 
@@ -306,6 +304,8 @@ final class TaskStore: ObservableObject {
         copy.assignMilestoneColors()
         // Tasks carry only labels that exist; views of a deleted project or milestone go with it
         copy.normalizeLabels()
+        // Preferences forget deleted projects and tasks (last project, Keep answers, sleep prompt)
+        copy.normalizePreferences()
         guard copy != workspace else { return }
         let before = workspace
         workspace = copy

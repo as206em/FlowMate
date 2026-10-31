@@ -130,8 +130,10 @@ extension TaskStore {
     /// Drops a task on a List group: sets the group's value, then places it before `beforeTaskId`
     /// (or last). Pass `reorder: false` when the list is sorted. One undo step.
     /// A milestone of another project moves the task to that project first.
+    /// `from`: the group the task was dragged out of. Between label groups that makes the drop a
+    /// move like any other grouping: the source group's label comes off, the target's goes on.
     func moveTask(_ id: UUID, to value: TaskGroupValue, before beforeTaskId: UUID? = nil,
-                  reorder: Bool = true, now: Date = Date()) {
+                  reorder: Bool = true, from: TaskGroupValue? = nil, now: Date = Date()) {
         guard let task = task(id) else { return }
         undoGroup("Move task") {
             switch value {
@@ -152,9 +154,16 @@ extension TaskStore {
                 }
                 setMilestone(id, milestoneId)
             case let .label(labelId):
-                // A label group adds its label (the others stay); No label takes them all off
+                // A label group adds its label, and takes off the label of the group it was dragged
+                // from (its other labels stay); No label takes them all off
                 if let labelId {
-                    addLabel(labelId, to: [id])
+                    if case let .label(sourceId?)? = from, sourceId != labelId, task.labelIds.contains(sourceId) {
+                        var ids = task.labelIds.filter { $0 != sourceId }
+                        if !ids.contains(labelId) { ids.append(labelId) }
+                        setLabels(id, ids)
+                    } else {
+                        addLabel(labelId, to: [id])
+                    }
                 } else if !task.labelIds.isEmpty {
                     setLabels(id, [])
                 }

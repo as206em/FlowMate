@@ -66,21 +66,31 @@ enum ListKey: Equatable {
 // MARK: - Anchors
 
 /// Where a picker can hang: views that registered under a key (a board card "task-<id>", the bulk
-/// bar, the task panel) and the native tables, which find a task's row themselves.
+/// bar, the task panel, a row of the milestone panel) and the native tables, which find a task's
+/// row themselves. One task can be on screen twice (a board card under the milestone panel's row):
+/// the anchor registered last wins while it's in the window, and the other takes over when it goes.
 @MainActor
 enum QuickPickerAnchors {
     private final class Weak { weak var view: NSView? ; init(_ view: NSView) { self.view = view } }
-    private static var views: [String: Weak] = [:]
+    private static var views: [String: [Weak]] = [:]
     private static var tables: [WeakTable] = []
 
     private final class WeakTable { weak var provider: TaskRowAnchorProvider?; init(_ p: TaskRowAnchorProvider) { provider = p } }
 
     static func register(_ view: NSView, key: String) {
-        views[key] = Weak(view)
+        var list = (views[key] ?? []).filter { $0.view != nil && $0.view !== view }
+        list.append(Weak(view))
+        views[key] = list
     }
 
     static func unregister(_ view: NSView, key: String) {
-        if views[key]?.view === view { views[key] = nil }
+        let list = (views[key] ?? []).filter { $0.view != nil && $0.view !== view }
+        views[key] = list.isEmpty ? nil : list
+    }
+
+    /// The views registered under a key, latest first (for tests)
+    static func registered(_ key: String) -> [NSView] {
+        (views[key] ?? []).reversed().compactMap(\.view)
     }
 
     static func register(table provider: TaskRowAnchorProvider) {
@@ -98,7 +108,7 @@ enum QuickPickerAnchors {
 
     /// A view and a rect in it to show the picker from, in this window.
     static func resolve(_ anchor: QuickPickerRequest.Anchor, in window: NSWindow) -> (view: NSView, rect: NSRect)? {
-        if let view = views[key(anchor)]?.view, view.window === window, !view.isHiddenOrHasHiddenAncestor {
+        for view in registered(key(anchor)) where view.window === window && !view.isHiddenOrHasHiddenAncestor {
             return (view, view.bounds)
         }
         if case let .task(id) = anchor {

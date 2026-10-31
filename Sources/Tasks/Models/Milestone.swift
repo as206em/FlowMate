@@ -31,11 +31,24 @@ struct Milestone: Identifiable, Codable, Equatable, Sendable {
     /// The palette milestones take their colors from (the project tile palette).
     static var palette: [UInt32] { Focus.projectPalette }
 
+    /// Palette colors closer than this to the project's color (CIE76 ΔE in Lab) read as the same
+    /// color next to its tile, so milestones don't take them. 25 stays under the palette's closest
+    /// pair (green and teal, ~28) while catching a custom red next to coral (~14).
+    static let minimumDistanceFromProject = 25.0
+
     /// The color for a project's next milestone: the palette color its milestones use least,
-    /// leaving out the project's own color so a card's tile and milestone chip differ. Ties go to
-    /// palette order, so a project's milestones walk through the palette.
+    /// leaving out colors that look like the project's own (by perceptual distance, so a custom
+    /// project color near a palette color counts too) so a card's tile and milestone chip differ.
+    /// Ties go to palette order, so a project's milestones walk through the palette.
     static func nextColor(projectColor: UInt32?, used: [UInt32]) -> UInt32 {
-        let choices = palette.filter { $0 != projectColor }
+        var choices = palette
+        if let projectColor {
+            choices = palette.filter { ColorDistance.deltaE(projectColor, $0) >= minimumDistanceFromProject }
+            if choices.isEmpty {
+                // Nothing far enough (can't happen with the stock palette): the farthest one
+                choices = palette.max { ColorDistance.deltaE(projectColor, $0) < ColorDistance.deltaE(projectColor, $1) }.map { [$0] } ?? []
+            }
+        }
         guard !choices.isEmpty else { return palette.first ?? 0x4EA1F5 }
         var counts: [UInt32: Int] = [:]
         for hex in used { counts[hex, default: 0] += 1 }
@@ -68,4 +81,27 @@ struct MilestoneProgress: Equatable, Sendable {
     var short: String { "\(done)/\(total)" }
     /// "3 of 7 tasks done"
     var label: String { "\(done) of \(total) tasks done" }
+}
+
+/// How different two colors look: CIE76 ΔE between their CIELAB values (sRGB, D65). Around 2 is
+/// barely visible; 25+ reads as a different color.
+enum ColorDistance {
+    static func deltaE(_ a: UInt32, _ b: UInt32) -> Double {
+        let la = lab(a), lb = lab(b)
+        return ((la.0 - lb.0) * (la.0 - lb.0) + (la.1 - lb.1) * (la.1 - lb.1) + (la.2 - lb.2) * (la.2 - lb.2)).squareRoot()
+    }
+
+    static func lab(_ hex: UInt32) -> (Double, Double, Double) {
+        func linear(_ c: UInt32) -> Double {
+            let v = Double(c & 0xFF) / 255
+            return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        let r = linear(hex >> 16), g = linear(hex >> 8), b = linear(hex)
+        let x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047
+        let y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        let z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883
+        func f(_ t: Double) -> Double { t > 0.008856 ? cbrt(t) : 7.787 * t + 16.0 / 116 }
+        let fx = f(x), fy = f(y), fz = f(z)
+        return (116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz))
+    }
 }

@@ -85,7 +85,7 @@ struct SidebarViewsSection: View {
         } else {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(views) { view in
-                    SidebarViewRow(view: view)
+                    SidebarViewRow(view: view).id(SidebarItem.view(view.id))
                         .onDrag {
                             model.draggingTaskId = nil
                             return NSItemProvider(object: SidebarViewDrop.payload(view.id) as NSString)

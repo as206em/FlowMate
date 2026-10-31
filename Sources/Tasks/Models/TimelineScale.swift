@@ -151,4 +151,20 @@ struct TimelineScale: Equatable {
         }
         return result
     }
+
+    /// Where a month label goes when the axis is scrolled: at its month's start, but never left of
+    /// the visible edge (so the month you're looking at is always named, not cut off), and pushed
+    /// out by the next month's label rather than overlapping it.
+    static func stickyLabelX(_ x: CGFloat, visibleLeft: CGFloat, nextX: CGFloat?, labelWidth: CGFloat, inset: CGFloat = 8) -> CGFloat {
+        var result = max(x, visibleLeft + inset)
+        if let nextX { result = min(result, nextX - labelWidth - inset) }
+        return max(x, result)
+    }
+
+    /// The width a label can take from `x` before running into the next obstacle at `limits`
+    /// (other diamonds, a target date line), less a gap. nil limits: up to the axis end.
+    func labelRoom(from x: CGFloat, before limits: [CGFloat], gap: CGFloat = 22) -> CGFloat {
+        let next = limits.filter { $0 > x + 1 }.min() ?? width
+        return max(0, next - x - gap)
+    }
 }

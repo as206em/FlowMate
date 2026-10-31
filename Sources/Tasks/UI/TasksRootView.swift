@@ -125,6 +125,8 @@ struct TasksRootView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
+            // A bounded width, so the bar picks a layout that fits (TaskBulkBar)
+            .padding(.horizontal, 16)
             .padding(.bottom, 22)
             .animation(Focus.menuAnimation, value: model.isMultiSelecting)
         }

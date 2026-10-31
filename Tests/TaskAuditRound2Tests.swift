@@ -67,8 +67,8 @@ final class TaskAuditRound2Tests: XCTestCase {
          "preferences": {"showsMenuBarClock": true}}
         """
         let ws = try LocalJSONWorkspaceRepository.makeDecoder().decode(Workspace.self, from: Data(json.utf8)).migrated()
-        XCTAssertEqual(Workspace.currentSchemaVersion, 11)
-        XCTAssertEqual(ws.schemaVersion, 11)
+        XCTAssertEqual(Workspace.currentSchemaVersion, 12)
+        XCTAssertEqual(ws.schemaVersion, 12)
         XCTAssertEqual(ws.tasks.count, 1)
         XCTAssertEqual(ws.preferences.longRunKeptAt, [:])
         XCTAssertTrue(ws.preferences.showsMenuBarClock)

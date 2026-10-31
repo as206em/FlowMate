@@ -14,6 +14,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // The morning summary, reminders and timer prompts in Notification Center
             if UserNotificationClient.isAvailable { UNUserNotificationCenter.current().delegate = self }
             TaskNotifications.shared.start(store: TaskStore.shared)
+            // Keep a reference to the menu bar icon for the "Menu bar search" hotkey
+            MenuBarStatusItem.resolve()
         }
     }
 

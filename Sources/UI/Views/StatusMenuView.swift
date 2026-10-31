@@ -512,6 +512,42 @@ private struct ContentHeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
+/// FlowMate's menu bar icon: the status item button the MenuBarExtra puts in the menu bar.
+/// SwiftUI doesn't hand out its NSStatusItem, so the button is found once by its type (an
+/// NSStatusBarButton in one of this app's status bar windows; FlowMate has exactly one status
+/// item) and kept. AppDelegate resolves it at launch; a lookup that finds the kept button gone
+/// (the item was rebuilt) looks again.
+@MainActor
+enum MenuBarStatusItem {
+    private static weak var cached: NSStatusBarButton?
+
+    /// The button, from the cache while it's still in a window, else looked up in `windows`.
+    static func button(in windows: [NSWindow]? = nil) -> NSStatusBarButton? {
+        if let cached, cached.window != nil { return cached }
+        let found = (windows ?? NSApp.windows).lazy.compactMap { window in
+            window.contentView.flatMap(statusButton(in:))
+        }.first
+        cached = found
+        return found
+    }
+
+    /// Looks the button up now (at launch, once the menu bar item exists).
+    static func resolve() {
+        cached = nil
+        _ = button()
+    }
+
+    static func reset() { cached = nil }
+
+    private static func statusButton(in view: NSView) -> NSStatusBarButton? {
+        if let button = view as? NSStatusBarButton { return button }
+        for sub in view.subviews {
+            if let found = statusButton(in: sub) { return found }
+        }
+        return nil
+    }
+}
+
 /// Helpers for the menu bar panel window
 enum MenuBarPanel {
     /// Closes the panel, e.g. before opening another window
@@ -530,25 +566,12 @@ enum MenuBarPanel {
         if let window {
             NSApp.activate(ignoringOtherApps: true)
             window.makeKey()
-        } else if let button = statusItemButton() {
+        } else if let button = MenuBarStatusItem.button() {
             button.performClick(nil)
+        } else {
+            Logger.shared.warning("Menu bar search: FlowMate's menu bar icon wasn't found")
         }
         DispatchQueue.main.async { MenuState.shared.focusSearch = UUID() }
-    }
-
-    /// FlowMate's menu bar icon (the MenuBarExtra's status item button)
-    @MainActor
-    private static func statusItemButton() -> NSButton? {
-        func find(_ view: NSView?) -> NSButton? {
-            guard let view else { return nil }
-            if let button = view as? NSButton { return button }
-            for sub in view.subviews { if let found = find(sub) { return found } }
-            return nil
-        }
-        for window in NSApp.windows where window.className.contains("NSStatusBarWindow") {
-            if let button = find(window.contentView) { return button }
-        }
-        return nil
     }
 
     /// Sizes the open panel to its content, keeping its top edge under the menu bar.

@@ -1,67 +1,138 @@
 import SwiftUI
 
 /// Floating bar for two or more selected tasks (⌘-click, ⇧-click, ⌘A):
-/// "3 selected · Status · Priority · Milestone · Sprint · Due · Labels · Move to · Delete · ×".
-/// Every action is one undo step with an "Undo" toast.
+/// "3 selected · Status · Priority · Milestone · Sprint · Due · Labels · Move to · Today · Delete · ×",
+/// compacted to fit narrow windows (see Density). Every action is one undo step with an "Undo" toast.
 struct TaskBulkBar: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
 
     @State private var open: Menu?
+    /// Inside the minimal layout's "More" popover: the menu picked there
+    @State private var moreMenu: Menu?
 
-    private enum Menu: Hashable { case status, priority, milestone, sprint, due, labels, project }
+    private enum Menu: Hashable { case status, priority, milestone, sprint, due, labels, project, more }
+
+    /// Full labels when there's room; at narrow widths (the 980pt minimum window) Today and Delete
+    /// become icons and "Move to" "Move"; narrower still, Milestone…Move to go under "More".
+    private enum Density { case full, compact, minimal }
 
     var body: some View {
         let ids = model.selectedIds(store)
-        FocusActionBar {
-            Text("\(ids.count) selected")
-                .font(Focus.control.monospacedDigit())
-                .foregroundColor(Focus.text)
-                .padding(.horizontal, 8)
-            FocusBarSeparator()
-            menuButton("Status", .status, help: "Change the status (S)") { statusMenu(ids) }
-            menuButton("Priority", .priority, help: "Set the priority (P, or 1–3)") { priorityMenu }
-            menuButton("Milestone", .milestone, help: "Set the milestone (M)") { milestoneMenu(ids) }
-            if ids.contains(where: { store.task($0).map { store.usesSprints($0.projectId) } ?? false }) {
-                menuButton("Sprint", .sprint, help: "Move to a sprint (R)") { sprintMenu(ids) }
-            }
-            menuButton("Due", .due, help: "Set the due date (D)") { dueMenu }
-            menuButton("Labels", .labels, help: "Add or remove labels (L)") {
-                TaskLabelsEditor(taskIds: ids, toast: true) { done() }
-            }
-            if store.projects.count > 1 {
-                menuButton("Move to", .project, help: "Move to another project (⇧M)") { projectMenu }
-            }
-            FocusBarSeparator()
-            let allPinned = ids.compactMap { store.task($0) }.allSatisfy { store.isInFocus($0) }
-            FocusBarButton(title: "Today", systemImage: allPinned ? "sun.max.fill" : "sun.max") {
-                model.toggleToday(ids, store: store)
-            }
-            .help(allPinned ? "Take the selected tasks off Today (⌘T)" : "Pin the selected tasks to Today (⌘T)")
-            FocusBarSeparator()
-            FocusBarButton(title: "Delete", systemImage: "trash", risk: true) { model.deleteSelected(store) }
-                .help("Delete the selected tasks (⌘⌫)")
-            FocusBarSeparator()
-            FocusKey(text: "esc")
-            FocusIconButton(systemName: "xmark", label: "Clear selection", size: 30) { model.clearSelection() }
-                .help("Clear the selection (esc or ⇧⌘A)")
+        ViewThatFits(in: .horizontal) {
+            bar(ids, .full)
+            bar(ids, .compact)
+            bar(ids, .minimal)
         }
         // Single-key pickers for the selection (S, P, M…) hang above the bar
         .quickPickerAnchor(.bulk)
+    }
+
+    private func usesSprints(_ ids: [UUID]) -> Bool {
+        ids.contains(where: { store.task($0).map { store.usesSprints($0.projectId) } ?? false })
+    }
+
+    private func bar(_ ids: [UUID], _ density: Density) -> some View {
+        FocusActionBar {
+            Text(density == .full ? "\(ids.count) selected" : "\(ids.count)")
+                .font(Focus.control.monospacedDigit())
+                .foregroundColor(Focus.text)
+                .padding(.horizontal, density == .full ? 8 : 6)
+                .help("\(ids.count) selected")
+                .fixedSize()
+            FocusBarSeparator()
+            menuButton("Status", .status, help: "Change the status (S)") { statusMenu(ids) }
+            menuButton("Priority", .priority, help: "Set the priority (P, or 1–3)") { priorityMenu }
+            if density == .minimal {
+                menuButton("More", .more, help: "Milestone, sprint, due date, labels, project") { moreMenuContent(ids) }
+            } else {
+                menuButton("Milestone", .milestone, help: "Set the milestone (M)") { milestoneMenu(ids) }
+                if usesSprints(ids) {
+                    menuButton("Sprint", .sprint, help: "Move to a sprint (R)") { sprintMenu(ids) }
+                }
+                menuButton("Due", .due, help: "Set the due date (D)") { dueMenu }
+                menuButton("Labels", .labels, help: "Add or remove labels (L)") {
+                    TaskLabelsEditor(taskIds: ids, toast: true) { done() }
+                }
+                if store.projects.count > 1 {
+                    menuButton(density == .full ? "Move to" : "Move", .project, help: "Move to another project (⇧M)") { projectMenu }
+                }
+            }
+            FocusBarSeparator()
+            let allPinned = ids.compactMap { store.task($0) }.allSatisfy { store.isInFocus($0) }
+            Group {
+                if density == .full {
+                    FocusBarButton(title: "Today", systemImage: allPinned ? "sun.max.fill" : "sun.max") {
+                        model.toggleToday(ids, store: store)
+                    }
+                } else {
+                    FocusIconButton(systemName: allPinned ? "sun.max.fill" : "sun.max",
+                                    label: allPinned ? "Take off Today" : "Add to Today", size: 30) {
+                        model.toggleToday(ids, store: store)
+                    }
+                }
+            }
+            .help(allPinned ? "Take the selected tasks off Today (⌘T)" : "Pin the selected tasks to Today (⌘T)")
+            if density == .full {
+                FocusBarSeparator()
+                FocusBarButton(title: "Delete", systemImage: "trash", risk: true) { model.deleteSelected(store) }
+                    .help("Delete the selected tasks (⌘⌫)")
+                FocusBarSeparator()
+                FocusKey(text: "esc")
+            } else {
+                FocusIconButton(systemName: "trash", label: "Delete", size: 30, tint: Focus.risk) { model.deleteSelected(store) }
+                    .help("Delete the selected tasks (⌘⌫)")
+                FocusBarSeparator()
+            }
+            FocusIconButton(systemName: "xmark", label: "Clear selection", size: 30) { model.clearSelection() }
+                .help("Clear the selection (esc or ⇧⌘A)")
+        }
+        .fixedSize()
+    }
+
+    /// The minimal layout's "More": the menus that didn't fit, each opening in the same popover.
+    @ViewBuilder
+    private func moreMenuContent(_ ids: [UUID]) -> some View {
+        switch moreMenu {
+        case .milestone?: milestoneMenu(ids)
+        case .sprint?: sprintMenu(ids)
+        case .due?: dueMenu
+        case .labels?: TaskLabelsEditor(taskIds: ids, toast: true) { done() }
+        case .project?: projectMenu
+        default:
+            FocusPopoverMenu(width: 200) {
+                moreItem("Milestone", "diamond", .milestone, key: "M")
+                if usesSprints(ids) { moreItem("Sprint", "arrow.triangle.2.circlepath", .sprint, key: "R") }
+                moreItem("Due date", "calendar", .due, key: "D")
+                moreItem("Labels", "tag", .labels, key: "L")
+                if store.projects.count > 1 { moreItem("Move to project", "folder", .project, key: "⇧M") }
+            }
+        }
+    }
+
+    private func moreItem(_ title: String, _ icon: String, _ menu: Menu, key: String) -> some View {
+        FocusMenuItem {
+            moreMenu = menu
+        } label: {
+            Image(systemName: icon).font(.system(size: 11, weight: .semibold)).foregroundColor(Focus.text3).frame(width: 16)
+            Text(title).font(Focus.control).foregroundColor(Focus.text)
+            Spacer(minLength: 8)
+            FocusKey(text: key)
+        }
     }
 
     private func menuButton<Content: View>(_ title: String, _ menu: Menu, help: String,
                                            @ViewBuilder content: @escaping () -> Content) -> some View {
         FocusBarButton(title: title, menu: true) { open = menu }
             .help(help)
-            .popover(isPresented: Binding(get: { open == menu }, set: { if !$0, open == menu { open = nil } }), arrowEdge: .top) {
+            .popover(isPresented: Binding(get: { open == menu }, set: { if !$0, open == menu { open = nil; moreMenu = nil } }), arrowEdge: .top) {
                 content()
                     .environmentObject(store)
                     .environmentObject(model)
             }
     }
 
-    private func done() { open = nil }
+    private func done() { open = nil; moreMenu = nil }
 
     private func tasks(_ n: Int) -> String { TaskStore.taskCount(n) }
 

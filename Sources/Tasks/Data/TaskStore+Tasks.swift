@@ -92,16 +92,26 @@ extension TaskStore {
     func setProject(_ id: UUID, _ projectId: UUID) {
         guard let destination = project(projectId), let current = task(id) else { return }
         let status = WorkflowRules.remap(self.status(of: current), into: destination.statuses)
+        let sourceUsesSprints = usesSprints(current.projectId)
         updateTask(id, action: "Move to project") { task in
             guard task.projectId != projectId else { return }
             task.projectId = projectId
             task.statusId = status.id
             task.statusCategory = status.category
             task.milestoneId = nil
-            // Past sprints belong to the old project; the task goes to the new one's backlog
+            // Labels, time entries and Today pinning are workspace-wide and stay as they are.
             if task.sprintSlot == .closed {
-                task.sprintSlot = .backlog
+                // Past sprints belong to the old project; the task goes to the new one's backlog
+                // (or its plain list when it has no sprints)
+                task.sprintSlot = destination.usesSprints ? .backlog : .active
                 task.closedSprintNumber = nil
+            } else if !destination.usesSprints {
+                // A project without sprints keeps every open task current
+                task.sprintSlot = .active
+            } else if !sourceUsesSprints {
+                // Coming from a project without sprints: the slot meant nothing there; work in
+                // flight goes to the active sprint, the rest where new tasks of the project go
+                task.sprintSlot = task.statusCategory == .started || task.focusDate != nil ? .active : destination.defaultSprintSlot
             }
         }
     }

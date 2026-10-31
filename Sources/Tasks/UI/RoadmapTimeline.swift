@@ -18,6 +18,10 @@ struct RoadmapTimeline: View {
 
     @State private var hovered: UUID?
     @State private var dragging: UUID?
+    /// How far the canvas is scrolled, for the sticky month label
+    @State private var scrollX: CGFloat = 0
+    /// A No date chip dragged over the canvas: the day it would land on
+    @State private var dropDay: Date?
 
     /// The projects drawn: the one on screen, or every active project in sidebar order.
     private var lanes: [Project] {
@@ -83,7 +87,14 @@ struct RoadmapTimeline: View {
                 ZStack(alignment: .topLeading) {
                     TimelineGrid(scale: scale, lanes: lanes, now: now, axisHeight: Self.axisHeight, laneHeight: Self.laneHeight)
                         .frame(width: scale.width, height: height)
-                    TimelineAxis(scale: scale, now: now)
+                    if let dropDay {
+                        // Where a dragged No date chip lands
+                        Rectangle().fill(Focus.text2.opacity(0.5))
+                            .frame(width: 1.5, height: height - Self.axisHeight)
+                            .offset(x: scale.x(for: dropDay), y: Self.axisHeight)
+                            .allowsHitTesting(false)
+                    }
+                    TimelineAxis(scale: scale, now: now, visibleLeft: scrollX, dropDay: dropDay)
                         .frame(width: scale.width, height: Self.axisHeight)
                     VStack(spacing: 0) {
                         ForEach(lanes) { project in
@@ -104,6 +115,11 @@ struct RoadmapTimeline: View {
                 }
                 .frame(width: scale.width, height: height, alignment: .topLeading)
                 .coordinateSpace(name: Self.space)
+                // SwiftUI doesn't re-run geometry as a macOS scroll view scrolls: follow its clip view
+                .background(HorizontalScrollOffsetReader { x in
+                    if abs(x - scrollX) >= 0.5 { scrollX = max(0, x) }
+                })
+                .onDrop(of: [.plainText], delegate: TimelineDateDrop(scale: scale, store: store, model: model, dropDay: $dropDay))
             }
             .onAppear { scrollToStart(proxy) }
             .onChange(of: model.timelineZoom) { _ in scrollToStart(proxy) }
@@ -128,14 +144,16 @@ struct RoadmapTimeline: View {
         let dated = store.milestones(of: project.id)
             .compactMap { m in m.dueDate.map { (milestone: m, x: scale.x(for: $0)) } }
             .sorted { $0.x < $1.x }
+        // A label stops before the next diamond and before the project's target date flag
+        let target = project.targetDate.map { scale.x(for: $0) + 3 }
         return ZStack(alignment: .topLeading) {
             ForEach(Array(dated.enumerated()), id: \.element.milestone.id) { index, item in
-                let nextX = index + 1 < dated.count ? dated[index + 1].x : scale.width
+                let limits = dated.map(\.x) + (target.map { [$0] } ?? [])
                 TimelineDiamond(
                     milestone: item.milestone,
                     forecast: store.milestoneForecast(item.milestone.id, now: now),
                     scale: scale,
-                    labelWidth: max(0, nextX - item.x - 22),
+                    labelWidth: scale.labelRoom(from: item.x, before: limits),
                     hovered: $hovered,
                     dragging: $dragging
                 )
@@ -171,7 +189,7 @@ struct RoadmapTimeline: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 FocusCaption(text: "No date")
-                Text("Give these a due date to place them on the timeline")
+                Text("Drag one onto the timeline to give it that due date")
                     .font(Focus.meta)
                     .foregroundColor(Focus.text3)
             }
@@ -289,6 +307,13 @@ private struct TimelineGrid: View {
 private struct TimelineAxis: View {
     let scale: TimelineScale
     let now: Date
+    /// The scrolled-to left edge: the month there keeps its label in view
+    var visibleLeft: CGFloat = 0
+    /// While a No date chip is dragged over the canvas: its day, labeled on the axis
+    var dropDay: Date?
+
+    /// Room a "September 2026" caption takes, for pushing a sticky label out of the next one's way
+    private static let monthLabelWidth: CGFloat = 104
 
     private static let monthFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -300,12 +325,17 @@ private struct TimelineAxis: View {
     var body: some View {
         let todayX = scale.x(for: now)
         ZStack(alignment: .topLeading) {
-            ForEach(scale.monthStarts, id: \.self) { month in
+            let months = scale.monthStarts
+            ForEach(Array(months.enumerated()), id: \.element) { index, month in
+                let next = index + 1 < months.count ? scale.lineX(for: months[index + 1]) + 8 : nil
                 Text(Self.monthFormatter.string(from: month))
                     .font(Focus.caption)
                     .foregroundColor(Focus.text2)
                     .fixedSize()
-                    .offset(x: scale.lineX(for: month) + 8, y: 7)
+                    .padding(.trailing, 4)
+                    .background(Focus.raised.opacity(0.92))
+                    .offset(x: TimelineScale.stickyLabelX(scale.lineX(for: month) + 8, visibleLeft: visibleLeft,
+                                                          nextX: next, labelWidth: Self.monthLabelWidth), y: 7)
             }
             if scale.pointsPerDay * 7 >= 34 {
                 // Leave room for the Today label
@@ -325,6 +355,16 @@ private struct TimelineAxis: View {
                 .background(Capsule().fill(Focus.text2))
                 .fixedSize()
                 .offset(x: todayX - 20, y: 23)
+            if let dropDay {
+                Text(SprintState.shortDate(dropDay))
+                    .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                    .foregroundColor(Focus.raised)
+                    .padding(.horizontal, 6)
+                    .frame(height: 16)
+                    .background(Capsule().fill(Focus.text))
+                    .fixedSize()
+                    .offset(x: scale.x(for: dropDay) - 22, y: 23)
+            }
         }
         .frame(width: scale.width, height: RoadmapTimeline.axisHeight, alignment: .topLeading)
         .background(Focus.raised.opacity(0.92))
@@ -565,11 +605,96 @@ private struct NoDateChip: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .focusPointerCursor()
-        .help("Show \(milestone.name). Set a due date from its page or right-click.")
+        .onDrag { NSItemProvider(object: TimelineDateDrop.payload(milestone.id) as NSString) }
+        .help("Show \(milestone.name). Drag it onto the timeline, or right-click, to give it a due date.")
         .contextMenu {
             ForEach(DuePreset.allCases) { preset in
                 Button("Due \(preset.title.lowercased())") { store.setMilestoneDue(milestone.id, to: preset.date()) }
             }
         }
+    }
+}
+
+// MARK: - Dropping a No date chip
+
+/// Reports how far the enclosing NSScrollView is scrolled sideways, as it scrolls.
+struct HorizontalScrollOffsetReader: NSViewRepresentable {
+    let onChange: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> ReaderView { ReaderView() }
+
+    func updateNSView(_ view: ReaderView, context: Context) { view.onChange = onChange }
+
+    final class ReaderView: NSView {
+        var onChange: ((CGFloat) -> Void)?
+        private var observer: NSObjectProtocol?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            observer = nil
+            guard window != nil, let clip = enclosingScrollView?.contentView else { return }
+            clip.postsBoundsChangedNotifications = true
+            observer = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip,
+                                                              queue: .main) { [weak self, weak clip] _ in
+                guard let clip else { return }
+                let x = clip.bounds.origin.x
+                // Scrolling can happen inside a SwiftUI update (scrollTo): report after it
+                DispatchQueue.main.async { self?.onChange?(x) }
+            }
+            let x = clip.bounds.origin.x
+            DispatchQueue.main.async { [weak self] in self?.onChange?(x) }
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
+    }
+}
+
+/// A milestone chip from the No date tray dropped on the canvas: it's due on the day under the
+/// pointer (one undo step, with a toast). Other drags (tasks) are refused.
+struct TimelineDateDrop: DropDelegate {
+    let scale: TimelineScale
+    let store: TaskStore
+    let model: TasksViewModel
+    @Binding var dropDay: Date?
+
+    static let prefix = "milestone-date:"
+    static func payload(_ id: UUID) -> String { prefix + id.uuidString }
+    static func milestoneId(from payload: String) -> UUID? {
+        guard payload.hasPrefix(prefix) else { return nil }
+        return UUID(uuidString: String(payload.dropFirst(prefix.count)))
+    }
+
+    func validateDrop(info: DropInfo) -> Bool { info.hasItemsConforming(to: [.plainText]) }
+
+    func dropEntered(info: DropInfo) { dropDay = day(info) }
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        let day = day(info)
+        if dropDay != day { dropDay = day }
+        return DropProposal(operation: .move)
+    }
+    func dropExited(info: DropInfo) { dropDay = nil }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let day = day(info)
+        dropDay = nil
+        guard let provider = info.itemProviders(for: [.plainText]).first else { return false }
+        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let text = object as? String, let id = Self.milestoneId(from: text) else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let name = store.placeMilestone(id, on: day) else { return }
+                    model.showUndoToast("\(name) due \(SprintState.shortDate(day))", store: store)
+                }
+            }
+        }
+        return true
+    }
+
+    private func day(_ info: DropInfo) -> Date {
+        let x = min(max(0, info.location.x), max(0, scale.width - 1))
+        return scale.date(atX: x)
     }
 }

@@ -59,46 +59,54 @@ struct TasksSidebar: View {
                 Text("All projects").frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 2) {
-                    SidebarViewsSection()
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        SidebarViewsSection()
 
-                    FocusCaption(text: "Projects")
-                        .padding(.horizontal, 8)
-                        .padding(.top, 18)
-                        .padding(.bottom, 6)
+                        FocusCaption(text: "Projects")
+                            .padding(.horizontal, 8)
+                            .padding(.top, 18)
+                            .padding(.bottom, 6)
 
-                    ForEach(store.projects) { project in
-                        projectRow(project)
-                            .onDrag {
-                                model.draggingTaskId = nil
-                                return NSItemProvider(object: SidebarProjectDrop.payload(project.id) as NSString)
-                            }
-                            .onDrop(of: [.plainText], delegate: SidebarProjectDrop(target: project.id, store: store, model: model))
-                            .overlay(alignment: .top) {
-                                if model.dropTarget == SidebarProjectDrop.key(project.id) {
-                                    if model.draggingTaskId != nil {
-                                        // A task: it moves into this project
-                                        RoundedRectangle(cornerRadius: Focus.radiusControl)
-                                            .strokeBorder(Focus.text3, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                                    } else {
-                                        // A project: it goes above this one
-                                        Rectangle().fill(Focus.text3).frame(height: 2).offset(y: -2)
+                        ForEach(store.projects) { project in
+                            projectRow(project)
+                                .id(SidebarItem.project(project.id))
+                                .onDrag {
+                                    model.draggingTaskId = nil
+                                    return NSItemProvider(object: SidebarProjectDrop.payload(project.id) as NSString)
+                                }
+                                .onDrop(of: [.plainText], delegate: SidebarProjectDrop(target: project.id, store: store, model: model))
+                                .overlay(alignment: .top) {
+                                    if model.dropTarget == SidebarProjectDrop.key(project.id) {
+                                        if model.draggingTaskId != nil {
+                                            // A task: it moves into this project
+                                            RoundedRectangle(cornerRadius: Focus.radiusControl)
+                                                .strokeBorder(Focus.text3, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                                        } else {
+                                            // A project: it goes above this one
+                                            Rectangle().fill(Focus.text3).frame(height: 2).offset(y: -2)
+                                        }
                                     }
                                 }
+                            if model.isProjectExpanded(project.id) {
+                                SidebarMilestones(project: project)
                             }
-                        if model.isProjectExpanded(project.id) {
-                            SidebarMilestones(project: project)
                         }
+                        newProjectField
+                            .onDrop(of: [.plainText], delegate: SidebarProjectDrop(target: nil, store: store, model: model))
+                            .overlay(alignment: .top) {
+                                if model.dropTarget == SidebarProjectDrop.key(nil) {
+                                    Rectangle().fill(Focus.text3).frame(height: 2).offset(y: -2)
+                                }
+                            }
+                        archivedSection
                     }
-                    newProjectField
-                        .onDrop(of: [.plainText], delegate: SidebarProjectDrop(target: nil, store: store, model: model))
-                        .overlay(alignment: .top) {
-                            if model.dropTarget == SidebarProjectDrop.key(nil) {
-                                Rectangle().fill(Focus.text3).frame(height: 2).offset(y: -2)
-                            }
-                        }
-                    archivedSection
+                }
+                // ⌘0 and ⌥⌘↑/↓ move a keyboard cursor through the sidebar: keep it on screen
+                .onChange(of: model.sidebarCursor) { cursor in
+                    guard let cursor, cursor != .today, cursor != .all else { return }
+                    withAnimation(Focus.hoverAnimation) { proxy.scrollTo(cursor) }
                 }
             }
             .frame(maxHeight: .infinity, alignment: .top)
@@ -151,6 +159,7 @@ struct TasksSidebar: View {
                             .foregroundColor(Focus.text3)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .id(SidebarItem.project(project.id))
                     .contextMenu {
                         Button("Project settings…") { model.openProject(project.id) }
                         Button("Unarchive") { model.unarchiveProject(project.id, store: store) }
@@ -308,6 +317,7 @@ private struct SidebarMilestones: View {
                                     focused: model.sidebarCursor == .milestone(milestone.id, projectId: project.id)) {
                     model.clickSidebarMilestone(milestone.id, store: store)
                 }
+                .id(SidebarItem.milestone(milestone.id, projectId: project.id))
                 .help(onScreen ? "Click again for milestone details" : milestone.name)
                 .onDrop(of: [.plainText], delegate: SidebarMilestoneDrop(milestone: milestone, store: store, model: model))
                 .contextMenu {

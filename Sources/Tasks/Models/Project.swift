@@ -143,6 +143,9 @@ struct PastSprint: Identifiable, Codable, Equatable, Sendable {
     var summary: String { "\(dateRange) · \(doneLabel)" }
     /// "8 of 10 done · 18h planned · 21h tracked · Oct 12 – Oct 25"
     var statsSummary: String { "\(doneLabel) · \(hoursLabel) · \(dateRange)" }
+    /// The past sprint's group header hint, after the header's own task count:
+    /// "8 done · 18h planned · 21h tracked · Oct 12 – Oct 25"
+    var headerHint: String { "\(doneTaskIds.count) done · \(hoursLabel) · \(dateRange)" }
 
     private enum CodingKeys: String, CodingKey {
         case id, number, startDate, endDate, goal, taskIds, doneTaskIds, completedAt

@@ -91,6 +91,8 @@ private struct MilestoneTasksSection: View {
                             TaskTimerButton(task: task)
                         }
                     }
+                    // Pickers opened from this row's menu (Status…, Due date…) hang from it
+                    .quickPickerAnchor(.task(task.id))
                     .contextMenu { TaskContextMenu(task: task) }
                     FocusDivider()
                 }

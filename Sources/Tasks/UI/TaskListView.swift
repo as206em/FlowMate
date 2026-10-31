@@ -141,7 +141,7 @@ struct SprintPlanView: View {
     }
 
     /// Completed sprints, newest first, collapsed until opened:
-    /// "Sprint 3 · 8 of 10 done · 18h planned · 21h tracked · Oct 12 – Oct 25", after the velocity chart.
+    /// "Sprint 3  10  8 done · 18h planned · 21h tracked · Oct 12 – Oct 25", after the velocity chart.
     private func pastSprints(_ builder: inout TaskTableBuilder) {
         let past = store.pastSprints(projectId)
         guard !past.isEmpty else { return }
@@ -152,7 +152,7 @@ struct SprintPlanView: View {
             builder.group(
                 key: key,
                 title: sprint.name,
-                hint: [sprint.statsSummary, sprint.goal.isEmpty ? nil : sprint.goal].compactMap { $0 }.joined(separator: " · "),
+                hint: [sprint.headerHint, sprint.goal.isEmpty ? nil : sprint.goal].compactMap { $0 }.joined(separator: " · "),
                 tasks: store.tasks(of: sprint),
                 emptyText: "No tasks were in this sprint.",
                 showProject: false,
@@ -208,12 +208,16 @@ enum TaskGroupSection {
     }
 
     @MainActor
-    static func perform(_ drop: TaskGroupDrop, id: UUID, before: UUID?, store: TaskStore) {
+    /// `source`: the drop of the group the task was dragged out of (same table), so moving
+    /// between label groups swaps the label instead of adding a second one.
+    static func perform(_ drop: TaskGroupDrop, id: UUID, before: UUID?, from source: TaskGroupDrop? = nil, store: TaskStore) {
         switch drop {
         case let .slot(slot):
             store.moveTask(id, toSlot: slot, before: before)
         case let .group(value, reorder):
-            store.moveTask(id, to: value, before: before, reorder: reorder)
+            var from: TaskGroupValue?
+            if case let .group(sourceValue, _)? = source { from = sourceValue }
+            store.moveTask(id, to: value, before: before, reorder: reorder, from: from)
         case .focus:
             store.moveInFocus(id, before: before)
         }
