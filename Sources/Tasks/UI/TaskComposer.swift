@@ -198,7 +198,7 @@ struct TaskComposer: View {
             let slot = draft.slot ?? target.newTaskSlot
             ComposerPropertyButton(tint: slot == .active ? .neutral : .sprint, isSet: true, isOpen: binding(.sprint)) {
                 Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .semibold))
-                Text(store.sprintLabel(slot, projectId: target.id))
+                Text(store.sprintLabel(slot))
             } popover: {
                 FocusPopoverMenu(width: 210) {
                     ForEach(SprintSlot.plannable) { slot in
@@ -206,7 +206,7 @@ struct TaskComposer: View {
                             draft.slot = slot
                             closePicker()
                         } label: {
-                            Text(store.sprintLabel(slot, projectId: target.id)).font(Focus.control).foregroundColor(Focus.text)
+                            Text(store.sprintLabel(slot)).font(Focus.control).foregroundColor(Focus.text)
                             if slot != .backlog {
                                 Text(slot == .active ? "active" : "next").font(Focus.meta).foregroundColor(Focus.text3)
                             }

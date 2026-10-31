@@ -62,9 +62,13 @@ struct RoadmapTimeline: View {
         }
     }
 
-    /// Dates the axis must show: due dates, target dates and the current sprints.
+    /// Dates the axis must show: due dates, target dates and the current sprint.
     private func axisDates(_ lanes: [Project], _ milestones: [Milestone]) -> [Date] {
-        milestones.compactMap(\.dueDate) + milestones.compactMap(\.startDate) + lanes.compactMap(\.targetDate) + lanes.flatMap { [$0.sprint.startDate, $0.sprint.nextStartDate] }
+        var dates: [Date] = milestones.compactMap(\.dueDate)
+        dates += milestones.compactMap(\.startDate)
+        dates += lanes.compactMap(\.targetDate)
+        dates += [store.sprint.startDate, store.sprint.nextStartDate]
+        return dates
     }
 
     // MARK: - Lanes (sticky column)
@@ -95,7 +99,7 @@ struct RoadmapTimeline: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: true) {
                 ZStack(alignment: .topLeading) {
-                    TimelineGrid(scale: scale, lanes: lanes, now: now, axisHeight: Self.axisHeight, laneHeight: Self.laneHeight)
+                    TimelineGrid(scale: scale, lanes: lanes, sprint: store.sprint, now: now, axisHeight: Self.axisHeight, laneHeight: Self.laneHeight)
                         .frame(width: scale.width, height: height)
                     if let dropDay {
                         // Where a dragged No date chip lands
@@ -279,6 +283,8 @@ private struct LaneHeader: View {
 private struct TimelineGrid: View {
     let scale: TimelineScale
     let lanes: [Project]
+    /// The workspace's sprint, drawn on every lane that takes part
+    let sprint: SprintState
     let now: Date
     let axisHeight: CGFloat
     let laneHeight: CGFloat
@@ -303,14 +309,16 @@ private struct TimelineGrid: View {
             for (index, project) in lanes.enumerated() {
                 let top = axisHeight + CGFloat(index) * laneHeight
                 let bottom = top + laneHeight
-                // Current sprint: a faint band with dashed edges
-                let start = scale.lineX(for: project.sprint.startDate)
-                let end = scale.lineX(for: project.sprint.nextStartDate)
-                context.fill(Path(CGRect(x: start, y: top + 1, width: max(0, end - start), height: laneHeight - 2)),
-                             with: .color(Color(hex: project.colorHex).opacity(0.05)))
-                let dash = StrokeStyle(lineWidth: 1, dash: [3, 3])
-                for x in [start, end] {
-                    context.stroke(line(x, from: top + 4, to: bottom - 4), with: .color(Focus.text3.opacity(0.45)), style: dash)
+                // The sprint, the same on every lane that takes part: a faint band with dashed edges
+                if project.usesSprints {
+                    let start = scale.lineX(for: sprint.startDate)
+                    let end = scale.lineX(for: sprint.nextStartDate)
+                    context.fill(Path(CGRect(x: start, y: top + 1, width: max(0, end - start), height: laneHeight - 2)),
+                                 with: .color(Color(hex: project.colorHex).opacity(0.05)))
+                    let dash = StrokeStyle(lineWidth: 1, dash: [3, 3])
+                    for x in [start, end] {
+                        context.stroke(line(x, from: top + 4, to: bottom - 4), with: .color(Focus.text3.opacity(0.45)), style: dash)
+                    }
                 }
                 // Target date: a solid line in the project's color
                 if let target = project.targetDate {

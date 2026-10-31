@@ -52,11 +52,26 @@ struct TasksSidebar: View {
                 }
             }
 
-            FocusSidebarItem(selected: model.sidebarSelection == .all, focused: model.sidebarCursor == .all, action: { model.select(.all) }) {
+            let onSprints = model.scope == .all && model.activeViewId == nil && model.effectiveTab == .sprints
+            FocusSidebarItem(selected: model.sidebarSelection == .all && !onSprints, focused: model.sidebarCursor == .all, action: { model.select(.all) }) {
                 Image(systemName: "square.grid.2x2")
                     .font(.system(size: 13, weight: .medium))
                     .frame(width: 18)
                 Text("All projects").frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            // The sprint belongs to the whole workspace: plan it, edit it and complete it here
+            if model.anyProjectUsesSprints {
+                FocusSidebarItem(selected: onSprints, focused: false, action: { model.showSprints() }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 18)
+                    Text("Sprints").frame(maxWidth: .infinity, alignment: .leading)
+                    Text(store.sprintName())
+                        .font(.system(size: 12))
+                        .foregroundColor(Focus.text3)
+                }
+                .help("Plan the sprint across all projects, edit its dates and goal, or complete it to start the next one")
             }
 
             ScrollViewReader { proxy in

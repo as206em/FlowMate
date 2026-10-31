@@ -147,17 +147,14 @@ struct TaskInspector: View {
 
     private var sprintPicker: some View {
         // A closed task keeps showing its slot so the picker never lies
-        let slots = task.sprintSlot == .closed ? SprintSlot.plannable + [.closed] : SprintSlot.plannable
+        let choices = task.sprintSlot == .closed ? store.sprintChoices() + [.closed] : store.sprintChoices()
         return FocusPicker(
-            options: slots,
-            selection: Binding(get: { task.sprintSlot }, set: { store.setSprintSlot(task.id, $0) }),
-            title: { slot in
-                let name = store.sprintLabel(slot, projectId: task.projectId)
-                switch slot {
-                case .active: return "\(name) (active)"
-                case .next: return "\(name) (next)"
-                case .backlog, .closed: return name
-                }
+            options: choices,
+            selection: Binding(get: { store.sprintChoice(of: task) }, set: { store.setSprint([task.id], $0) }),
+            title: { choice in
+                let name = store.sprintTitle(choice)
+                let tag = store.sprintTag(choice)
+                return tag.isEmpty ? name : "\(name) (\(tag))"
             }
         )
         .accessibilityLabel("Sprint")

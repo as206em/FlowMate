@@ -5,7 +5,8 @@ import Foundation
 
 /// One section of the Today page.
 struct TodaySection: Equatable {
-    enum Kind: Equatable { case running, overdue, dueToday, focus, done }
+    /// `due`: overdue tasks first, then the ones due today
+    enum Kind: Equatable { case running, due, focus, done }
 
     let kind: Kind
     let key: String
@@ -15,18 +16,17 @@ struct TodaySection: Equatable {
 
 extension TasksViewModel {
     static let todayRunningKey = "today-running"
-    static let todayOverdueKey = "today-overdue"
     static let todayDueKey = "today-due"
     static let todayFocusKey = "today-focus"
     static let todayDoneKey = "today-done"
 
-    /// The sections in page order. Running, Overdue, Due today and Done today only show with
+    /// The sections in page order. Running, Due and Done today only show with
     /// tasks in them; My focus always shows (its empty state says how to pin tasks).
     static func todaySections(_ plan: TodayPlan) -> [TodaySection] {
         var sections: [TodaySection] = []
         if !plan.running.isEmpty { sections.append(TodaySection(kind: .running, key: todayRunningKey, title: "Running", tasks: plan.running)) }
-        if !plan.overdue.isEmpty { sections.append(TodaySection(kind: .overdue, key: todayOverdueKey, title: "Overdue", tasks: plan.overdue)) }
-        if !plan.dueToday.isEmpty { sections.append(TodaySection(kind: .dueToday, key: todayDueKey, title: "Due today", tasks: plan.dueToday)) }
+        let due = plan.overdue + plan.dueToday
+        if !due.isEmpty { sections.append(TodaySection(kind: .due, key: todayDueKey, title: "Due", tasks: due)) }
         sections.append(TodaySection(kind: .focus, key: todayFocusKey, title: "My focus", tasks: plan.focus))
         if !plan.doneToday.isEmpty { sections.append(TodaySection(kind: .done, key: todayDoneKey, title: "Done today", tasks: plan.doneToday)) }
         return sections

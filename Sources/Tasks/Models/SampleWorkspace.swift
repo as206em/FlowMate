@@ -6,7 +6,6 @@ extension Workspace {
         let project = Project(
             name: "FlowMate",
             colorHex: Focus.projectPalette[0],
-            sprint: SprintState(number: 1, startDate: SprintState.defaultStart(for: now), goal: "Try out tasks and timers"),
             createdAt: now
         )
         let milestone = Milestone(
@@ -42,6 +41,7 @@ extension Workspace {
         ]
 
         return Workspace(projects: [project], milestones: [milestone], tasks: tasks,
-                         preferences: WorkspacePreferences(sampleProjectIds: [project.id]))
+                         preferences: WorkspacePreferences(sampleProjectIds: [project.id]),
+                         sprint: SprintState(number: 1, startDate: SprintState.defaultStart(for: now), goal: "Try out tasks and timers"))
     }
 }

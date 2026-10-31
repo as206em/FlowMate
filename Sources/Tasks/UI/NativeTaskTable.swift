@@ -53,8 +53,8 @@ enum GroupHeaderAction: Equatable {
 
     var title: String {
         switch self {
-        case .moveOverdueToToday: return "Move all to today"
-        case .moveOverdueToTomorrow: return "Tomorrow"
+        case .moveOverdueToToday: return "Move overdue to today"
+        case .moveOverdueToTomorrow: return "Overdue to tomorrow"
         case .pauseAll: return "Pause all"
         }
     }
@@ -66,7 +66,7 @@ enum GroupLiveHint: Equatable {
     case todayPlanned
     /// Sprints view: "7 tasks · 11h of 20h · 5h left", amber near the capacity, red over it.
     /// Replaces the header's count.
-    case sprintLoad(projectId: UUID, slot: SprintSlot)
+    case sprintLoad(scope: TaskScope, slot: SprintSlot, ahead: Int = 1)
 
     /// The hint says how many tasks itself
     var includesCount: Bool {
@@ -93,8 +93,10 @@ enum TaskTableRow: Equatable, Identifiable {
     case composer(group: String, preset: TaskGroupValue, isDefault: Bool, title: String)
     /// Today's "Tracked today" panel: the total and a bar per project (drawn live)
     case trackedToday
-    /// Sprints view: the velocity chart of the project's recent sprints
-    case velocity(projectId: UUID)
+    /// Sprints view: the velocity chart of the recent sprints
+    case velocity
+    /// Sprints view (All projects): the sprint's progress chart
+    case burnup
 
     var id: String {
         switch self {
@@ -105,7 +107,8 @@ enum TaskTableRow: Equatable, Identifiable {
         case let .empty(group, _): return "e-" + group
         case let .composer(group, _, _, _): return "c-" + group
         case .trackedToday: return "tracked-today"
-        case let .velocity(projectId): return "velocity-\(projectId.uuidString)"
+        case .velocity: return "velocity"
+        case .burnup: return "burnup"
         }
     }
 
@@ -116,7 +119,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case let .task(info): return info.group
         case let .empty(group, _): return group
         case let .composer(group, _, _, _): return group
-        case .spacer, .sectionTitle, .trackedToday, .velocity: return nil
+        case .spacer, .sectionTitle, .trackedToday, .velocity, .burnup: return nil
         }
     }
 
@@ -139,6 +142,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case .composer: return 44
         case .trackedToday: return 120
         case .velocity: return 200
+        case .burnup: return 240
         }
     }
 }
@@ -154,8 +158,12 @@ struct TaskTableBuilder {
         rows.append(.trackedToday)
     }
 
-    mutating func velocity(projectId: UUID) {
-        rows.append(.velocity(projectId: projectId))
+    mutating func burnup() {
+        rows.append(.burnup)
+    }
+
+    mutating func velocity() {
+        rows.append(.velocity)
     }
 
     mutating func spacer(_ id: String, _ height: CGFloat) {
@@ -197,7 +205,9 @@ struct TaskTableBuilder {
         if let drop { drops[key] = drop }
         if draggable { self.draggable.insert(key) }
         guard open else { return }
-        let composer = drop.map {
+        var composerDrop = drop
+        if case .upcoming? = drop { composerDrop = nil }
+        let composer = composerDrop.map {
             TaskTableRow.composer(group: key, preset: TaskGroupSection.preset($0), isDefault: composerIsDefault, title: title)
         }
         // ⌘N pins the composer above the group's tasks, so it's on screen however long the group is
@@ -318,8 +328,10 @@ struct TaskTableCell: View {
                 .padding(.top, 6)
         case .trackedToday:
             TodayTrackedPanel()
-        case let .velocity(projectId):
-            SprintVelocityPanel(projectId: projectId)
+        case .velocity:
+            SprintVelocityPanel()
+        case .burnup:
+            SprintBurnupPanel()
         }
     }
 }
@@ -381,9 +393,9 @@ private struct GroupHeaderRow: View {
                     .foregroundColor(Focus.text3)
                     .lineLimit(1)
             }
-        case let .sprintLoad(projectId, slot)?:
+        case let .sprintLoad(scope, slot, ahead)?:
             LiveTime { now in
-                let load = store.slotLoad(projectId: projectId, slot: slot, now: now)
+                let load = store.slotLoad(scope: scope, slot: slot, ahead: ahead, now: now)
                 Text(load.label)
                     .font(Focus.meta.monospacedDigit())
                     .foregroundColor(Self.color(load.level))
@@ -876,7 +888,7 @@ struct NativeTaskTable: NSViewRepresentable {
                 return header(info.key)
             case let .empty(group, _), let .composer(group, _, _, _):
                 return header(group)
-            case .spacer, .sectionTitle, .trackedToday, .velocity:
+            case .spacer, .sectionTitle, .trackedToday, .velocity, .burnup:
                 // Gap between groups: the group just above it
                 guard let group = rows[..<proposed].last(where: { $0.group != nil })?.group else { return nil }
                 return header(group)
@@ -886,7 +898,7 @@ struct NativeTaskTable: NSViewRepresentable {
         /// Whether a drop in the group can be placed before a given row
         private func reorders(_ group: String) -> Bool {
             switch drops[group] {
-            case .slot?, .focus?: return true
+            case .slot?, .upcoming?, .focus?: return true
             case let .group(_, reorder)?: return reorder
             case nil: return false
             }

@@ -127,7 +127,7 @@ final class PortfolioTests: XCTestCase {
     /// overdue milestone; plus an archived one that never shows.
     private func portfolioStore() async -> (TaskStore, [String: UUID]) {
         func project(_ name: String, created: Date) -> Project {
-            Project(name: name, colorHex: 0x4EA1F5, sprint: SprintState(number: 4, startDate: day(-6)), createdAt: created)
+            Project(name: name, colorHex: 0x4EA1F5, createdAt: created)
         }
         let fine = project("Fine", created: day(-60))
         let stale = project("Stale", created: day(-60))
@@ -157,7 +157,8 @@ final class PortfolioTests: XCTestCase {
                 task(overdue, "Unfinished", updated: day(-1), milestone: mLate.id),
                 task(archived, "Hidden", updated: day(-90), due: day(-9)),
             ],
-            timeEntries: [TimeEntry(taskId: fineTask.id, start: now.addingTimeInterval(-5400), end: now.addingTimeInterval(-1800), source: .timer)]
+            timeEntries: [TimeEntry(taskId: fineTask.id, start: now.addingTimeInterval(-5400), end: now.addingTimeInterval(-1800), source: .timer)],
+            sprint: SprintState(number: 4, startDate: day(-6))
         )
         let store = TaskStore(repository: InMemoryWorkspaceRepository(ws), saveDelay: 0.05)
         await store.load()
@@ -186,8 +187,8 @@ final class PortfolioTests: XCTestCase {
 
     private enum Level { case none }
     private func card(level: Level, overdue: Int, untouched: Int, name: String) -> ProjectOverview {
-        ProjectOverview(project: Project(name: name, colorHex: 0, sprint: SprintState(startDate: today)),
-                        sprintDay: SprintDay(day: 1, length: 14), sprintDone: 0, sprintPlanned: 0, trackedInSprint: 0,
+        ProjectOverview(project: Project(name: name, colorHex: 0),
+                        sprint: SprintState(startDate: today), sprintDay: SprintDay(day: 1, length: 14), sprintDone: 0, sprintPlanned: 0, trackedInSprint: 0,
                         trackedThisWeek: 0, overdueCount: overdue, inProgressCount: 0, nextMilestone: nil,
                         nextMilestoneForecast: nil, lastActivity: day(-untouched), untouchedDays: untouched,
                         nextTaskId: nil, isRunning: false)
@@ -287,7 +288,7 @@ final class PortfolioTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "portfolio-\(UUID())")!
         let model = TasksViewModel(defaults: defaults, stateKey: "state")
         model.select(.all)
-        XCTAssertEqual(model.tabs, [.overview, .board, .list, .milestones])
+        XCTAssertEqual(model.tabs, [.overview, .board, .list, .sprints, .milestones])
         XCTAssertEqual(TasksViewModel.tabs(in: .project(ids["fine"]!)), [.board, .list, .sprints, .milestones])
         XCTAssertEqual(TasksViewModel.tab(.overview, in: .project(ids["fine"]!)), .list)
 

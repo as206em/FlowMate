@@ -114,8 +114,8 @@ final class TasksViewModel: ObservableObject {
     }
     /// The sidebar's Archived section is open.
     @Published var showingArchived = false
-    /// "Complete sprint" dialog for this project
-    @Published var completingSprintProjectId: UUID?
+    /// The "Complete sprint" dialog is open (it completes the workspace's sprint)
+    @Published var completingSprint = false
     /// The keyboard selection in List, Board and Sprints (↑/↓, ↵, Space, ⌘⌫, ⌘D): the focused task.
     /// Setting it directly selects only that task; ⌘-click and ⇧-click add to `selectedTaskIds`.
     @Published var selectedTaskId: UUID? {
@@ -202,8 +202,8 @@ final class TasksViewModel: ObservableObject {
         paletteRecents = defaults?.stringArray(forKey: Self.paletteRecentsKey) ?? []
     }
 
-    /// Sprints only exists in project scope (of a project that uses sprints), and a milestone's
-    /// page has only Board and List; fall back to List elsewhere.
+    /// Sprints exists in All projects and in a project that uses sprints, and a milestone's page has
+    /// only Board and List; fall back to List elsewhere.
     var effectiveTab: Tab { Self.tab(tab, in: scope, sprints: scopeUsesSprints) }
 
     var tabs: [Tab] { Self.tabs(in: scope, sprints: scopeUsesSprints) }
@@ -211,7 +211,7 @@ final class TasksViewModel: ObservableObject {
     static func tabs(in scope: TaskScope, sprints: Bool = true) -> [Tab] {
         switch scope {
         case .today: return []
-        case .all: return [.overview, .board, .list, .milestones]
+        case .all: return sprints ? [.overview, .board, .list, .sprints, .milestones] : [.overview, .board, .list, .milestones]
         case .project: return sprints ? [.board, .list, .sprints, .milestones] : [.board, .list, .milestones]
         case .milestone: return [.board, .list]
         }
@@ -234,13 +234,18 @@ final class TasksViewModel: ObservableObject {
     func syncProjects(_ store: TaskStore) {
         let sprintless = Set(store.allProjects.filter { !$0.usesSprints }.map(\.id))
         if sprintless != sprintlessProjects { sprintlessProjects = sprintless }
+        let anySprints = store.allProjects.isEmpty || store.allProjects.contains(where: \.usesSprints)
+        if anySprints != anyProjectUsesSprints { anyProjectUsesSprints = anySprints }
         defaultViews = Dictionary(store.allProjects.compactMap { p in p.defaultView.map { (p.id, $0) } },
                                   uniquingKeysWith: { a, _ in a })
     }
 
-    /// The scope's project uses sprints (true outside a project, and on a milestone page).
+    /// At least one project takes part in the workspace's sprint (true with no projects).
+    @Published private(set) var anyProjectUsesSprints = true
+
+    /// The scope uses sprints: its project does, or in All projects, any project does.
     var scopeUsesSprints: Bool {
-        guard let projectId = scope.projectId else { return true }
+        guard let projectId = scope.projectId else { return anyProjectUsesSprints }
         return !sprintlessProjects.contains(projectId)
     }
 
@@ -383,9 +388,10 @@ final class TasksViewModel: ObservableObject {
         self.filter = filter
     }
 
-    /// Opens the project in the main view (Sprints tab) from a past-sprint link or the panel.
-    func showSprints(of projectId: UUID) {
-        select(.project(projectId))
+    /// Opens the Sprints tab, of the project when given and of all projects otherwise (from a
+    /// past-sprint link or the panel).
+    func showSprints(of projectId: UUID? = nil) {
+        select(projectId.map { .project($0) } ?? .all)
         tab = .sprints
     }
 
@@ -663,13 +669,7 @@ final class TasksViewModel: ObservableObject {
         if case .sprintEmpty = boardEmptyReason(store, now: now) { return nil }
         // A milestone's board isn't limited to the sprint, nor a project without sprints
         if scope.isMilestone || !scopeUsesSprints { return nil }
-        let sprint: String
-        if let projectId = scope.projectId {
-            sprint = store.sprintName(projectId)
-        } else {
-            sprint = "each project's active sprint"
-        }
-        guard !sprint.isEmpty else { return nil }
+        let sprint = store.sprintName()
         let waiting = boardWaitingCount(store, now: now)
         guard waiting > 0 else { return "Showing \(sprint)" }
         return "Showing \(sprint) · \(waiting) more in Next and Backlog"
@@ -708,6 +708,21 @@ final class TasksViewModel: ObservableObject {
     static let sprintSlots: [SprintSlot] = [.active, .next, .backlog]
 
     static func sprintGroupKey(_ slot: SprintSlot) -> String { "slot-\(slot.rawValue)" }
+    /// A sprint planned further ahead than the next one (ahead 2 or more)
+    static func upcomingGroupKey(_ ahead: Int) -> String { "upcoming-\(ahead)" }
+
+    /// The Sprints view's groups top to bottom, open ones only: active, next, later sprints, backlog.
+    func sprintGroupTasks(_ store: TaskStore) -> [[TaskItem]] {
+        var groups: [(key: String, tasks: [TaskItem])] = [
+            (Self.sprintGroupKey(.active), store.sprintTasks(slot: .active, in: scope)),
+            (Self.sprintGroupKey(.next), store.sprintTasks(slot: .next, in: scope)),
+        ]
+        for sprint in store.upcomingSprints() where sprint.ahead > 1 {
+            groups.append((Self.upcomingGroupKey(sprint.ahead), store.sprintTasks(ahead: sprint.ahead, in: scope)))
+        }
+        groups.append((Self.sprintGroupKey(.backlog), store.sprintTasks(slot: .backlog, in: scope)))
+        return groups.filter { !isCollapsed($0.key) }.map(\.tasks)
+    }
 
     /// Every task the current view shows, top to bottom, skipping collapsed groups.
     /// ↑/↓ walk this order.
@@ -723,10 +738,7 @@ final class TasksViewModel: ObservableObject {
         case .board:
             return allBoardTasks(store, now: now)
         case .sprints:
-            guard let projectId = scope.projectId else { return [] }
-            return Self.sprintSlots
-                .filter { !isCollapsed(Self.sprintGroupKey($0)) }
-                .flatMap { store.sprintTasks(projectId: projectId, slot: $0) }
+            return sprintGroupTasks(store).flatMap { $0 }
         case .milestones, .overview:
             return []
         }
@@ -1004,9 +1016,9 @@ final class TasksViewModel: ObservableObject {
         showUndoToast("Milestone deleted", store: store)
     }
 
-    func completeSprint(_ projectId: UUID, unfinished: UnfinishedSprintTasks, nextGoal: String, store: TaskStore) {
-        guard let name = store.project(projectId)?.sprint.name else { return }
-        store.completeSprint(projectId: projectId, unfinished: unfinished, nextGoal: nextGoal)
+    func completeSprint(unfinished: UnfinishedSprintTasks, nextGoal: String, store: TaskStore) {
+        let name = store.sprintName()
+        store.completeSprint(unfinished: unfinished, nextGoal: nextGoal)
         showUndoToast("\(name) completed", store: store)
     }
 
@@ -1166,7 +1178,7 @@ final class TasksViewModel: ObservableObject {
         case .board:
             return boardColumns(store).first.map { Self.boardComposerKey($0) }
         case .sprints:
-            return scope.projectId == nil ? nil : Self.listComposerKey(Self.sprintGroupKey(.active))
+            return Self.listComposerKey(Self.sprintGroupKey(.active))
         case .milestones, .overview:
             return nil
         }

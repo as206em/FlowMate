@@ -134,13 +134,13 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         XCTAssertTrue(store.isRunning(a), "an undone delete restores the task as it was")
 
         store.setStatus(a, .done, now: t0)
-        let number = store.project(pid)!.sprint.number
-        store.completeSprint(projectId: pid, now: t0)
+        let number = store.sprint.number
+        store.completeSprint(now: t0)
         XCTAssertEqual(store.task(a)?.sprintSlot, .closed)
         XCTAssertEqual(store.undoActionName, "Complete sprint")
         store.undo()
         XCTAssertEqual(store.task(a)?.sprintSlot, .active)
-        XCTAssertEqual(store.project(pid)?.sprint.number, number)
+        XCTAssertEqual(store.sprint.number, number)
     }
 
     func testLoadClearsUndoHistory() async {
@@ -285,7 +285,7 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         let bySprint = store.groups(store.tasks(of: pid), by: .sprint, in: .project(pid))
         XCTAssertEqual(bySprint.map(\.value), [.sprint(.active), .sprint(.next), .sprint(.backlog)], "closed shows only when used")
         store.setStatus(a, .done)
-        store.completeSprint(projectId: pid, now: t0)
+        store.completeSprint(now: t0)
         let afterClose = store.groups(store.tasks(of: pid), by: .sprint, in: .project(pid))
         XCTAssertEqual(afterClose.last?.value, .sprint(.closed))
         XCTAssertEqual(afterClose.last?.acceptsDrop, false)
@@ -480,7 +480,7 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         model.select(.all)
         XCTAssertTrue(model.perform(.tab1, store: store))
         XCTAssertEqual(model.tab, .overview, "All projects opens Overview with ⌘1")
-        XCTAssertTrue(model.perform(.tab4, store: store))
+        XCTAssertTrue(model.perform(.tab5, store: store))
         XCTAssertEqual(model.tab, .milestones)
     }
 }

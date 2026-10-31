@@ -399,8 +399,8 @@ final class KeyboardSpeedTests: XCTestCase {
         model.run(.newMilestone(other), store: store)
         XCTAssertTrue(model.isProjectExpanded(other))
         XCTAssertEqual(model.focusRequest?.field, .newMilestone(other))
-        model.run(.completeSprint(pid), store: store)
-        XCTAssertEqual(model.completingSprintProjectId, pid)
+        model.run(.completeSprint, store: store)
+        XCTAssertTrue(model.completingSprint)
         model.run(.toggleMilestones(other), store: store)
         XCTAssertFalse(model.isProjectExpanded(other))
 

@@ -34,7 +34,7 @@ final class TaskReviewFixesTests: XCTestCase {
         let t0 = Date(timeIntervalSince1970: 1_000_000)
         let id = store.addTask(title: "Unfinished", projectId: a)!
         store.startTimer(id, now: t0)
-        store.completeSprint(projectId: a, unfinished: .keepInSprint, now: t0.addingTimeInterval(300))
+        store.completeSprint(unfinished: .keepInSprint, now: t0.addingTimeInterval(300))
         XCTAssertFalse(store.isRunning(id))
         XCTAssertEqual(store.task(id)?.sprintSlot, .closed)
         XCTAssertEqual(store.task(id)?.spentSeconds ?? -1, 300, accuracy: 0.5)
@@ -44,7 +44,7 @@ final class TaskReviewFixesTests: XCTestCase {
         let (store, a, b) = await makeStore()
         let id = store.addTask(title: "Shipped", projectId: a)!
         store.setStatus(id, .done)
-        store.completeSprint(projectId: a)
+        store.completeSprint()
         XCTAssertEqual(store.task(id)?.sprintSlot, .closed)
         store.setProject(id, b)
         XCTAssertEqual(store.task(id)?.sprintSlot, .backlog)

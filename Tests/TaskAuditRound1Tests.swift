@@ -18,7 +18,7 @@ final class TaskAuditRound1Tests: XCTestCase {
         let (store, pid) = await makeStore()
         let model = TasksViewModel()
         model.select(.project(pid))
-        let sprint = store.sprintName(pid)
+        let sprint = store.sprintName()
 
         _ = store.addTask(title: "Now", projectId: pid, sprintSlot: .active, now: t0)
         XCTAssertEqual(model.boardCaption(store), "Showing \(sprint)")
@@ -36,7 +36,7 @@ final class TaskAuditRound1Tests: XCTestCase {
         model.filter = TaskFilter()
 
         model.select(.all)
-        XCTAssertEqual(model.boardCaption(store), "Showing each project's active sprint · 1 more in Next and Backlog")
+        XCTAssertEqual(model.boardCaption(store), "Showing \(sprint) · 1 more in Next and Backlog")
     }
 
     func testBoardCaptionHidesWhileEmptyStateExplains() async {
@@ -52,7 +52,7 @@ final class TaskAuditRound1Tests: XCTestCase {
         let (store, pid) = await makeStore()
         let id = store.addTask(title: "Closed", projectId: pid, sprintSlot: .active, now: t0)!
         store.setStatus(id, .done)
-        store.completeSprint(projectId: pid, now: t0)
+        store.completeSprint(now: t0)
         var filter = TaskFilter()
         filter.sprintSlots = [.closed]
         let groups = store.groups(store.filtered(store.tasks(in: .project(pid)), by: filter, now: t0),

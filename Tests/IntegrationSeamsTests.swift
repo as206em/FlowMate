@@ -64,10 +64,10 @@ final class IntegrationSeamsTests: XCTestCase {
         XCTAssertEqual(store.milestoneProgress(m), MilestoneProgress(done: 1, total: 3))
         XCTAssertTrue(store.isOverdue(store.milestone(m)!, now: now))
         XCTAssertEqual(store.milestoneForecast(m, now: now)?.remainingHours ?? 0, 2, accuracy: 0.01)
-        let load = store.slotLoad(projectId: dev, slot: .active, now: now)
+        let load = store.slotLoad(scope: .project(dev), slot: .active, now: now)
         XCTAssertEqual(load.count, 3)
         XCTAssertEqual(load.plannedMinutes, 180)
-        let stats = store.completionStats(projectId: dev, now: now)
+        let stats = store.completionStats(now: now)
         XCTAssertEqual(stats.planned, 180)
         XCTAssertEqual(stats.done, 60)
         XCTAssertEqual(store.notificationInput(now: now).dueTasks.count, 0, "no due dates set on tasks")
@@ -143,7 +143,7 @@ final class IntegrationSeamsTests: XCTestCase {
         XCTAssertFalse(model.openQuickPicker(.sprint, store: store), "R does nothing without sprints")
         let commands = model.paletteCommands(store)
         XCTAssertFalse(commands.contains(.quickAction(.sprint)))
-        XCTAssertFalse(commands.contains(.completeSprint(p)))
+        XCTAssertFalse(commands.contains(.completeSprint), "no project takes part in the sprint")
         // A saved view with a sprint filter still counts the project's tasks
         var options = TaskViewOptions.standard
         options.filter.sprintSlots = [.next]
@@ -343,7 +343,7 @@ final class IntegrationSeamsTests: XCTestCase {
                                        {"start":"bad"}]}}
         """
         let ws = try LocalJSONWorkspaceRepository.makeDecoder().decode(Workspace.self, from: Data(json.utf8)).migrated()
-        XCTAssertEqual(ws.schemaVersion, 12)
+        XCTAssertEqual(ws.schemaVersion, Workspace.currentSchemaVersion)
         XCTAssertEqual(ws.preferences.pendingAway.count, 1)
         XCTAssertEqual(ws.preferences.pendingAway.first?.taskIds, [tid])
         let none = try LocalJSONWorkspaceRepository.makeDecoder().decode(Workspace.self, from: Data("""
@@ -371,7 +371,7 @@ final class IntegrationSeamsTests: XCTestCase {
         }
         XCTAssertEqual(ColorDistance.deltaE(0x123456, 0x123456), 0, accuracy: 0.0001)
         // Migration uses the same rule
-        let p = Project(name: "Red", colorHex: 0xEF5350, sprint: SprintState(startDate: now))
+        let p = Project(name: "Red", colorHex: 0xEF5350)
         var ws = Workspace(projects: [p], milestones: [Milestone(projectId: p.id, name: "M")])
         ws.assignMilestoneColors()
         XCTAssertNotEqual(ws.milestones[0].colorHex, 0xFF6B4A)

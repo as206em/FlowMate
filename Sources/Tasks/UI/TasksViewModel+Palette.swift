@@ -9,7 +9,7 @@ import Foundation
 enum PaletteCommand: Hashable, Sendable {
     case newTask, newProject
     case newMilestone(UUID)
-    case completeSprint(UUID)
+    case completeSprint
     case showOverdue
     case groupBy(TaskGrouping)
     case switchTab(TasksViewModel.Tab)
@@ -152,10 +152,7 @@ extension TasksViewModel {
         if !(scope == .all && effectiveTab == .overview) { commands.append(.goToOverview) }
         // Overview has its own command ("Go to Overview"), which works from any scope
         commands += tabs.filter { ($0 != effectiveTab || scope.isToday) && $0 != .overview }.map(PaletteCommand.switchTab)
-        if let projectId = scope.projectId, !scope.isMilestone, let project = store.project(projectId),
-           !project.isArchived, project.usesSprints {
-            commands.append(.completeSprint(projectId))
-        }
+        if projects.contains(where: \.usesSprints) { commands.append(.completeSprint) }
         commands += projects.map { .toggleMilestones($0.id) }
         if !store.archivedProjects.isEmpty { commands.append(.toggleArchived) }
         if canSaveView { commands.append(.saveView) }
@@ -173,7 +170,7 @@ extension TasksViewModel {
         case .newTask: return "New task"
         case .newProject: return "New project"
         case let .newMilestone(id): return "New milestone in \(name(id))"
-        case let .completeSprint(id): return "Complete \(store.sprintName(id)) of \(name(id))…"
+        case .completeSprint: return "Complete \(store.sprintName())…"
         case .showOverdue: return "Show overdue tasks"
         case let .groupBy(grouping): return "Group by \(grouping.title.lowercased())"
         case let .switchTab(tab): return "Switch to \(tab.title)"
@@ -297,8 +294,8 @@ extension TasksViewModel {
             closePanel()
             expandedProjects.insert(projectId)
             requestFocus(.newMilestone(projectId))
-        case let .completeSprint(projectId):
-            completingSprintProjectId = projectId
+        case .completeSprint:
+            completingSprint = true
         case .showOverdue:
             if scope.isToday { select(.all) }
             if !showsFilterBar { tab = .list }

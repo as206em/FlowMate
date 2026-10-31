@@ -85,21 +85,25 @@ private struct ProjectTitleButton: View {
     }
 }
 
-/// Sprint line above Board and Sprints in project scope: name, dates (click to change the start and
-/// length), goal (click to edit), the plan against capacity ("Planned 11h of 20h · tracked 6h",
-/// amber near it, red over it), Complete sprint (opens CompleteSprintSheet).
+/// Sprint line above Board and Sprints: name, dates (click to change the start and length), goal
+/// (click to edit), the plan against capacity ("Planned 11h of 20h · tracked 6h", amber near it,
+/// red over it; in a project, that project's part), Complete sprint (opens CompleteSprintSheet).
+/// The sprint is the workspace's, so it reads the same in every project.
 struct SprintHeader: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
-    let project: Project
+    let scope: TaskScope
+    /// Above the Sprints table, which has its own top spacing
+    var tight = false
 
     @State private var editingGoal = false
     @State private var goalDraft = ""
     @State private var editingDates = false
+    @State private var planning = false
     @FocusState private var goalFocused: Bool
 
     var body: some View {
-        let sprint = project.sprint
+        let sprint = store.sprint
         HStack(spacing: 12) {
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: 13, weight: .semibold))
@@ -110,7 +114,7 @@ struct SprintHeader: View {
             }
             .fixedSize()
             .popover(isPresented: $editingDates, arrowEdge: .bottom) {
-                SprintDatesEditor(project: project)
+                SprintDatesEditor()
             }
             Text("·").foregroundColor(Focus.text2)
             if editingGoal {
@@ -137,50 +141,124 @@ struct SprintHeader: View {
                 .help("Edit sprint goal")
             }
             Spacer(minLength: 12)
+            Text(store.sprintCompletion(scope: scope).percentText + " done")
+                .font(Focus.meta.monospacedDigit().weight(.semibold))
+                .foregroundColor(Focus.text2)
+                .fixedSize()
+                .help("Done time of the active sprint's planned time" + (scope.projectId == nil ? "" : ", for this project"))
             LiveTime { now in
-                let line = store.sprintPlanLine(projectId: project.id, now: now)
+                let line = store.sprintPlanLine(scope: scope, now: now)
                 Text(line.text)
                     .font(Focus.meta.monospacedDigit())
                     .foregroundColor(CapacityColors.color(line.level))
                     .lineLimit(1)
                     .fixedSize()
-                    .help(project.weeklyCapacityHours == nil
-                          ? "Expected time of the active sprint's tasks, and time tracked in its dates. Set hours per week in the project's settings to see the capacity."
-                          : "Expected time of the active sprint's tasks against \(SprintPlanRules.hoursText(project.weeklyCapacityHours ?? 0)) a week, and time tracked in its dates")
+                    .help(store.sprintCapacityMinutes(in: scope) == nil
+                          ? "Expected time of the active sprint's tasks, and time tracked in its dates. Set hours per week in a project's settings to see the capacity."
+                          : "Expected time of the active sprint's tasks against the weekly hours set on the projects, and time tracked in its dates")
             }
-            Button("Complete sprint") { model.completingSprintProjectId = project.id }
+            Button("Plan sprints") { planning = true }
+                .buttonStyle(.focus(.ghost))
+                .help("Create sprints ahead and set their goals")
+                .popover(isPresented: $planning, arrowEdge: .bottom) { SprintPlanner() }
+            Button("Complete sprint") { model.completingSprint = true }
                 .buttonStyle(.focus())
+                .help("Close \(store.sprintName()) for every project and start \(store.sprint.nextName) today")
         }
-        .padding(.bottom, 20)
+        .padding(.bottom, tight ? 0 : 20)
     }
 
     private func commitGoal() {
         guard editingGoal else { return }
-        store.setSprintGoal(projectId: project.id, goal: goalDraft)
+        store.setSprintGoal(goalDraft)
         editingGoal = false
+    }
+}
+
+/// Popover: the sprints planned after the active one, each with its dates and a goal, and buttons to
+/// create more (one, or four: a month of weekly sprints) or take the last one away. Every sprint is
+/// as long as the active one, so set that first (click the dates).
+struct SprintPlanner: View {
+    @EnvironmentObject private var store: TaskStore
+
+    var body: some View {
+        let upcoming = store.upcomingSprints()
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Plan sprints").font(Focus.groupTitle).foregroundColor(Focus.text)
+                Text("Each sprint lasts \(store.sprint.lengthLabel), like \(store.sprintName()). Change the length in its dates.")
+                    .font(.system(size: 12))
+                    .foregroundColor(Focus.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            FocusDivider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(upcoming) { sprint in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Text(sprint.name).font(Focus.rowStrong).foregroundColor(Focus.text)
+                                Text(sprint.dateRange).font(Focus.meta).foregroundColor(Focus.text3)
+                                Spacer(minLength: 0)
+                                Text(String(store.sprintTasks(ahead: sprint.ahead).count) + " tasks")
+                                    .font(Focus.meta.monospacedDigit()).foregroundColor(Focus.text3)
+                            }
+                            TextField(SprintState.goalPlaceholder, text: Binding(
+                                get: { store.upcomingSprints().first { $0.ahead == sprint.ahead }?.goal ?? "" },
+                                set: { store.setUpcomingGoal(ahead: sprint.ahead, goal: $0) }
+                            ))
+                            .focusField()
+                            .accessibilityLabel("Goal of \(sprint.name)")
+                        }
+                    }
+                }
+                .padding(12)
+            }
+            .frame(maxHeight: 320)
+            FocusDivider()
+            HStack(spacing: 8) {
+                Button("New sprint") { store.addUpcomingSprints(1) }
+                    .buttonStyle(.focus())
+                Button("Add 4 sprints") { store.addUpcomingSprints(4) }
+                    .buttonStyle(.focus(.ghost))
+                    .help("Plan a month ahead when sprints are a week long")
+                Spacer(minLength: 0)
+                if upcoming.count > 1 {
+                    Button("Remove last") { store.removeLastUpcomingSprint() }
+                        .buttonStyle(.focus(.ghost))
+                        .help("Take \(upcoming.last?.name ?? "the last sprint") away; its tasks go to the backlog")
+                }
+            }
+            .padding(12)
+        }
+        .frame(width: 340)
+        .background(Focus.raised)
+        .focusLight()
     }
 }
 
 /// Popover: the active sprint's start date and length (1–4 weeks), and where that puts the end.
 struct SprintDatesEditor: View {
     @EnvironmentObject private var store: TaskStore
-    let project: Project
 
     var body: some View {
-        let sprint = store.project(project.id)?.sprint ?? project.sprint
+        let sprint = store.sprint
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
-                FocusCaption(text: "Length")
+                FocusCaption(text: "Number")
+                FocusStepper(value: sprint.number, label: "Sprint number") { store.setSprintNumber($0) }
+                FocusCaption(text: "Length").padding(.top, 6)
                 FocusTabs(
                     options: SprintState.lengthChoices.map { (value: $0, label: SprintState.lengthLabel($0)) },
-                    selection: Binding(get: { sprint.lengthWeeks }, set: { store.setSprintLength(projectId: project.id, weeks: $0) })
+                    selection: Binding(get: { sprint.lengthWeeks }, set: { store.setSprintLength(weeks: $0) })
                 )
                 .fixedSize()
                 FocusCaption(text: "Starts").padding(.top, 6)
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
-            FocusCalendar(selection: sprint.startDate) { store.setSprintStart(projectId: project.id, date: $0) }
+            FocusCalendar(selection: sprint.startDate) { store.setSprintStart(date: $0) }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity)
@@ -203,20 +281,19 @@ struct CompleteSprintSheet: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
     @Environment(\.dismiss) private var dismiss
-    let project: Project
 
     @State private var unfinished: UnfinishedSprintTasks = .moveToNextSprint
     @State private var goal = ""
     @FocusState private var goalFocused: Bool
 
     var body: some View {
-        let sprint = project.sprint
-        let active = store.sprintTasks(projectId: project.id, slot: .active)
+        let sprint = store.sprint
+        let active = store.sprintTasks(slot: .active)
         let done = active.filter(\.isClosed).count
         let open = active.count - done
-        let next = store.sprintTasks(projectId: project.id, slot: .next).count
-        let velocity = store.recentVelocityMinutes(projectId: project.id, includingActive: true)
-        let nextPlan = store.nextSprintPlanMinutes(projectId: project.id, unfinished: unfinished)
+        let next = store.sprintTasks(slot: .next).count
+        let velocity = store.recentVelocityMinutes(includingActive: true)
+        let nextPlan = store.nextSprintPlanMinutes(unfinished: unfinished)
         let today = Calendar.current.startOfDay(for: Date())
         let newEnd = SprintState.day(today, adding: sprint.lengthInDays - 1)
 
@@ -281,8 +358,8 @@ struct CompleteSprintSheet: View {
     /// that's more than the velocity (or the capacity).
     @ViewBuilder
     private func planNote(velocity: Int?, nextPlan: Int) -> some View {
-        let name = project.sprint.nextName
-        let capacity = SprintPlanRules.capacityMinutes(weeklyHours: project.weeklyCapacityHours, weeks: project.sprint.lengthWeeks)
+        let name = store.sprint.nextName
+        let capacity = store.sprintCapacityMinutes()
         let overVelocity = velocity.map { nextPlan > $0 } ?? false
         let overCapacity = capacity.map { nextPlan > $0 } ?? false
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -328,8 +405,8 @@ struct CompleteSprintSheet: View {
     private func tasks(_ n: Int) -> String { "\(n) \(n == 1 ? "task" : "tasks")" }
 
     private func complete() {
-        model.completeSprint(project.id, unfinished: unfinished, nextGoal: goal, store: store)
-        model.completingSprintProjectId = nil
+        model.completeSprint(unfinished: unfinished, nextGoal: goal, store: store)
+        model.completingSprint = false
         dismiss()
     }
 }

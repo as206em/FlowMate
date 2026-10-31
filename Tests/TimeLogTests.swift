@@ -245,7 +245,7 @@ final class TimeLogTests: XCTestCase {
     func testTrackedInSprint() async {
         let (store, pid) = await makeStore()
         let id = store.addTask(title: "A", projectId: pid, now: t0)!
-        let sprint = store.project(pid)!.sprint
+        let sprint = store.sprint
         store.addTimeEntry(taskId: id, start: sprint.startDate.addingTimeInterval(3600), end: sprint.startDate.addingTimeInterval(7200), now: at(500))
         store.addTimeEntry(taskId: id, start: sprint.startDate.addingTimeInterval(-7200), end: sprint.startDate.addingTimeInterval(-3600), now: at(500))
         XCTAssertEqual(store.trackedInSprint(projectId: pid, now: at(500)), 3600, "only the sprint's days")

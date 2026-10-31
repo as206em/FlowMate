@@ -87,9 +87,12 @@ extension TaskStore {
         tasks(in: scope).filter { $0.statusId == status.id }
     }
 
-    /// Sprints view group for one project: active, next or backlog.
-    func sprintTasks(projectId: UUID, slot: SprintSlot) -> [TaskItem] {
-        tasks(in: .project(projectId)).filter { $0.sprintSlot == slot }
+    /// Sprints view group: the tasks in `scope` (All projects by default) sitting in the active
+    /// sprint, the next one (not the later ones, see `sprintTasks(ahead:in:)`) or the backlog.
+    /// Projects that don't take part in sprints have none.
+    func sprintTasks(slot: SprintSlot, in scope: TaskScope = .all) -> [TaskItem] {
+        if slot == .next { return sprintTasks(ahead: 1, in: scope) }
+        return tasks(in: scope).filter { $0.sprintSlot == slot && usesSprints($0.projectId) }
     }
 
     /// Case-insensitive title search across all projects, open tasks first (menu bar search).
@@ -173,14 +176,13 @@ extension TaskStore {
     // MARK: - Sprints
 
     /// "Sprint 14"
-    func sprintName(_ projectId: UUID) -> String {
-        project(projectId)?.sprint.name ?? ""
-    }
+    func sprintName() -> String { workspace.sprint.name }
 
     /// "Oct 26 – Nov 8"
-    func sprintDateRange(_ projectId: UUID) -> String {
-        project(projectId)?.sprint.dateRange ?? ""
-    }
+    func sprintDateRange() -> String { workspace.sprint.dateRange }
+
+    /// The active sprint, shared by every project.
+    var sprint: SprintState { workspace.sprint }
 
     /// Label for a task's slot: "Sprint 14", "Sprint 15", "Backlog", or for a closed task the
     /// past sprint it closed in ("Sprint 12"; "Closed sprint" for older data). Empty for an open
@@ -188,22 +190,24 @@ extension TaskStore {
     func sprintLabel(for task: TaskItem) -> String {
         if task.sprintSlot != .closed, !usesSprints(task.projectId) { return "" }
         if task.sprintSlot == .closed, let number = task.closedSprintNumber { return "Sprint \(number)" }
-        return sprintLabel(task.sprintSlot, projectId: task.projectId)
+        if let ahead = upcomingAhead(of: task) { return workspace.sprint.name(ahead: ahead) }
+        return sprintLabel(task.sprintSlot)
     }
 
     /// Completed sprints, newest first.
-    func pastSprints(_ projectId: UUID) -> [PastSprint] {
-        (project(projectId)?.pastSprints ?? []).reversed()
-    }
+    func pastSprints() -> [PastSprint] { workspace.pastSprints.reversed() }
 
     /// The tasks of a past sprint that still exist, in manual order.
-    func tasks(of pastSprint: PastSprint) -> [TaskItem] {
+    /// Only those in `scope` when given (one project's slice of a sprint of all projects).
+    func tasks(of pastSprint: PastSprint, in scope: TaskScope = .all) -> [TaskItem] {
         let ids = Set(pastSprint.taskIds)
-        return workspace.tasks.filter { ids.contains($0.id) }.sorted { $0.sortIndex < $1.sortIndex }
+        return workspace.tasks
+            .filter { ids.contains($0.id) && (scope.projectId == nil || $0.projectId == scope.projectId) }
+            .sorted { $0.sortIndex < $1.sortIndex }
     }
 
-    func sprintLabel(_ slot: SprintSlot, projectId: UUID) -> String {
-        guard let sprint = project(projectId)?.sprint else { return "" }
+    func sprintLabel(_ slot: SprintSlot) -> String {
+        let sprint = workspace.sprint
         switch slot {
         case .active: return sprint.name
         case .next: return sprint.nextName

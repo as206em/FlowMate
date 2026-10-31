@@ -265,15 +265,13 @@ struct TaskSprintEditor: View {
 
     var body: some View {
         FocusPopoverMenu(width: 200) {
-            ForEach(SprintSlot.plannable) { slot in
-                FocusMenuItem(isSelected: slot == task.sprintSlot) {
-                    store.setSprintSlot(task.id, slot)
+            ForEach(store.sprintChoices(), id: \.self) { choice in
+                FocusMenuItem(isSelected: choice == store.sprintChoice(of: task)) {
+                    store.setSprint([task.id], choice)
                     close()
                 } label: {
-                    Text(store.sprintLabel(slot, projectId: task.projectId)).font(Focus.control).foregroundColor(Focus.text)
-                    if slot != .backlog {
-                        Text(slot == .active ? "active" : "next").font(Focus.meta).foregroundColor(Focus.text3)
-                    }
+                    Text(store.sprintTitle(choice)).font(Focus.control).foregroundColor(Focus.text)
+                    Text(store.sprintTag(choice)).font(Focus.meta).foregroundColor(Focus.text3)
                 }
             }
         }

@@ -100,6 +100,9 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
     var sortIndex: Double
     /// The sprint number a `closed` task was closed in ("Sprint 3"); nil for older data.
     var closedSprintNumber: Int?
+    /// The number of the upcoming sprint a `next` task is planned in when that is not the one right
+    /// after the active sprint (nil: the next one). Meaningful only while the slot is `next`.
+    var laterSprint: Int?
     /// The day you pinned the task to Today ("Add to Today", ⌘T), as midnight of that day; nil when
     /// it isn't pinned. An open task pinned on an earlier day stays in Today's My focus, labeled
     /// "From yesterday", until it's done or unpinned.
@@ -127,6 +130,7 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         updatedAt: Date? = nil,
         sortIndex: Double = 0,
         closedSprintNumber: Int? = nil,
+        laterSprint: Int? = nil,
         completedAt: Date? = nil,
         focusDate: Date? = nil,
         focusIndex: Double = 0,
@@ -149,6 +153,7 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         self.updatedAt = updatedAt ?? createdAt
         self.sortIndex = sortIndex
         self.closedSprintNumber = closedSprintNumber
+        self.laterSprint = laterSprint
         self.completedAt = status.category.isClosed ? (completedAt ?? self.updatedAt) : nil
         self.focusDate = focusDate
         self.focusIndex = focusIndex
@@ -169,7 +174,7 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, projectId, milestoneId, sprintSlot, statusId, statusCategory, priority, title, notes, subtasks
         case dueDate, expectedMinutes, spentSeconds, createdAt, updatedAt, completedAt, sortIndex, closedSprintNumber
-        case focusDate, focusIndex, labelIds
+        case focusDate, focusIndex, labelIds, laterSprint
     }
 
     private enum LegacyKeys: String, CodingKey { case status }
@@ -210,5 +215,7 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         focusIndex = c.decode(.focusIndex, or: 0)
         // Schema 10 and older: no labels
         labelIds = c.decodeLossyArray(.labelIds)
+        // Older files plan nothing beyond the next sprint
+        laterSprint = c.decodeOptional(.laterSprint)
     }
 }

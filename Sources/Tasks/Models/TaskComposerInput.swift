@@ -288,10 +288,10 @@ extension TaskStore {
             guard let projectId, usesSprints(projectId) else { return [] }
             let words: [SprintSlot: String] = [.active: "#now", .next: "#next", .backlog: "#backlog"]
             return SprintSlot.plannable
-                .filter { matches(sprintLabel($0, projectId: projectId)) || matches(words[$0] ?? "") }
+                .filter { matches(sprintLabel($0)) || matches(words[$0] ?? "") }
                 .map { slot in
                     let state = slot == .active ? " · active" : slot == .next ? " · next" : ""
-                    return ComposerSuggestion(id: "slot-\(slot)", title: sprintLabel(slot, projectId: projectId) + state,
+                    return ComposerSuggestion(id: "slot-\(slot)", title: sprintLabel(slot) + state,
                                               detail: words[slot] ?? "", action: .slot(slot))
                 }
         case .milestone:

@@ -27,7 +27,12 @@ struct Workspace: Codable, Equatable, Sendable {
     ///     Older files decode with none of either; nothing to convert.
     /// 12: the waiting "Timers ran while your Mac slept" prompt (preferences.pendingAway), so it
     ///     survives a relaunch. Older files decode with none.
-    static let currentSchemaVersion = 12
+    /// 13 also holds the sprints planned ahead (Workspace.upcomingCount, upcomingGoals,
+    ///     TaskItem.laterSprint); older files decode with just the next one.
+    /// 13: one sprint for the whole workspace (Workspace.sprint, Workspace.pastSprints) instead of
+    ///     one per project. The sprint with the highest number becomes the workspace's; every
+    ///     project's past sprints are kept, oldest first. Tasks keep their slot.
+    static let currentSchemaVersion = 13
 
     var schemaVersion: Int
     var projects: [Project]
@@ -39,6 +44,18 @@ struct Workspace: Codable, Equatable, Sendable {
     var timeEntries: [TimeEntry]
     /// Small settings that travel with the data (the last project used, timer prompts).
     var preferences: WorkspacePreferences
+    /// The active sprint. Every project that takes part (Project.usesSprints) shares it, so a sprint
+    /// holds tasks of several projects.
+    var sprint: SprintState
+    /// Completed sprints, oldest first
+    var pastSprints: [PastSprint]
+    /// How many sprints are planned after the active one (at least 1: the next). Sprint N+k exists
+    /// for k in 1...upcomingCount; tasks go into them with TaskItem.sprintSlot `next` and `laterSprint`.
+    var upcomingCount: Int
+    /// The active sprint's planned time over its days (see SprintScopePoint)
+    var sprintScope: [SprintScopePoint]
+    /// Goals of the upcoming sprints, by sprint number
+    var upcomingGoals: [Int: String]
     /// Labels every project shares, in the order they were made (shown sorted by name)
     var labels: [TaskLabel]
     /// The sidebar's Views, in sidebar order
@@ -52,6 +69,11 @@ struct Workspace: Codable, Equatable, Sendable {
         runningTimers: [UUID: Date] = [:],
         timeEntries: [TimeEntry] = [],
         preferences: WorkspacePreferences = WorkspacePreferences(),
+        sprint: SprintState = SprintState(startDate: SprintState.defaultStart()),
+        pastSprints: [PastSprint] = [],
+        upcomingCount: Int = 1,
+        sprintScope: [SprintScopePoint] = [],
+        upcomingGoals: [Int: String] = [:],
         labels: [TaskLabel] = [],
         savedViews: [SavedView] = []
     ) {
@@ -62,6 +84,11 @@ struct Workspace: Codable, Equatable, Sendable {
         self.runningTimers = runningTimers
         self.timeEntries = timeEntries
         self.preferences = preferences
+        self.sprint = sprint
+        self.pastSprints = pastSprints
+        self.upcomingCount = max(1, upcomingCount)
+        self.sprintScope = sprintScope
+        self.upcomingGoals = upcomingGoals
         self.labels = labels
         self.savedViews = savedViews
     }
@@ -74,7 +101,7 @@ struct Workspace: Codable, Equatable, Sendable {
         if ws.schemaVersion < 2 {
             // The new fields decode to their defaults (no description, not archived, 2-week sprints,
             // no history). Version 1 sprints were always two weeks long; keep that explicitly.
-            for i in ws.projects.indices { ws.projects[i].sprint.lengthWeeks = SprintState.defaultLengthWeeks }
+            for i in ws.projects.indices { ws.projects[i].legacySprint?.lengthWeeks = SprintState.defaultLengthWeeks }
         }
         // 3: preferences decode to their defaults (no last project, no menu bar clock, ask after 3h).
         if let last = ws.preferences.lastProjectId, !ws.projects.contains(where: { $0.id == last }) {
@@ -92,7 +119,9 @@ struct Workspace: Codable, Equatable, Sendable {
         // 10: past sprints get their numbers after the time log is reconciled (below).
         // 11: no labels or saved views yet (they decode as none); normalizeLabels drops dangling ids.
         // 12: no waiting sleep prompt (decodes to none). Below: prompts keep only tasks that exist.
+        // 13: the per-project sprints become the workspace's (liftSprints, below).
         let addStats = ws.schemaVersion < 10
+        let liftSprints = ws.schemaVersion < 13
         ws.schemaVersion = Workspace.currentSchemaVersion
 
         let projectIds = Set(ws.projects.map(\.id))
@@ -114,6 +143,7 @@ struct Workspace: Codable, Equatable, Sendable {
         ws.assignMilestoneColors()
         ws.normalizeLabels()
         if addStats { ws.addPastSprintStats() }
+        if liftSprints { ws.liftProjectSprints() }
         return ws
     }
 
@@ -140,17 +170,32 @@ struct Workspace: Codable, Equatable, Sendable {
         if gaps != preferences.pendingAway { preferences.pendingAway = gaps }
     }
 
+    /// Schema 13: the workspace gets one sprint. The project sprint furthest along (highest number,
+    /// the first on a tie; projects without sprints count last) becomes the workspace's sprint, and
+    /// every project's past sprints join one history, oldest first.
+    mutating func liftProjectSprints() {
+        let withSprint = projects.filter { $0.legacySprint != nil }
+        let pick = withSprint.filter(\.usesSprints).max(by: { ($0.legacySprint?.number ?? 0) < ($1.legacySprint?.number ?? 0) })
+            ?? withSprint.max(by: { ($0.legacySprint?.number ?? 0) < ($1.legacySprint?.number ?? 0) })
+        if let sprint = pick?.legacySprint { self.sprint = sprint }
+        pastSprints = projects.flatMap(\.legacyPastSprints).sorted { $0.completedAt < $1.completedAt }
+        for i in projects.indices {
+            projects[i].legacySprint = nil
+            projects[i].legacyPastSprints = []
+        }
+    }
+
     /// Schema 10: numbers for past sprints closed before they were stored. Planned is the expected
     /// time of the sprint's tasks (canceled ones left out), done that of its done tasks, both as the
     /// tasks are now; tracked is the time log inside the sprint's dates for the project's tasks and
     /// the sprint's own. Capacity is unknown. All marked approximate.
     mutating func addPastSprintStats(calendar: Calendar = .current) {
         let tasksById = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        for p in projects.indices where !projects[p].pastSprints.isEmpty {
+        for p in projects.indices where !projects[p].legacyPastSprints.isEmpty {
             let projectId = projects[p].id
             let projectTasks = Set(tasks.filter { $0.projectId == projectId }.map(\.id))
-            for s in projects[p].pastSprints.indices {
-                var sprint = projects[p].pastSprints[s]
+            for s in projects[p].legacyPastSprints.indices {
+                var sprint = projects[p].legacyPastSprints[s]
                 let planned = sprint.taskIds.compactMap { tasksById[$0] }.filter { !$0.isCanceled }
                 sprint.plannedMinutes = planned.reduce(0) { $0 + $1.expectedMinutes }
                 sprint.doneMinutes = sprint.doneTaskIds.compactMap { tasksById[$0] }.reduce(0) { $0 + $1.expectedMinutes }
@@ -160,7 +205,7 @@ struct Workspace: Codable, Equatable, Sendable {
                     .reduce(0) { $0 + TimeEntry.overlap($1.start, $1.end, range) }
                 sprint.capacityHours = nil
                 sprint.isApproximate = true
-                projects[p].pastSprints[s] = sprint
+                projects[p].legacyPastSprints[s] = sprint
             }
         }
     }
@@ -233,7 +278,7 @@ struct Workspace: Codable, Equatable, Sendable {
 
     // Running timers are stored as {"<uuid>": "<date>"} so the JSON stays readable.
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, projects, milestones, tasks, runningTimers, timeEntries, preferences, labels, savedViews
+        case schemaVersion, projects, milestones, tasks, runningTimers, timeEntries, preferences, sprint, pastSprints, upcomingCount, sprintScope, upcomingGoals, labels, savedViews
     }
 
     init(from decoder: Decoder) throws {
@@ -247,6 +292,14 @@ struct Workspace: Codable, Equatable, Sendable {
                                    uniquingKeysWith: { a, _ in a })
         timeEntries = c.decodeLossyArray(.timeEntries)
         preferences = c.decode(.preferences, or: WorkspacePreferences())
+        // Schema 12 and older: the sprint lives on the projects; migrated() lifts it
+        sprint = c.decode(.sprint, or: SprintState(startDate: SprintState.defaultStart()))
+        pastSprints = c.decodeLossyArray(.pastSprints)
+        upcomingCount = max(1, c.decode(.upcomingCount, or: 1))
+        sprintScope = c.decodeLossyArray(.sprintScope)
+        // Stored as {"<number>": "<goal>"}: JSON keys are strings
+        let goals: [String: String] = c.decode(.upcomingGoals, or: [:])
+        upcomingGoals = Dictionary(goals.compactMap { key, value in Int(key).map { ($0, value) } }, uniquingKeysWith: { a, _ in a })
         // Schema 10 and older: no labels or views
         labels = c.decodeLossyArray(.labels)
         savedViews = c.decodeLossyArray(.savedViews)
@@ -262,6 +315,11 @@ struct Workspace: Codable, Equatable, Sendable {
         try c.encode(raw, forKey: .runningTimers)
         try c.encode(timeEntries, forKey: .timeEntries)
         try c.encode(preferences, forKey: .preferences)
+        try c.encode(sprint, forKey: .sprint)
+        try c.encode(pastSprints, forKey: .pastSprints)
+        try c.encode(upcomingCount, forKey: .upcomingCount)
+        try c.encode(sprintScope, forKey: .sprintScope)
+        try c.encode(Dictionary(upcomingGoals.map { (String($0.key), $0.value) }, uniquingKeysWith: { a, _ in a }), forKey: .upcomingGoals)
         try c.encode(labels, forKey: .labels)
         try c.encode(savedViews, forKey: .savedViews)
     }

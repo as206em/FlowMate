@@ -42,7 +42,7 @@ final class WorkflowTests: XCTestCase {
         let ws = try decoder.decode(Workspace.self, from: Data(json.utf8)).migrated()
 
         XCTAssertEqual(ws.schemaVersion, Workspace.currentSchemaVersion)
-        XCTAssertEqual(Workspace.currentSchemaVersion, 12)
+        XCTAssertEqual(Workspace.currentSchemaVersion, 13)
         for project in ws.projects {
             XCTAssertEqual(project.statuses, WorkflowPreset.simple.statuses, "every project gets the Simple workflow")
         }
@@ -258,11 +258,11 @@ final class WorkflowTests: XCTestCase {
         store.setStatus(canceled, .canceled, now: t0)
         store.setStatus(open, status(store, pid, "Review"), now: t0)
 
-        store.completeSprint(projectId: pid, unfinished: .moveToNextSprint, now: t0)
+        store.completeSprint(unfinished: .moveToNextSprint, now: t0)
         XCTAssertEqual(store.task(done)?.sprintSlot, .closed)
         XCTAssertEqual(store.task(canceled)?.sprintSlot, .closed)
         XCTAssertEqual(store.task(open)?.sprintSlot, .active)
-        let past = store.project(pid)!.pastSprints.last!
+        let past = store.workspace.pastSprints.last!
         XCTAssertEqual(Set(past.taskIds), [done, canceled, open])
         XCTAssertEqual(past.doneTaskIds, [done], "only done tasks count as done")
 

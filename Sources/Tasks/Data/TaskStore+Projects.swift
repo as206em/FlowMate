@@ -9,9 +9,7 @@ extension TaskStore {
     func addProject(name: String, now: Date = Date()) -> UUID? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }
-        let project = Project(name: name, colorHex: nextProjectColor(),
-                              sprint: SprintState(number: 1, startDate: SprintState.defaultStart(for: now)),
-                              createdAt: now)
+        let project = Project(name: name, colorHex: nextProjectColor(), createdAt: now)
         mutate("Add project") { $0.projects.append(project) }
         return project.id
     }
@@ -192,39 +190,28 @@ extension TaskStore {
 
     // MARK: - Sprints
 
-    func setSprintGoal(projectId: UUID, goal: String) {
-        mutate("Edit sprint goal", coalesce: "goal-\(projectId)") { ws in
-            guard let i = ws.projects.firstIndex(where: { $0.id == projectId }) else { return }
-            ws.projects[i].sprint.goal = goal
-        }
+    func setSprintGoal(_ goal: String) {
+        mutate("Edit sprint goal", coalesce: "sprint-goal") { ws in ws.sprint.goal = goal }
     }
 
     /// Sprint length in weeks (1–4). The start stays; the end and the next sprint move.
-    func setSprintLength(projectId: UUID, weeks: Int) {
-        mutate("Change sprint length") { ws in
-            guard let i = ws.projects.firstIndex(where: { $0.id == projectId }) else { return }
-            ws.projects[i].sprint.lengthWeeks = SprintState.clampedLength(weeks)
-        }
+    func setSprintLength(weeks: Int) {
+        mutate("Change sprint length") { ws in ws.sprint.lengthWeeks = SprintState.clampedLength(weeks) }
     }
 
     /// Moves the active sprint's start (midnight of that day). The length stays.
-    func setSprintStart(projectId: UUID, date: Date) {
+    func setSprintStart(date: Date) {
         let day = Calendar.current.startOfDay(for: date)
-        mutate("Change sprint dates") { ws in
-            guard let i = ws.projects.firstIndex(where: { $0.id == projectId }) else { return }
-            ws.projects[i].sprint.startDate = day
-        }
+        mutate("Change sprint dates") { ws in ws.sprint.startDate = day }
     }
 
     /// Renumbers the active sprint (at least 1).
-    func setSprintNumber(projectId: UUID, number: Int) {
-        mutate("Change sprint number") { ws in
-            guard let i = ws.projects.firstIndex(where: { $0.id == projectId }) else { return }
-            ws.projects[i].sprint.number = max(1, number)
-        }
+    func setSprintNumber(_ number: Int) {
+        mutate("Change sprint number") { ws in ws.sprint.number = max(1, number) }
     }
 
-    /// Closes the active sprint and starts the next one today. One undo step.
+    /// Closes the active sprint, for every project that takes part, and starts the next one today.
+    /// One undo step.
     /// - Done and canceled tasks in the active sprint become `closed` (remembering the sprint
     ///   number); only done ones count as done in the sprint's history.
     /// - Unfinished active tasks follow `unfinished`: stay for the new sprint, go to the backlog,
@@ -233,31 +220,31 @@ extension TaskStore {
     /// - The sprint is kept in `pastSprints` with its dates, goal and tasks, and its numbers:
     ///   planned and done expected time, time tracked in its dates and the capacity it had.
     /// - The new sprint gets the next number, starts on the day you complete it (so dates never
-    ///   drift), keeps the project's length, and takes `nextGoal`.
-    func completeSprint(projectId: UUID, unfinished: UnfinishedSprintTasks = .moveToNextSprint,
+    ///   drift), keeps the length, and takes `nextGoal`.
+    func completeSprint(unfinished: UnfinishedSprintTasks = .moveToNextSprint,
                         nextGoal: String = "", now: Date = Date()) {
         undoGroup("Complete sprint") {
             // Unfinished tasks closing with the sprint are hidden from List, so their timers stop
             // first. A pause isn't undone, so the session stays in the time log.
             if unfinished == .keepInSprint {
-                for task in runningTasks where task.projectId == projectId && task.sprintSlot == .active && !task.isClosed {
+                for task in runningTasks where usesSprints(task.projectId) && task.sprintSlot == .active && !task.isClosed {
                     pauseTimer(task.id, now: now)
                 }
             }
-            let stats = completionStats(projectId: projectId, now: now)
-            completeSprintStep(projectId: projectId, unfinished: unfinished, nextGoal: nextGoal, stats: stats, now: now)
+            let stats = completionStats(now: now)
+            completeSprintStep(unfinished: unfinished, nextGoal: nextGoal, stats: stats, now: now)
         }
     }
 
-    private func completeSprintStep(projectId: UUID, unfinished: UnfinishedSprintTasks, nextGoal: String,
+    private func completeSprintStep(unfinished: UnfinishedSprintTasks, nextGoal: String,
                                     stats: (planned: Int, done: Int, tracked: TimeInterval, capacity: Double?), now: Date) {
         mutate("Complete sprint") { ws in
-            guard let p = ws.projects.firstIndex(where: { $0.id == projectId }) else { return }
-            let old = ws.projects[p].sprint
+            let old = ws.sprint
+            let participating = Set(ws.projects.filter(\.usesSprints).map(\.id))
             var sprintTasks: [UUID] = []
             var doneTasks: [UUID] = []
             for i in ws.tasks.indices.sorted(by: { ws.tasks[$0].sortIndex < ws.tasks[$1].sortIndex })
-            where ws.tasks[i].projectId == projectId {
+            where participating.contains(ws.tasks[i].projectId) {
                 switch ws.tasks[i].sprintSlot {
                 case .active:
                     sprintTasks.append(ws.tasks[i].id)
@@ -280,8 +267,14 @@ extension TaskStore {
                         }
                     }
                 case .next:
-                    ws.tasks[i].sprintSlot = .active
-                    ws.tasks[i].updatedAt = now
+                    // The next sprint becomes the active one; tasks planned further ahead stay
+                    // planned (their sprint is one place closer now)
+                    let ahead = (ws.tasks[i].laterSprint ?? old.number + 1) - old.number
+                    if ahead <= 1 {
+                        ws.tasks[i].sprintSlot = .active
+                        ws.tasks[i].laterSprint = nil
+                        ws.tasks[i].updatedAt = now
+                    }
                 default:
                     break
                 }
@@ -289,7 +282,7 @@ extension TaskStore {
             let today = Calendar.current.startOfDay(for: now)
             // It ran until the day it was completed
             let end = max(old.startDate, today)
-            ws.projects[p].pastSprints.append(PastSprint(
+            ws.pastSprints.append(PastSprint(
                 number: old.number, startDate: old.startDate, endDate: end,
                 goal: old.goal.trimmingCharacters(in: .whitespacesAndNewlines),
                 taskIds: sprintTasks, doneTaskIds: doneTasks, completedAt: now,
@@ -299,8 +292,13 @@ extension TaskStore {
             var sprint = old
             sprint.number += 1
             sprint.startDate = today
-            sprint.goal = nextGoal.trimmingCharacters(in: .whitespacesAndNewlines)
-            ws.projects[p].sprint = sprint
+            // The goal typed in the dialog wins over the one planned ahead for this sprint
+            let planned = ws.upcomingGoals[sprint.number]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let typed = nextGoal.trimmingCharacters(in: .whitespacesAndNewlines)
+            sprint.goal = typed.isEmpty ? planned : typed
+            ws.upcomingGoals = ws.upcomingGoals.filter { $0.key > sprint.number }
+            ws.upcomingCount = max(1, ws.upcomingCount - 1)
+            ws.sprint = sprint
         }
     }
 }

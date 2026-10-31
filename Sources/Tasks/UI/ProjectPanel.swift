@@ -201,6 +201,7 @@ private struct ProjectInspector: View {
     var body: some View {
         SidePanelInspector {
             summary
+            CompletionSummary(title: "Completion", completion: store.projectCompletion(project.id))
 
             VStack(alignment: .leading, spacing: 8) {
                 FocusCaption(text: "Color")
@@ -267,8 +268,8 @@ private struct ProjectInspector: View {
             return "Not set: milestone forecasts assume 4h a working day."
         }
         guard project.usesSprints else { return "\(SprintPlanRules.hoursText(weekly / 5)) a working day for milestone forecasts." }
-        let total = weekly * Double(project.sprint.lengthWeeks)
-        return "\(SprintPlanRules.hoursText(total)) per \(project.sprint.lengthLabel) sprint."
+        let total = weekly * Double(store.sprint.lengthWeeks)
+        return "\(SprintPlanRules.hoursText(total)) per \(store.sprint.lengthLabel) sprint."
     }
 
     private var summary: some View {
@@ -284,15 +285,15 @@ private struct ProjectInspector: View {
         }
     }
 
-    /// Sprints on or off, the weekly capacity, then the sprint's number, start, length and goal.
-    /// Changing the start or length moves the end and the next sprint.
+    /// Whether the project takes part in the workspace's sprint, and its weekly capacity. The sprint
+    /// itself (number, dates, goal) is edited on the Sprints tab.
     private var sprintSection: some View {
-        let sprint = project.sprint
+        let sprint = store.sprint
         return VStack(alignment: .leading, spacing: 6) {
             FocusCaption(text: "Sprint").padding(.top, 12)
             Toggle(isOn: Binding(get: { project.usesSprints }, set: { on in
                 store.setUsesSprints(project.id, on)
-                model.showUndoToast(on ? "Sprints on · \(project.sprint.name) starts today" : "Sprints off", store: store)
+                model.showUndoToast(on ? "Sprints on · in \(store.sprintName())" : "Sprints off", store: store)
             })) {
                 Text("Plan in sprints").font(Focus.body).foregroundColor(Focus.text)
             }
@@ -309,52 +310,18 @@ private struct ProjectInspector: View {
             }
             .padding(.bottom, 4)
             if !project.usesSprints {
-                Text("Board shows every open task. Turning sprints on starts \(sprint.name) today with the work in progress; the other open tasks wait in the backlog.")
+                Text("Board shows every open task. Turning sprints on puts the work in progress in \(sprint.name); the other open tasks wait in the backlog.")
                     .font(.system(size: 12))
                     .foregroundColor(Focus.text3)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-            SidePanelProperty(label: "Number") {
-                FocusStepper(value: sprint.number, label: "Sprint number") {
-                    store.setSprintNumber(projectId: project.id, number: $0)
-                }
-            }
-            SidePanelProperty(label: "Starts") {
-                DateField(date: sprint.startDate, allowsClear: false, accessibilityName: "Sprint start") { date in
-                    if let date { store.setSprintStart(projectId: project.id, date: date) }
-                }
-            }
-            SidePanelProperty(label: "Length") {
-                FocusPicker(
-                    options: SprintState.lengthChoices,
-                    selection: Binding(get: { sprint.lengthWeeks }, set: { store.setSprintLength(projectId: project.id, weeks: $0) }),
-                    title: { SprintState.lengthLabel($0) }
-                )
-                .accessibilityLabel("Sprint length")
-            }
-            SidePanelProperty(label: "Goal") {
-                TextField(SprintState.goalPlaceholder, text: Binding(
-                    get: { sprint.goal },
-                    set: { store.setSprintGoal(projectId: project.id, goal: $0) }
-                ))
-                .focusField()
-                .accessibilityLabel("Sprint goal")
-            }
-            Text("\(sprint.name) ends \(SprintState.shortDate(sprint.endDate)). \(sprint.nextName) runs \(sprint.nextDateRange).")
-                .font(.system(size: 12))
-                .foregroundColor(Focus.text3)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 2)
-            HStack(spacing: 8) {
-                Button("Complete sprint…") { model.completingSprintProjectId = project.id }
-                    .buttonStyle(.focus())
-                if !project.pastSprints.isEmpty {
-                    Button("\(project.pastSprints.count) past") { model.showSprints(of: project.id) }
-                        .buttonStyle(.focus(.ghost))
-                        .help("Show past sprints")
-                }
-            }
-            .padding(.top, 6)
+                Text("\(sprint.name) · \(sprint.dateRange). The sprint is shared with every project that takes part; its number, dates and goal are on the Sprints tab.")
+                    .font(.system(size: 12))
+                    .foregroundColor(Focus.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Open Sprints") { model.showSprints(of: project.id) }
+                    .buttonStyle(.focus(.ghost))
+                    .padding(.top, 2)
             }
         }
         .padding(.top, 4)

@@ -40,12 +40,13 @@ final class TaskProjectsBatch3Tests: XCTestCase {
         XCTAssertEqual(ws.schemaVersion, Workspace.currentSchemaVersion)
         XCTAssertGreaterThanOrEqual(Workspace.currentSchemaVersion, 3)
         let project = try XCTUnwrap(ws.projects.first)
-        XCTAssertEqual(project.sprint.lengthWeeks, 2)
-        XCTAssertEqual(project.sprint.number, 3)
+        XCTAssertEqual(ws.sprint.lengthWeeks, 2, "the project's sprint became the workspace's")
+        XCTAssertEqual(ws.sprint.number, 3)
+        XCTAssertNil(project.legacySprint)
         XCTAssertEqual(project.notes, "")
         XCTAssertNil(project.targetDate)
         XCTAssertFalse(project.isArchived)
-        XCTAssertTrue(project.pastSprints.isEmpty)
+        XCTAssertTrue(ws.pastSprints.isEmpty)
         let milestone = try XCTUnwrap(ws.milestones.first)
         XCTAssertEqual(milestone.notes, "")
         XCTAssertFalse(milestone.isCompleted)
@@ -57,9 +58,9 @@ final class TaskProjectsBatch3Tests: XCTestCase {
          "archivedAt": "nonsense", "pastSprints": [{"number": 2}, 5]}
         """
         let p = try decoder.decode(Project.self, from: Data(bad.utf8))
-        XCTAssertEqual(p.sprint.lengthWeeks, 4, "clamped to 1–4 weeks")
+        XCTAssertEqual(p.legacySprint?.lengthWeeks, 4, "clamped to 1–4 weeks")
         XCTAssertNil(p.archivedAt)
-        XCTAssertEqual(p.pastSprints.map(\.number), [2], "broken history entries are dropped")
+        XCTAssertEqual(p.legacyPastSprints.map(\.number), [2], "broken history entries are dropped")
     }
 
     func testNewFieldsRoundTrip() async throws {
@@ -67,8 +68,8 @@ final class TaskProjectsBatch3Tests: XCTestCase {
         ws.projects[0].notes = "## Goal"
         ws.projects[0].targetDate = t0
         ws.projects[0].archivedAt = t0
-        ws.projects[0].sprint.lengthWeeks = 3
-        ws.projects[0].pastSprints = [PastSprint(number: 1, startDate: t0, endDate: t0, goal: "G",
+        ws.sprint.lengthWeeks = 3
+        ws.pastSprints = [PastSprint(number: 1, startDate: t0, endDate: t0, goal: "G",
                                                  taskIds: [ws.tasks[0].id], doneTaskIds: [], completedAt: t0)]
         ws.milestones[0].notes = "notes"
         ws.milestones[0].completedAt = t0
@@ -86,22 +87,21 @@ final class TaskProjectsBatch3Tests: XCTestCase {
 
     func testCompleteSprintKeepsHistoryAndStartsToday() async {
         let (store, pid) = await makeStore()
-        let start = store.project(pid)!.sprint.startDate
-        store.setSprintGoal(projectId: pid, goal: "Ship v1")
+        let start = store.sprint.startDate
+        store.setSprintGoal("Ship v1")
         let done = store.addTask(title: "done", projectId: pid, now: t0)!
         store.setStatus(done, .done, now: t0)
         let open = store.addTask(title: "open", projectId: pid, now: t0)!
         let next = store.addTask(title: "next", projectId: pid, sprintSlot: .next, now: t0)!
         let now = day(20, from: start)
 
-        store.completeSprint(projectId: pid, unfinished: .moveToNextSprint, nextGoal: "  Polish  ", now: now)
+        store.completeSprint(unfinished: .moveToNextSprint, nextGoal: "  Polish  ", now: now)
 
-        let project = store.project(pid)!
-        XCTAssertEqual(project.sprint.number, 2)
-        XCTAssertEqual(project.sprint.startDate, Calendar.current.startOfDay(for: now), "starts the day it's completed")
-        XCTAssertEqual(project.sprint.goal, "Polish")
-        XCTAssertEqual(project.pastSprints.count, 1)
-        let past = project.pastSprints[0]
+        XCTAssertEqual(store.sprint.number, 2)
+        XCTAssertEqual(store.sprint.startDate, Calendar.current.startOfDay(for: now), "starts the day it's completed")
+        XCTAssertEqual(store.sprint.goal, "Polish")
+        XCTAssertEqual(store.workspace.pastSprints.count, 1)
+        let past = store.workspace.pastSprints[0]
         XCTAssertEqual(past.number, 1)
         XCTAssertEqual(past.goal, "Ship v1")
         XCTAssertEqual(past.startDate, start)
@@ -116,16 +116,16 @@ final class TaskProjectsBatch3Tests: XCTestCase {
         XCTAssertEqual(store.sprintLabel(for: store.task(done)!), "Sprint 1", "no more \"Closed sprint\"")
         XCTAssertEqual(store.task(open)?.sprintSlot, .active)
         XCTAssertEqual(store.task(next)?.sprintSlot, .active)
-        XCTAssertEqual(store.pastSprints(pid).map(\.number), [1])
+        XCTAssertEqual(store.pastSprints().map(\.number), [1])
         XCTAssertEqual(Set(store.tasks(of: past).map(\.id)), [done, open])
 
         // A second sprint goes on top of the history (newest first)
-        store.completeSprint(projectId: pid, now: day(1, from: now))
-        XCTAssertEqual(store.pastSprints(pid).map(\.number), [2, 1])
+        store.completeSprint(now: day(1, from: now))
+        XCTAssertEqual(store.pastSprints().map(\.number), [2, 1])
 
         // One undo step takes it all back
         store.undo()
-        XCTAssertEqual(store.pastSprints(pid).map(\.number), [1])
+        XCTAssertEqual(store.pastSprints().map(\.number), [1])
     }
 
     func testCompleteSprintUnfinishedChoices() async {
@@ -133,7 +133,7 @@ final class TaskProjectsBatch3Tests: XCTestCase {
             let (store, pid) = await makeStore()
             let open = store.addTask(title: "open", projectId: pid, now: t0)!
             store.setStatus(open, .inProgress, now: t0)
-            store.completeSprint(projectId: pid, unfinished: choice, now: t0)
+            store.completeSprint(unfinished: choice, now: t0)
             let task = store.task(open)!
             XCTAssertEqual(task.statusId, WorkflowStatus.inProgress.id, "\(choice): status is untouched")
             switch choice {
@@ -143,8 +143,8 @@ final class TaskProjectsBatch3Tests: XCTestCase {
                 XCTAssertEqual(task.sprintSlot, .closed)
                 XCTAssertEqual(task.closedSprintNumber, 1)
             }
-            XCTAssertEqual(store.project(pid)?.pastSprints.first?.taskIds, [open])
-            XCTAssertEqual(store.project(pid)?.pastSprints.first?.doneTaskIds, [])
+            XCTAssertEqual(store.workspace.pastSprints.first?.taskIds, [open])
+            XCTAssertEqual(store.workspace.pastSprints.first?.doneTaskIds, [])
         }
     }
 
@@ -154,29 +154,29 @@ final class TaskProjectsBatch3Tests: XCTestCase {
         comps.year = 2026; comps.month = 10; comps.day = 12; comps.hour = 15
         let start = Calendar.current.date(from: comps)!
 
-        store.setSprintStart(projectId: pid, date: start)
-        XCTAssertEqual(store.project(pid)?.sprint.startDate, Calendar.current.startOfDay(for: start))
-        XCTAssertEqual(store.sprintDateRange(pid), "Oct 12 – Oct 25")
+        store.setSprintStart(date: start)
+        XCTAssertEqual(store.sprint.startDate, Calendar.current.startOfDay(for: start))
+        XCTAssertEqual(store.sprintDateRange(), "Oct 12 – Oct 25")
 
-        store.setSprintLength(projectId: pid, weeks: 1)
-        XCTAssertEqual(store.sprintDateRange(pid), "Oct 12 – Oct 18")
-        XCTAssertEqual(store.project(pid)?.sprint.nextDateRange, "Oct 19 – Oct 25")
-        store.setSprintLength(projectId: pid, weeks: 7)
-        XCTAssertEqual(store.project(pid)?.sprint.lengthWeeks, 4)
-        XCTAssertEqual(store.sprintDateRange(pid), "Oct 12 – Nov 8")
-        store.setSprintLength(projectId: pid, weeks: 0)
-        XCTAssertEqual(store.project(pid)?.sprint.lengthWeeks, 1)
+        store.setSprintLength(weeks: 1)
+        XCTAssertEqual(store.sprintDateRange(), "Oct 12 – Oct 18")
+        XCTAssertEqual(store.sprint.nextDateRange, "Oct 19 – Oct 25")
+        store.setSprintLength(weeks: 7)
+        XCTAssertEqual(store.sprint.lengthWeeks, 4)
+        XCTAssertEqual(store.sprintDateRange(), "Oct 12 – Nov 8")
+        store.setSprintLength(weeks: 0)
+        XCTAssertEqual(store.sprint.lengthWeeks, 1)
 
-        store.setSprintNumber(projectId: pid, number: 0)
-        XCTAssertEqual(store.project(pid)?.sprint.number, 1)
-        store.setSprintNumber(projectId: pid, number: 14)
-        XCTAssertEqual(store.sprintName(pid), "Sprint 14")
+        store.setSprintNumber(0)
+        XCTAssertEqual(store.sprint.number, 1)
+        store.setSprintNumber(14)
+        XCTAssertEqual(store.sprintName(), "Sprint 14")
 
         // The length carries to the next sprint
-        store.setSprintLength(projectId: pid, weeks: 3)
-        store.completeSprint(projectId: pid, now: t0)
-        XCTAssertEqual(store.project(pid)?.sprint.lengthWeeks, 3)
-        XCTAssertEqual(store.project(pid)?.sprint.lengthInDays, 21)
+        store.setSprintLength(weeks: 3)
+        store.completeSprint(now: t0)
+        XCTAssertEqual(store.sprint.lengthWeeks, 3)
+        XCTAssertEqual(store.sprint.lengthInDays, 21)
     }
 
     // MARK: - Archive (#18)
@@ -353,7 +353,7 @@ final class TaskProjectsBatch3Tests: XCTestCase {
         let a = store.addTask(title: "A", projectId: pid, now: t0)!
         let b = store.addTask(title: "B", projectId: pid, now: t0)!
         store.setStatus(a, .done)
-        store.completeSprint(projectId: pid, now: t0)
+        store.completeSprint(now: t0)
         let model = TasksViewModel()
         model.select(.project(pid))
 

@@ -32,14 +32,12 @@ struct TasksRootView: View {
         }
         .onChange(of: store.isLoaded) { loaded in if loaded { model.dropStaleIds(store) } }
         .sheet(isPresented: Binding(
-            get: { model.completingSprintProjectId != nil },
-            set: { if !$0 { model.completingSprintProjectId = nil } }
+            get: { model.completingSprint },
+            set: { if !$0 { model.completingSprint = false } }
         )) {
-            if let id = model.completingSprintProjectId, let project = store.project(id) {
-                CompleteSprintSheet(project: project)
-                    .environmentObject(store)
-                    .environmentObject(model)
-            }
+            CompleteSprintSheet()
+                .environmentObject(store)
+                .environmentObject(model)
         }
         .sheet(isPresented: Binding(
             get: { model.adjustingTimeTaskId != nil },
@@ -198,24 +196,24 @@ struct TasksRootView: View {
         store.isLoaded && store.projects.isEmpty && model.scope.projectId == nil
     }
 
-    /// List, and Sprints of a project: views drawn by the native table
+    /// List and Sprints: views drawn by the native table
     private var usesNativeTable: Bool {
         guard !showsFirstProject else { return false }
         switch model.effectiveTab {
         case .list: return true
-        case .sprints: return model.scope.projectId.flatMap { store.project($0) } != nil
+        case .sprints: return true
         case .board, .milestones, .overview: return false
         }
     }
 
     @ViewBuilder
     private var nativeTableContent: some View {
-        if model.effectiveTab == .sprints, let project = model.scope.projectId.flatMap({ store.project($0) }) {
+        if model.effectiveTab == .sprints {
             VStack(alignment: .leading, spacing: 0) {
-                SprintHeader(project: project)
+                SprintHeader(scope: model.scope, tight: true)
                     .padding(.top, 24)
                     .padding(.horizontal, TaskTableCell.sidePadding)
-                SprintPlanView(projectId: project.id)
+                SprintPlanView(scope: model.scope)
             }
         } else {
             TaskListView()
@@ -235,8 +233,8 @@ struct TasksRootView: View {
     private var scopeContent: some View {
         let project = model.scope.projectId.flatMap { store.project($0) }
         VStack(alignment: .leading, spacing: 0) {
-            if let project, project.usesSprints, !model.scope.isMilestone, model.effectiveTab == .board || model.effectiveTab == .sprints {
-                SprintHeader(project: project)
+            if model.scopeUsesSprints, !model.scope.isMilestone, model.effectiveTab == .board || model.effectiveTab == .sprints {
+                SprintHeader(scope: model.scope)
             }
             switch model.effectiveTab {
             case .board:
@@ -244,7 +242,7 @@ struct TasksRootView: View {
             case .list:
                 TaskListView()
             case .sprints:
-                if let project { SprintPlanView(projectId: project.id) }
+                SprintPlanView(scope: model.scope)
             case .milestones:
                 MilestonesView()
             case .overview:

@@ -166,7 +166,7 @@ struct TasksEmptyStateView: View {
             if let project {
                 FocusEmptyState(
                     systemImage: "rectangle.split.3x1",
-                    title: "Nothing in \(project.sprint.name) yet",
+                    title: "Nothing in \(store.sprintName()) yet",
                     message: "The board shows the active sprint." + waitingText + " Plan tasks into it in Sprints, or add a new one.",
                     actionTitle: "Plan in Sprints",
                     action: { model.tab = .sprints },
@@ -177,7 +177,7 @@ struct TasksEmptyStateView: View {
                 FocusEmptyState(
                     systemImage: "rectangle.split.3x1",
                     title: "No tasks in any active sprint",
-                    message: "The board shows each project's active sprint." + waitingText + " List shows every task.",
+                    message: "The board shows the active sprint." + waitingText + " List shows every task.",
                     actionTitle: "Open List",
                     action: { model.tab = .list },
                     secondaryTitle: "New task",

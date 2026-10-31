@@ -126,7 +126,7 @@ struct ProjectOverviewCard: View {
             FocusTimerRing(progress: 0, isRunning: false, size: 28, label: card.project.name) {}
                 .disabled(true)
                 .opacity(0.35)
-                .help(card.project.usesSprints ? "Nothing to start: plan a task in \(card.project.sprint.name)" : "Nothing to start: add a task")
+                .help(card.project.usesSprints ? "Nothing to start: plan a task in \(card.sprint.name)" : "Nothing to start: add a task")
         }
     }
 
@@ -155,7 +155,7 @@ struct ProjectOverviewCard: View {
             }
             FocusProgressBar(fraction: card.sprintPlanned == 0 ? 0 : Double(card.sprintDone) / Double(card.sprintPlanned))
                 .help(!card.project.usesSprints ? "Done of every task on the board (no sprints)"
-                      : card.sprintDay.isOver ? "The sprint's last day has passed: complete it in Sprints" : card.project.sprint.dateRange)
+                      : card.sprintDay.isOver ? "The sprint's last day has passed: complete it in Sprints" : card.sprint.dateRange)
         }
     }
 
@@ -165,6 +165,7 @@ struct ProjectOverviewCard: View {
         HStack(alignment: .top, spacing: 0) {
             if card.project.usesSprints { stat(Self.hours(card.trackedInSprint), "this sprint") }
             stat(Self.hours(card.trackedThisWeek), "this week")
+            stat(store.projectCompletion(card.project.id).percentText, "complete")
             overdueStat
             stat("\(card.inProgressCount)", "in progress")
         }

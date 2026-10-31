@@ -1,10 +1,10 @@
 import Foundation
 
-/// The active sprint of a project. Each project picks a length of 1–4 weeks (2 by default);
-/// the next sprint is implied and starts the day after this one ends.
+/// The active sprint, shared by every project (Workspace.sprint). It lasts 1–4 weeks (2 by
+/// default); the next sprint is implied and starts the day after this one ends.
 struct SprintState: Codable, Equatable, Sendable {
     static let defaultLengthWeeks = 2
-    /// Lengths a project can choose, in weeks
+    /// Lengths a sprint can have, in weeks
     static let lengthChoices = Array(1...4)
     static let goalPlaceholder = "Set a goal for this sprint"
 
@@ -37,6 +37,13 @@ struct SprintState: Codable, Equatable, Sendable {
     var name: String { "Sprint \(number)" }
     /// "Sprint 15"
     var nextName: String { "Sprint \(number + 1)" }
+
+    /// The sprint `ahead` places after this one (1 = the next). Sprints follow each other with this
+    /// sprint's length, so sprint N+k starts k lengths after this one.
+    func name(ahead: Int) -> String { "Sprint \(number + ahead)" }
+    func startDate(ahead: Int) -> Date { Self.day(startDate, adding: lengthInDays * ahead) }
+    func endDate(ahead: Int) -> Date { Self.day(startDate, adding: lengthInDays * (ahead + 1) - 1) }
+    func dateRange(ahead: Int) -> String { Self.rangeString(startDate(ahead: ahead), endDate(ahead: ahead)) }
     /// "Oct 26 – Nov 8"
     var dateRange: String { Self.rangeString(startDate, endDate) }
     /// "Nov 9 – Nov 22"
@@ -99,10 +106,10 @@ struct PastSprint: Identifiable, Codable, Equatable, Sendable {
     var plannedMinutes: Int
     /// Expected minutes of the done tasks: what the sprint delivered, the velocity
     var doneMinutes: Int
-    /// Seconds tracked on the project during the sprint's dates (from the time log)
+    /// Seconds tracked on the sprint's projects during its dates (from the time log)
     var trackedSeconds: TimeInterval
-    /// The project's capacity for the whole sprint (weekly hours × weeks) when it closed; nil when
-    /// the project had none
+    /// The capacity of the projects in the sprint (their weekly hours added up × weeks) when it
+    /// closed; nil when none of them had one
     var capacityHours: Double?
     /// The numbers were worked out afterwards (schema 10 migration) from the tasks as they are now,
     /// so expected times may have changed since. Shown with a "≈".
@@ -145,7 +152,13 @@ struct PastSprint: Identifiable, Codable, Equatable, Sendable {
     var statsSummary: String { "\(doneLabel) · \(hoursLabel) · \(dateRange)" }
     /// The past sprint's group header hint, after the header's own task count:
     /// "8 done · 18h planned · 21h tracked · Oct 12 – Oct 25"
-    var headerHint: String { "\(doneTaskIds.count) done · \(hoursLabel) · \(dateRange)" }
+    var headerHint: String { "\(doneTaskIds.count) done · \(hoursLabel) · \(dateRange)" + (completionText.map { " · \($0)" } ?? "") }
+
+    /// "80% of planned time done", or nil when nothing was planned
+    var completionText: String? {
+        guard plannedMinutes > 0 else { return nil }
+        return "\(Int((Double(doneMinutes) / Double(plannedMinutes) * 100).rounded()))% done"
+    }
 
     private enum CodingKeys: String, CodingKey {
         case id, number, startDate, endDate, goal, taskIds, doneTaskIds, completedAt
@@ -233,22 +246,24 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
     var name: String
     /// 0xRRGGBB, normally one of Focus.projectPalette
     var colorHex: UInt32
-    var sprint: SprintState
     var createdAt: Date
     /// Markdown description
     var notes: String
     var targetDate: Date?
     /// Set while the project is archived: hidden from the sidebar list, pickers and the menu bar.
     var archivedAt: Date?
-    /// Completed sprints, oldest first
-    var pastSprints: [PastSprint]
+    /// Schema 12 and older kept a sprint and its history on each project. Read from old files only
+    /// (never written); Workspace.migrated() lifts them to the workspace's sprint.
+    var legacySprint: SprintState?
+    var legacyPastSprints: [PastSprint]
     /// The workflow, in board order. Always has a Not started and a Done status (WorkflowRules).
     var statuses: [WorkflowStatus]
     /// Hours a week you put into this project; nil when not set. Sprint planning compares the plan
-    /// with it (× the sprint's weeks) and milestone health uses it (÷ 5 working days).
+    /// with the capacities of all projects added up (× the sprint's weeks) and milestone health
+    /// uses it (÷ 5 working days).
     var weeklyCapacityHours: Double?
-    /// The project is planned in sprints (the default). Off: no Sprints tab, Board shows every open
-    /// task, and nothing mentions sprints (TaskStore+Capacity.swift).
+    /// The project takes part in the workspace's sprint (the default). Off: its tasks aren't in any
+    /// sprint, Board shows every open task, and nothing mentions sprints (TaskStore+Capacity.swift).
     var usesSprints: Bool
     /// The view the project opens on; nil opens on the one used last.
     var defaultView: ProjectView?
@@ -259,20 +274,19 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
     /// Shown in place of the letter tile; nil keeps the letter.
     var icon: ProjectIcon?
 
-    init(id: UUID = UUID(), name: String, colorHex: UInt32, sprint: SprintState, createdAt: Date = Date(),
-         notes: String = "", targetDate: Date? = nil, archivedAt: Date? = nil, pastSprints: [PastSprint] = [],
+    init(id: UUID = UUID(), name: String, colorHex: UInt32, createdAt: Date = Date(),
+         notes: String = "", targetDate: Date? = nil, archivedAt: Date? = nil,
          statuses: [WorkflowStatus] = WorkflowPreset.simple.statuses, weeklyCapacityHours: Double? = nil,
          usesSprints: Bool = true, defaultView: ProjectView? = nil, defaultExpectedMinutes: Int? = nil,
          defaultSprintSlot: SprintSlot = .active, icon: ProjectIcon? = nil) {
         self.id = id
         self.name = name
         self.colorHex = colorHex
-        self.sprint = sprint
         self.createdAt = createdAt
         self.notes = notes
         self.targetDate = targetDate
         self.archivedAt = archivedAt
-        self.pastSprints = pastSprints
+        self.legacyPastSprints = []
         self.statuses = WorkflowRules.repaired(statuses)
         self.weeklyCapacityHours = Self.cleanCapacity(weeklyCapacityHours)
         self.usesSprints = usesSprints
@@ -298,9 +312,6 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
     /// Only a plannable slot can be a default (a past sprint can't take new tasks).
     static func cleanSlot(_ slot: SprintSlot) -> SprintSlot { slot == .closed ? .active : slot }
 
-    /// The project's capacity for one whole sprint (weekly × weeks), or nil without a capacity.
-    var sprintCapacityHours: Double? { weeklyCapacityHours.map { $0 * Double(sprint.lengthWeeks) } }
-
     /// Expected minutes a new task starts with.
     var newTaskExpectedMinutes: Int { defaultExpectedMinutes ?? TaskItem.defaultExpectedMinutes }
 
@@ -310,9 +321,28 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
     /// First letter for the project tile
     var initial: String { name.trimmingCharacters(in: .whitespaces).first.map { String($0).uppercased() } ?? "?" }
 
+    // `sprint` and `pastSprints` are the keys schema 12 and older used; they are only read.
     private enum CodingKeys: String, CodingKey {
         case id, name, colorHex, sprint, createdAt, notes, targetDate, archivedAt, pastSprints, statuses
         case weeklyCapacityHours, usesSprints, defaultView, defaultExpectedMinutes, defaultSprintSlot, icon
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(colorHex, forKey: .colorHex)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(notes, forKey: .notes)
+        try c.encodeIfPresent(targetDate, forKey: .targetDate)
+        try c.encodeIfPresent(archivedAt, forKey: .archivedAt)
+        try c.encode(statuses, forKey: .statuses)
+        try c.encodeIfPresent(weeklyCapacityHours, forKey: .weeklyCapacityHours)
+        try c.encode(usesSprints, forKey: .usesSprints)
+        try c.encodeIfPresent(defaultView, forKey: .defaultView)
+        try c.encodeIfPresent(defaultExpectedMinutes, forKey: .defaultExpectedMinutes)
+        try c.encode(defaultSprintSlot, forKey: .defaultSprintSlot)
+        try c.encodeIfPresent(icon, forKey: .icon)
     }
 
     init(from decoder: Decoder) throws {
@@ -320,12 +350,12 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
         id = try c.decode(UUID.self, forKey: .id)
         name = c.decode(.name, or: "Untitled project")
         colorHex = c.decode(.colorHex, or: 0x64748B)
-        sprint = c.decode(.sprint, or: SprintState(startDate: SprintState.defaultStart()))
+        legacySprint = c.decodeOptional(.sprint)
         createdAt = c.decode(.createdAt, or: Date())
         notes = c.decode(.notes, or: "")
         targetDate = c.decodeOptional(.targetDate)
         archivedAt = c.decodeOptional(.archivedAt)
-        pastSprints = c.decodeLossyArray(.pastSprints)
+        legacyPastSprints = c.decodeLossyArray(.pastSprints)
         // Older files have no workflow: the Simple one (To do, In progress, Done)
         statuses = WorkflowRules.repaired(c.decodeLossyArray(.statuses))
         // Schema 9 and older: no capacity, sprints on, no defaults, the letter tile

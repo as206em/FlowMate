@@ -3,13 +3,11 @@ import SwiftUI
 // The Today page (TaskScope.today): what to work on today across every project.
 //
 //   Running      the timers running now (Pause all)
-//   Overdue      open tasks due before today (Move all to today · Tomorrow)
-//   Due today    open tasks due today
+//   Due          open tasks due today, and overdue ones above them (Move overdue to today · Tomorrow)
 //   My focus     tasks pinned for today (⌘T, right-click › Add to Today, or ⌘N here), in your
 //                order (drag to reorder, or drag a task in from the sections above);
 //                "Planned 5h 30m" is what's left of their expected time
 //   Done today   tasks finished today
-//   Tracked today  "3h 20m" with a bar per project
 //
 // Rows are the list's rows (status circle, project, title, due, priority, expected, timer ring;
 // click opens the panel; ↑/↓ ↵ Space work). Hovering an overdue, due or pinned row shows
@@ -38,15 +36,13 @@ struct TodayView: View {
                 composerOnTop: focus && model.isComposerPinned(TasksViewModel.listComposerKey(section.key)),
                 open: !model.isCollapsed(section.key),
                 gap: index == 0 ? 0 : 22,
-                actions: actions(section),
+                actions: actions(section, hasOverdue: !plan.overdue.isEmpty),
                 liveHint: focus ? .todayPlanned : nil,
-                risk: section.kind == .overdue,
+                risk: section.kind == .due && !plan.overdue.isEmpty,
                 draggable: section.kind != .done,
                 display: RowDisplay.maker(store: store, model: model, today: true)
             )
         }
-        builder.sectionTitle("Tracked today")
-        builder.trackedToday()
         builder.spacer("bottom", 72)
         return TaskTable(
             showProject: true,
@@ -66,18 +62,18 @@ struct TodayView: View {
         case .done:
             let tracked = section.tasks.reduce(0) { $0 + $1.spentSeconds }
             return tracked >= 60 ? "\(TodayFormat.duration(tracked)) spent on them" : ""
-        case .overdue:
-            return ""
-        case .running, .dueToday:
+        case .due:
+            return plan.overdue.isEmpty ? "" : "· \(plan.overdue.count) overdue"
+        case .running:
             return ""
         }
     }
 
-    private func actions(_ section: TodaySection) -> [GroupHeaderAction] {
+    private func actions(_ section: TodaySection, hasOverdue: Bool) -> [GroupHeaderAction] {
         switch section.kind {
         case .running: return section.tasks.count > 1 ? [.pauseAll] : []
-        case .overdue: return [.moveOverdueToToday, .moveOverdueToTomorrow]
-        case .dueToday, .focus, .done: return []
+        case .due: return hasOverdue ? [.moveOverdueToToday, .moveOverdueToTomorrow] : []
+        case .focus, .done: return []
         }
     }
 }

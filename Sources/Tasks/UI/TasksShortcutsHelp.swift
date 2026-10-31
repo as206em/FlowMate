@@ -24,7 +24,7 @@ struct TasksShortcutsHelp: View {
             Shortcut(label: "In the palette: commands only", keys: [">"]),
             Shortcut(label: "In the palette: open in a panel, stay here", keys: ["⇧", "↵"]),
             Shortcut(label: "Filter this view", keys: ["⌘", "F"]),
-            Shortcut(label: "Board, List, Sprints, Milestones", keys: ["⌘", "1–4"]),
+            Shortcut(label: "Board, List, Sprints, Milestones", keys: ["⌘", "1–5"]),
             Shortcut(label: "Previous or next in the sidebar (views too)", keys: ["⌥", "⌘", "↑↓"]),
             Shortcut(label: "Move to the sidebar", keys: ["⌘", "0"]),
             Shortcut(label: "Sidebar: show milestones, hide them", keys: ["→", "←"]),

@@ -80,7 +80,7 @@ extension TaskStore {
                 unmatchedMilestone = "@" + query
             }
         }
-        if let slot = input.slot { applied.append(sprintLabel(slot, projectId: target)) }
+        if let slot = input.slot { applied.append(sprintLabel(slot)) }
         for query in input.labelQueries {
             draft.addLabel(named: query, existing: matchLabel(query))
         }
@@ -137,7 +137,7 @@ extension TaskStore {
         if let query = input.milestoneQuery {
             parts.append("◆ " + (plan.draft.milestoneId.flatMap { milestone($0)?.name } ?? "No milestone “\(query)”"))
         }
-        if let slot = input.slot { parts.append(sprintLabel(slot, projectId: plan.projectId)) }
+        if let slot = input.slot { parts.append(sprintLabel(slot)) }
         parts += plan.draft.labelIds.compactMap { label($0).map { "%" + $0.name } }
         parts += plan.draft.newLabelNames.map { "New label %\($0)" }
         if let due = input.dueDate { parts.append("Due " + TaskDates.dueLabel(due, now: now)) }

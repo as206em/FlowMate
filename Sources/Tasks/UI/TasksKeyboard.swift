@@ -6,7 +6,7 @@ import SwiftUI
 enum TasksShortcut: Equatable, CaseIterable {
     case undo, redo
     case newTask, newProject, find
-    case tab1, tab2, tab3, tab4
+    case tab1, tab2, tab3, tab4, tab5
     case selectPrevious, selectNext, open, toggleTimer
     case extendUp, extendDown, selectAll
     case previousTask, nextTask
@@ -41,7 +41,7 @@ enum TasksShortcut: Equatable, CaseIterable {
     /// (arrows, Return, Space, letters, ⌘⌫, ⌘Z) and pass through.
     var worksWhileTyping: Bool {
         switch self {
-        case .newTask, .newProject, .find, .tab1, .tab2, .tab3, .tab4, .help, .palette, .focusSidebar: return true
+        case .newTask, .newProject, .find, .tab1, .tab2, .tab3, .tab4, .tab5, .help, .palette, .focusSidebar: return true
         // ⌘[ and ⌘] aren't text editing keys, so they step through tasks even from the panel's fields
         case .previousTask, .nextTask: return true
         default: return false
@@ -74,6 +74,7 @@ enum TasksShortcut: Equatable, CaseIterable {
         case .tab2: return 1
         case .tab3: return 2
         case .tab4: return 3
+        case .tab5: return 4
         default: return nil
         }
     }
@@ -166,6 +167,7 @@ enum TasksShortcut: Equatable, CaseIterable {
             case "2": return .tab2
             case "3": return .tab3
             case "4": return .tab4
+            case "5": return .tab5
             default: return nil
             }
         case [.shift]:
@@ -242,7 +244,7 @@ extension TasksViewModel {
             if !showsFilterBar { tab = .list }
             closePanel()
             requestFocus(.search)
-        case .tab1, .tab2, .tab3, .tab4:
+        case .tab1, .tab2, .tab3, .tab4, .tab5:
             guard let index = shortcut.tabIndex, index < tabs.count else { return false }
             closePanel()
             tab = tabs[index]

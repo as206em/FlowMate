@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// The dropdown that opens from the menu bar icon, in Focus (docs/design/reference/FocusMenu.dc.html):
-/// search / quick add, the tasks in progress, the proofreading tools and a footer.
+/// search / quick add, the tasks in progress and a footer.
 struct StatusMenuView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var store: TaskStore
@@ -12,10 +12,6 @@ struct StatusMenuView: View {
     /// Keyboard highlight in the search results; ↵ activates it
     @State private var highlight: MenuSearchItem?
     @State private var scrollHeight: CGFloat = 0
-    /// The proofreading tools folded to one line, so the tasks get the room (kept across launches)
-    @AppStorage(StatusMenuView.proofreadingCollapsedKey) private var proofreadingCollapsed = false
-
-    static let proofreadingCollapsedKey = "FlowMate.menuProofreadingCollapsed"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,8 +50,6 @@ struct StatusMenuView: View {
                         } else {
                             MenuInProgressSection()
                         }
-                        FocusDivider()
-                        proofreading
                     }
                     .background(GeometryReader { proxy in
                         Color.clear.preference(key: ContentHeightKey.self, value: proxy.size.height)
@@ -278,157 +272,6 @@ struct StatusMenuView: View {
             FocusStatusLabel(text: "\(name) ready", tone: .ok)
         case .failed(let message):
             FocusStatusLabel(text: "\(name) offline", tone: .risk).help(message)
-        }
-    }
-
-    // MARK: - Proofreading
-
-    /// The caption line; a click folds the tools to this one line or opens them again.
-    private var proofreadingHeader: some View {
-        Button {
-            withAnimation(Focus.hoverAnimation) { proofreadingCollapsed.toggle() }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundColor(Focus.text3)
-                    .rotationEffect(.degrees(proofreadingCollapsed ? 0 : 90))
-                    .frame(width: 10)
-                FocusCaption(text: "Proofreading")
-                if proofreadingCollapsed, notice != nil {
-                    // Something needs fixing: open the tools to see it
-                    Circle().fill(Focus.risk).frame(width: 6, height: 6)
-                }
-                Spacer()
-                Text("Select text, press")
-                    .font(.system(size: 12))
-                    .foregroundColor(Focus.text3)
-                FocusKey(text: KeyboardShortcutManager.displayString(for: appState.keyboardShortcut))
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(proofreadingCollapsed ? "Show the proofreading tools" : "Fold the proofreading tools to one line")
-        .accessibilityLabel("Proofreading tools")
-        .accessibilityValue(proofreadingCollapsed ? "Collapsed" : "Expanded")
-    }
-
-    private var proofreading: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            proofreadingHeader
-            if !proofreadingCollapsed {
-                proofreadingTools
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 12)
-        .padding(.bottom, proofreadingCollapsed ? 12 : 14)
-    }
-
-    @ViewBuilder
-    private var proofreadingTools: some View {
-        if let notice = notice {
-            notice
-        }
-
-        Button {
-            MenuBarPanel.close()
-            appState.proofreadClipboard()
-        } label: {
-            Label(appState.isProcessing ? "Proofreading…" : "Proofread clipboard", systemImage: "doc.on.clipboard")
-        }
-        .buttonStyle(.focus(fullWidth: true))
-        .disabled(appState.isProcessing)
-
-        HStack(spacing: 8) {
-            FocusTabs(
-                options: AIProvider.allCases.map { (value: $0, label: $0.displayName) },
-                selection: Binding(
-                    get: { appState.proofreadingProvider },
-                    set: { appState.setProvider($0) }
-                )
-            )
-            .fixedSize()
-            .accessibilityLabel("Provider")
-
-            if appState.modelChoices.isEmpty {
-                Text("No models found")
-                    .font(Focus.control)
-                    .foregroundColor(Focus.text3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .focusField()
-            } else {
-                FocusPicker(
-                    options: appState.modelChoices,
-                    selection: Binding(
-                        get: { appState.proofreadingModel },
-                        set: { appState.updateCurrentModel($0) }
-                    ),
-                    title: { $0 }
-                )
-                .accessibilityLabel("Model")
-            }
-        }
-
-        Toggle(isOn: Binding(
-            get: { appState.showDialog },
-            set: { appState.updateShowDialog($0) }
-        )) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Review first").font(Focus.control).foregroundColor(Focus.text)
-                Text("Off: replace right away").font(.system(size: 12)).foregroundColor(Focus.text3)
-            }
-        }
-        .toggleStyle(.focus)
-
-        if !appState.history.isEmpty {
-            recent
-        }
-    }
-
-    /// The one most important problem, if any, with a way to fix it
-    private var notice: FocusNotice? {
-        if !appState.hasAccessibilityPermission {
-            return FocusNotice(
-                text: "FlowMate needs Accessibility access to read and replace selected text.",
-                actionTitle: "Allow",
-                action: { appState.requestAccessibilityPermission() }
-            )
-        }
-        if case .failed = appState.connectionState {
-            return FocusNotice(
-                text: "Can't reach \(appState.proofreadingProvider.displayName). Check that it's running.",
-                actionTitle: "Retry",
-                action: { appState.checkConnection() }
-            )
-        }
-        if appState.isSelectedModelMissing {
-            return FocusNotice(text: "Model “\(appState.proofreadingModel)” isn't installed. Pick another.")
-        }
-        return nil
-    }
-
-    private var recent: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                FocusCaption(text: "Recent")
-                Spacer()
-                Button("Clear") { appState.clearHistory() }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 12))
-                    .foregroundColor(Focus.text3)
-            }
-            VStack(spacing: 0) {
-                ForEach(Array(appState.history.prefix(3).enumerated()), id: \.element.id) { index, item in
-                    if index > 0 { FocusDivider() }
-                    RecentResultRow(item: item) {
-                        MenuBarPanel.close()
-                        appState.showHistoryItem(item)
-                    }
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: Focus.radiusCard))
-            .focusPanel(radius: Focus.radiusCard)
         }
     }
 

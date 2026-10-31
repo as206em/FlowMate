@@ -6,13 +6,12 @@ import SwiftUI
 /// when the project has a capacity, a dashed line for it. Hover a sprint for its numbers.
 struct SprintVelocityPanel: View {
     @EnvironmentObject private var store: TaskStore
-    let projectId: UUID
 
     @State private var hovered: Int?
 
     var body: some View {
-        let points = store.velocityHistory(projectId: projectId)
-        let velocity = store.recentVelocityMinutes(projectId: projectId)
+        let points = store.velocityHistory()
+        let velocity = store.recentVelocityMinutes()
         let hasCapacity = points.contains { $0.capacityHours != nil }
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {

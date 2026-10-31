@@ -223,28 +223,17 @@ struct TaskBulkBar: View {
     }
 
     private func sprintMenu(_ ids: [UUID]) -> some View {
-        let projectId = store.commonProjectId(ids)
-        return FocusPopoverMenu(width: 220) {
-            ForEach(SprintSlot.plannable) { slot in
-                let title = projectId.map { store.sprintLabel(slot, projectId: $0) } ?? Self.slotTitle(slot)
+        FocusPopoverMenu(width: 220) {
+            ForEach(store.sprintChoices(), id: \.self) { choice in
+                let title = store.sprintTitle(choice)
                 FocusMenuItem {
-                    model.bulk({ "\(tasks($0)) moved to \(title)" }, store: store) { store.setSprintSlot($0, slot) }
+                    model.bulk({ "\(tasks($0)) moved to \(title)" }, store: store) { store.setSprint($0, choice) }
                     done()
                 } label: {
                     Text(title).font(Focus.control).foregroundColor(Focus.text)
-                    if slot != .backlog {
-                        Text(slot == .active ? "active" : "next").font(Focus.meta).foregroundColor(Focus.text3)
-                    }
+                    Text(store.sprintTag(choice)).font(Focus.meta).foregroundColor(Focus.text3)
                 }
             }
-        }
-    }
-
-    private static func slotTitle(_ slot: SprintSlot) -> String {
-        switch slot {
-        case .active: return "Active sprint"
-        case .next: return "Next sprint"
-        case .backlog, .closed: return "Backlog"
         }
     }
 

@@ -79,7 +79,7 @@ struct MilestonePageHeader: View {
 
             HStack(spacing: 8) {
                 FocusProgressBar(fraction: progress.fraction).frame(width: 96)
-                Text(progress.total == 0 ? "No tasks yet" : "\(progress.done) of \(progress.total) done")
+                Text(progress.total == 0 ? "No tasks yet" : "\(progress.done) of \(progress.total) done · \(store.milestoneCompletion(milestone.id).percentText)")
                     .font(Focus.body.monospacedDigit())
                     .foregroundColor(Focus.text2)
                     .fixedSize()

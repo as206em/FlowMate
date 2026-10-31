@@ -109,12 +109,12 @@ extension TaskStore {
             result.append(group(.label(nil), "No label") { $0.labelIds.isEmpty })
             return result
         case .sprint:
-            let sprint = scope.projectId.flatMap { project($0)?.sprint }
+            let sprint = self.sprint
             var result = [
-                group(.sprint(.active), sprint.map { "\($0.name) · active" } ?? "Active sprint",
-                      hint: sprint?.dateRange ?? "") { $0.sprintSlot == .active },
-                group(.sprint(.next), sprint.map { "\($0.nextName) · next" } ?? "Next sprint",
-                      hint: sprint?.nextDateRange ?? "") { $0.sprintSlot == .next },
+                group(.sprint(.active), "\(sprint.name) · active",
+                      hint: sprint.dateRange) { $0.sprintSlot == .active },
+                group(.sprint(.next), workspace.upcomingCount > 1 ? "Upcoming sprints" : "\(sprint.nextName) · next",
+                      hint: workspace.upcomingCount > 1 ? "" : sprint.nextDateRange) { $0.sprintSlot == .next },
                 group(.sprint(.backlog), "Backlog") { $0.sprintSlot == .backlog },
             ]
             let closed = group(.sprint(.closed), "Past sprints", drop: false) {

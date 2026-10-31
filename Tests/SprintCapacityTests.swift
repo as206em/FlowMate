@@ -61,7 +61,7 @@ final class SprintCapacityTests: XCTestCase {
         XCTAssertNil(project.icon)
         XCTAssertNil(project.defaultView)
         XCTAssertEqual(project.defaultSprintSlot, .active)
-        let past = project.pastSprints[0]
+        let past = ws.pastSprints[0]
         XCTAssertEqual(past.plannedMinutes, 210, "A 2h + B 1h30m")
         XCTAssertEqual(past.doneMinutes, 120)
         XCTAssertEqual(past.trackedSeconds, 4 * 3600, "3h + 1h inside Oct 12–25; Oct 27 is outside")
@@ -88,8 +88,141 @@ final class SprintCapacityTests: XCTestCase {
         XCTAssertEqual(p.defaultExpectedMinutes, 30)
         XCTAssertEqual(p.defaultSprintSlot, .backlog)
         XCTAssertEqual(p.icon, .symbol("hammer"))
-        XCTAssertEqual(p.pastSprints, changed.projects[0].pastSprints)
-        XCTAssertEqual(back.projects[0].pastSprints[0].plannedMinutes, 210, "a migrated file isn't migrated again")
+        XCTAssertEqual(back.pastSprints, changed.pastSprints)
+        XCTAssertEqual(back.pastSprints[0].plannedMinutes, 210, "a migrated file isn't migrated again")
+    }
+
+    func testSchema12ProjectSprintsMergeIntoOneWorkspaceSprint() throws {
+        let a = UUID(), b = UUID()
+        let iso = ISO8601DateFormatter()
+        let d1 = iso.string(from: calendar.date(from: DateComponents(year: 2026, month: 10, day: 5))!)
+        let d2 = iso.string(from: calendar.date(from: DateComponents(year: 2026, month: 10, day: 19))!)
+        func past(_ n: Int, _ done: String) -> String {
+            """
+            {"id": "\(UUID().uuidString)", "number": \(n), "startDate": "\(d1)", "endDate": "\(d1)", "completedAt": "\(done)"}
+            """
+        }
+        let json = """
+        {"schemaVersion": 12,
+         "projects": [
+           {"id": "\(a.uuidString)", "name": "A", "colorHex": 1,
+            "sprint": {"number": 3, "startDate": "\(d1)", "lengthWeeks": 2, "goal": "Old"}, "pastSprints": [\(past(2, d1))]},
+           {"id": "\(b.uuidString)", "name": "B", "colorHex": 2,
+            "sprint": {"number": 7, "startDate": "\(d2)", "lengthWeeks": 3, "goal": "Newest"}, "pastSprints": [\(past(6, d2))]}]}
+        """
+        let ws = try LocalJSONWorkspaceRepository.makeDecoder().decode(Workspace.self, from: Data(json.utf8)).migrated(now: now)
+        XCTAssertEqual(ws.sprint.number, 7, "the sprint furthest along becomes the workspace's")
+        XCTAssertEqual(ws.sprint.goal, "Newest")
+        XCTAssertEqual(ws.sprint.lengthWeeks, 3)
+        XCTAssertEqual(ws.pastSprints.map(\.number), [2, 6], "every project's history is kept, oldest first")
+        XCTAssertNil(ws.projects[0].legacySprint)
+        XCTAssertTrue(ws.projects.allSatisfy { $0.legacyPastSprints.isEmpty })
+        let data = try LocalJSONWorkspaceRepository.makeEncoder().encode(ws)
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("\"legacy"), "the old fields aren't written back")
+    }
+
+    func testSprintIsSharedByProjectsAndCapacitiesAddUp() async {
+        let (store, a) = await makeStore()
+        let b = store.addProject(name: "Beta", now: now)!
+        store.setWeeklyCapacity(a, hours: 10)
+        store.setWeeklyCapacity(b, hours: 5)
+        let ta = task(store, a, "A1", slot: .active, minutes: 60)
+        let tb = task(store, b, "B1", slot: .active, minutes: 120)
+        XCTAssertEqual(Set(store.sprintTasks(slot: .active).map(\.id)), [ta, tb], "one sprint holds both projects' tasks")
+        XCTAssertEqual(store.sprintTasks(slot: .active, in: .project(b)).map(\.id), [tb])
+        XCTAssertEqual(store.slotLoad(slot: .active).plannedMinutes, 180)
+        XCTAssertEqual(store.slotLoad(slot: .active).capacityMinutes, 15 * 2 * 60, "10h + 5h a week × 2 weeks")
+        XCTAssertEqual(store.slotLoad(scope: .project(b), slot: .active).capacityMinutes, 5 * 2 * 60)
+        store.setUsesSprints(b, false)
+        XCTAssertEqual(store.sprintTasks(slot: .active).map(\.id), [ta], "a project outside sprints adds nothing")
+        XCTAssertEqual(store.slotLoad(slot: .active).capacityMinutes, 10 * 2 * 60)
+        store.setUsesSprints(b, true)
+        store.setSprintSlot(tb, .active)
+        store.completeSprint(now: now)
+        XCTAssertEqual(store.workspace.pastSprints.count, 1)
+        XCTAssertEqual(Set(store.workspace.pastSprints[0].taskIds), [ta, tb])
+        XCTAssertEqual(store.workspace.pastSprints[0].capacityHours, 30)
+    }
+
+    func testSprintsPlannedAheadHoldTasksAndShiftOnComplete() async {
+        let (store, a) = await makeStore()
+        XCTAssertEqual(store.upcomingSprints().map(\.name), ["Sprint 2"], "the next sprint always exists")
+        store.setSprintLength(weeks: 1)
+        store.setSprintStart(date: calendar.date(from: DateComponents(year: 2026, month: 11, day: 2))!)
+        store.addUpcomingSprints(4)
+        XCTAssertEqual(store.upcomingSprints().map(\.name), ["Sprint 2", "Sprint 3", "Sprint 4", "Sprint 5", "Sprint 6"])
+        XCTAssertEqual(store.upcomingSprints().map(\.dateRange),
+                       ["Nov 9 – Nov 15", "Nov 16 – Nov 22", "Nov 23 – Nov 29", "Nov 30 – Dec 6", "Dec 7 – Dec 13"],
+                       "back to back, one week each")
+        store.setUpcomingGoal(ahead: 1, goal: "Beta")
+
+        let now1 = task(store, a, "Next", slot: .next, minutes: 60)
+        let later = task(store, a, "Later", slot: .backlog, minutes: 120)
+        let far = task(store, a, "Far", slot: .backlog, minutes: 30)
+        store.setSprint([later], .upcoming(2))
+        store.setSprint([far], .upcoming(4))
+        XCTAssertEqual(store.sprintTasks(ahead: 2).map(\.id), [later])
+        XCTAssertEqual(store.sprintTasks(slot: .next).map(\.id), [now1], "next holds only the first upcoming sprint")
+        XCTAssertEqual(store.sprintLabel(for: store.task(far)!), "Sprint 5")
+        XCTAssertEqual(store.sprintChoice(of: store.task(later)!), .upcoming(2))
+        XCTAssertEqual(store.slotLoad(slot: .next, ahead: 2).plannedMinutes, 120)
+
+        store.completeSprint(now: now)
+        XCTAssertEqual(store.sprint.number, 2)
+        XCTAssertEqual(store.task(now1)?.sprintSlot, .active, "next becomes active")
+        XCTAssertEqual(store.sprintChoice(of: store.task(later)!), .upcoming(1), "Sprint 3 is the next one now")
+        XCTAssertEqual(store.sprintChoice(of: store.task(far)!), .upcoming(3))
+        XCTAssertEqual(store.upcomingSprints().map(\.name), ["Sprint 3", "Sprint 4", "Sprint 5", "Sprint 6"])
+        XCTAssertEqual(store.sprint.goal, "Beta", "the goal planned for Sprint 2 carries over")
+
+        // Taking the last sprint away sends its tasks to the backlog
+        store.removeLastUpcomingSprint()
+        store.removeLastUpcomingSprint()
+        XCTAssertEqual(store.task(far)?.sprintSlot, .backlog)
+        XCTAssertEqual(store.upcomingSprints().count, 2)
+        store.setSprint([later], .active)
+        XCTAssertEqual(store.task(later)?.sprintSlot, .active)
+        XCTAssertNil(store.task(later)?.laterSprint)
+    }
+
+    func testCompletionRatesWeighByExpectedTime() async {
+        let (store, pid) = await makeStore()
+        let big = task(store, pid, "Big", slot: .active, minutes: 180)
+        task(store, pid, "Small", slot: .active, minutes: 60)
+        store.setStatus(big, .done, now: now)
+        let c = store.projectCompletion(pid)
+        XCTAssertEqual(c.doneCount, 1)
+        XCTAssertEqual(c.totalCount, 2)
+        XCTAssertEqual(c.percentText, "75%", "3h of 4h, not 1 of 2 tasks")
+        XCTAssertEqual(c.detail, "3h of 4h · 1 of 2 tasks")
+        var canceled = store.task(big)!
+        canceled.statusCategory = .canceled
+        canceled.expectedMinutes = 600
+        XCTAssertEqual(Completion(store.tasks(of: pid) + [canceled]), c, "canceled tasks aren't part of the work")
+        XCTAssertEqual(store.sprintCompletion().percentText, "75%")
+        XCTAssertEqual(Completion().percentText, "0%")
+        XCTAssertEqual(Completion().detail, "No tasks yet")
+    }
+
+    func testSprintBurnupFollowsDoneAndAddedScope() async {
+        let (store, pid) = await makeStore()
+        let start = calendar.startOfDay(for: now)
+        store.setSprintStart(date: start)
+        store.setSprintLength(weeks: 1)
+        let a = task(store, pid, "A", slot: .active, minutes: 120)
+        let day2 = calendar.date(byAdding: .day, value: 2, to: start)!.addingTimeInterval(3600)
+        store.setStatus(a, .done, now: day2)
+        let burnup = store.sprintBurnup(now: day2, calendar: calendar)
+        XCTAssertEqual(burnup.days.count, 3, "start to today")
+        XCTAssertEqual(burnup.days.map(\.doneHours), [0, 0, 2])
+        XCTAssertEqual(burnup.plannedHours, 2)
+        XCTAssertEqual(burnup.days.first?.plannedHours, 2, "planned time is never below what's done")
+        // The ideal pace ends at the plan on the last day
+        XCTAssertEqual(burnup.idealHours(on: burnup.end, calendar: calendar), 2, accuracy: 0.001)
+        XCTAssertGreaterThan(burnup.aheadHours, 0)
+        // The scope log keeps the sprint's earlier plan
+        XCTAssertFalse(store.workspace.sprintScope.isEmpty)
+        XCTAssertTrue(store.workspace.sprintScope.allSatisfy { $0.sprint == store.sprint.number })
     }
 
     func testBrokenIconAndBadSettingsDecodeTolerantly() throws {
@@ -120,27 +253,27 @@ final class SprintCapacityTests: XCTestCase {
         store.startTimer(a, now: now)
         store.pauseTimer(a, now: hoursLater(1))
 
-        var active = store.slotLoad(projectId: pid, slot: .active, now: hoursLater(2))
+        var active = store.slotLoad(scope: .project(pid), slot: .active, now: hoursLater(2))
         XCTAssertEqual(active.count, 2)
         XCTAssertEqual(active.plannedMinutes, 420)
         XCTAssertNil(active.capacityMinutes, "no capacity yet")
         XCTAssertEqual(active.remainingMinutes, 360, "7h expected − 1h tracked")
         XCTAssertEqual(active.label, "2 tasks · 7h · 6h left")
-        XCTAssertEqual(store.slotLoad(projectId: pid, slot: .backlog).label, "2 tasks · 2h")
+        XCTAssertEqual(store.slotLoad(scope: .project(pid), slot: .backlog).label, "2 tasks · 2h")
 
         store.setWeeklyCapacity(pid, hours: 10)
         XCTAssertEqual(store.weeklyCapacityHours(pid), 10)
-        active = store.slotLoad(projectId: pid, slot: .active, now: hoursLater(2))
+        active = store.slotLoad(scope: .project(pid), slot: .active, now: hoursLater(2))
         XCTAssertEqual(active.capacityMinutes, 1200, "10h a week × 2 weeks")
         XCTAssertEqual(active.label, "2 tasks · 7h of 20h · 6h left")
-        XCTAssertEqual(store.slotLoad(projectId: pid, slot: .next).label, "1 task · 1h of 20h")
-        XCTAssertNil(store.slotLoad(projectId: pid, slot: .backlog).capacityMinutes, "the backlog has no capacity")
-        XCTAssertEqual(store.sprintPlanLine(projectId: pid, now: hoursLater(2)).text, "Planned 7h of 20h · tracked 1h")
+        XCTAssertEqual(store.slotLoad(scope: .project(pid), slot: .next).label, "1 task · 1h of 20h")
+        XCTAssertNil(store.slotLoad(scope: .project(pid), slot: .backlog).capacityMinutes, "the backlog has no capacity")
+        XCTAssertEqual(store.sprintPlanLine(scope: .project(pid), now: hoursLater(2)).text, "Planned 7h of 20h · tracked 1h")
 
         // Dragging a task between slots moves its time
         store.moveTask(a, toSlot: .next, before: nil)
-        XCTAssertEqual(store.slotLoad(projectId: pid, slot: .active).plannedMinutes, 180)
-        XCTAssertEqual(store.slotLoad(projectId: pid, slot: .next).plannedMinutes, 300)
+        XCTAssertEqual(store.slotLoad(scope: .project(pid), slot: .active).plannedMinutes, 180)
+        XCTAssertEqual(store.slotLoad(scope: .project(pid), slot: .next).plannedMinutes, 300)
 
         store.setWeeklyCapacity(pid, hours: nil)
         XCTAssertNil(store.project(pid)?.weeklyCapacityHours)
@@ -157,14 +290,14 @@ final class SprintCapacityTests: XCTestCase {
 
         let (store, pid) = await makeStore()
         store.setWeeklyCapacity(pid, hours: 4)
-        store.setSprintLength(projectId: pid, weeks: 1)
+        store.setSprintLength(weeks: 1)
         task(store, pid, "A", slot: .active, minutes: 180)
-        XCTAssertEqual(store.slotLoad(projectId: pid, slot: .active).level, .under)
+        XCTAssertEqual(store.slotLoad(scope: .project(pid), slot: .active).level, .under)
         task(store, pid, "B", slot: .active, minutes: 45)
-        XCTAssertEqual(store.slotLoad(projectId: pid, slot: .active).level, .near, "3h 45m of 4h")
+        XCTAssertEqual(store.slotLoad(scope: .project(pid), slot: .active).level, .near, "3h 45m of 4h")
         task(store, pid, "C", slot: .active, minutes: 30)
-        XCTAssertEqual(store.slotLoad(projectId: pid, slot: .active).level, .over)
-        XCTAssertEqual(store.sprintPlanLine(projectId: pid).level, .over)
+        XCTAssertEqual(store.slotLoad(scope: .project(pid), slot: .active).level, .over)
+        XCTAssertEqual(store.sprintPlanLine(scope: .project(pid)).level, .over)
     }
 
     func testAtRiskUsesTheProjectsCapacity() async {
@@ -195,17 +328,17 @@ final class SprintCapacityTests: XCTestCase {
         store.startTimer(b, now: hoursLater(3))
         store.setStatus(a, .done, now: hoursLater(4))
 
-        store.completeSprint(projectId: pid, unfinished: .moveToNextSprint, now: hoursLater(4))
-        let past = store.project(pid)!.pastSprints[0]
+        store.completeSprint(unfinished: .moveToNextSprint, now: hoursLater(4))
+        let past = store.workspace.pastSprints[0]
         XCTAssertEqual(past.plannedMinutes, 180)
         XCTAssertEqual(past.doneMinutes, 120)
         XCTAssertEqual(past.trackedSeconds, 3 * 3600, accuracy: 1, "2h of A plus B's running hour")
         XCTAssertEqual(past.capacityHours, 20)
         XCTAssertFalse(past.isApproximate)
         XCTAssertEqual(past.statsSummary.prefix(37), "1 of 2 done · 3h planned · 3h tracked")
-        XCTAssertEqual(store.velocityHistory(projectId: pid).map(\.doneHours), [2])
+        XCTAssertEqual(store.velocityHistory().map(\.doneHours), [2])
         store.undo()
-        XCTAssertTrue(store.project(pid)!.pastSprints.isEmpty, "one undo step")
+        XCTAssertTrue(store.workspace.pastSprints.isEmpty, "one undo step")
     }
 
     func testVelocitySuggestion() async {
@@ -213,25 +346,26 @@ final class SprintCapacityTests: XCTestCase {
         XCTAssertEqual(SprintPlanRules.velocity(doneMinutes: [600]), 600)
         XCTAssertEqual(SprintPlanRules.velocity(doneMinutes: [60, 120, 180, 240]), 180, "the last three")
 
-        var project = Project(name: "Atlas", colorHex: 0xFF6B4A, sprint: SprintState(number: 4, startDate: calendar.startOfDay(for: now)))
+        let project = Project(name: "Atlas", colorHex: 0xFF6B4A)
+        var past: [PastSprint] = []
         for (n, done) in [(1, 600), (2, 900), (3, 1200)] {
-            project.pastSprints.append(PastSprint(
+            past.append(PastSprint(
                 number: n, startDate: now, endDate: now, completedAt: now, plannedMinutes: done + 60, doneMinutes: done))
         }
         let pid = project.id
-        let store = TaskStore(repository: InMemoryWorkspaceRepository(Workspace(projects: [project])), saveDelay: 0.05)
+        let store = TaskStore(repository: InMemoryWorkspaceRepository(Workspace(projects: [project], sprint: SprintState(number: 4, startDate: calendar.startOfDay(for: now)), pastSprints: past)), saveDelay: 0.05)
         await store.load()
-        XCTAssertEqual(store.recentVelocityMinutes(projectId: pid), 900)
+        XCTAssertEqual(store.recentVelocityMinutes(), 900)
         let a = task(store, pid, "A", slot: .active, minutes: 300)
         store.setStatus(a, .done, now: now)
         task(store, pid, "Open", slot: .active, minutes: 240)
-        XCTAssertEqual(store.recentVelocityMinutes(projectId: pid, includingActive: true), 800, "(900 + 1200 + 300) / 3")
+        XCTAssertEqual(store.recentVelocityMinutes(includingActive: true), 800, "(900 + 1200 + 300) / 3")
         task(store, pid, "N", slot: .next, minutes: 600)
-        XCTAssertEqual(store.nextSprintPlanMinutes(projectId: pid, unfinished: .moveToNextSprint), 840, "Next plus the carried-over task")
-        XCTAssertEqual(store.nextSprintPlanMinutes(projectId: pid, unfinished: .moveToBacklog), 600)
-        XCTAssertEqual(store.velocityHistory(projectId: pid).map(\.number), [1, 2, 3])
-        for _ in 4...8 { store.completeSprint(projectId: pid, now: now) }
-        XCTAssertEqual(store.velocityHistory(projectId: pid).map(\.number), [3, 4, 5, 6, 7, 8], "the chart shows the last six")
+        XCTAssertEqual(store.nextSprintPlanMinutes(unfinished: .moveToNextSprint), 840, "Next plus the carried-over task")
+        XCTAssertEqual(store.nextSprintPlanMinutes(unfinished: .moveToBacklog), 600)
+        XCTAssertEqual(store.velocityHistory().map(\.number), [1, 2, 3])
+        for _ in 4...8 { store.completeSprint(now: now) }
+        XCTAssertEqual(store.velocityHistory().map(\.number), [3, 4, 5, 6, 7, 8], "the chart shows the last six")
     }
 
     // MARK: - Projects without sprints
@@ -259,7 +393,7 @@ final class SprintCapacityTests: XCTestCase {
         XCTAssertFalse(model.availableGroupings.contains(.sprint))
         model.options.grouping = .sprint
         XCTAssertEqual(model.grouping, .status, "no grouping by sprint")
-        XCTAssertFalse(model.paletteCommands(store).contains(.completeSprint(pid)))
+        XCTAssertFalse(model.paletteCommands(store).contains(.completeSprint))
         let card = store.projectOverview(pid, now: now)!
         XCTAssertEqual(card.sprintLine, "No sprints · 2 open")
         XCTAssertEqual(store.upNext(now: now).first?.projectId, pid)
@@ -298,7 +432,6 @@ final class SprintCapacityTests: XCTestCase {
         XCTAssertEqual(store.task(pinned)?.sprintSlot, .active)
         XCTAssertEqual(store.task(idle)?.sprintSlot, .backlog, "waits to be planned")
         XCTAssertEqual(store.task(done)?.sprintSlot, .active, "done tasks close with the next sprint")
-        XCTAssertEqual(store.project(pid)?.sprint.startDate, calendar.startOfDay(for: later), "a fresh sprint starts today")
         store.undo()
         XCTAssertFalse(store.usesSprints(pid))
         XCTAssertEqual(store.task(idle)?.sprintSlot, .active, "one undo step")

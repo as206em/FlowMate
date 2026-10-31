@@ -306,6 +306,8 @@ final class TaskStore: ObservableObject {
         copy.normalizeLabels()
         // Preferences forget deleted projects and tasks (last project, Keep answers, sleep prompt)
         copy.normalizePreferences()
+        // The sprint chart remembers what the sprint planned each day
+        copy.recordSprintScope()
         guard copy != workspace else { return }
         let before = workspace
         workspace = copy

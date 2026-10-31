@@ -117,7 +117,7 @@ extension TaskStore {
     }
 
     func setSprintSlot(_ id: UUID, _ slot: SprintSlot) {
-        updateTask(id, action: "Change sprint") { $0.sprintSlot = slot }
+        updateTask(id, action: "Change sprint") { $0.sprintSlot = slot; $0.laterSprint = nil }
     }
 
     /// Board drag and drop: new status, placed before `beforeTaskId` (or at the end when nil).

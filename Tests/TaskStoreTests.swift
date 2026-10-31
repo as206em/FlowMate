@@ -167,8 +167,8 @@ final class TaskStoreTests: XCTestCase {
 
     func testCompleteSprint() async {
         let (store, pid) = await makeStore()
-        let start = store.project(pid)!.sprint.startDate
-        store.setSprintGoal(projectId: pid, goal: "Ship it")
+        let start = store.sprint.startDate
+        store.setSprintGoal("Ship it")
         let doneActive = store.addTask(title: "done", projectId: pid, sprintSlot: .active)!
         store.setStatus(doneActive, .done)
         let openActive = store.addTask(title: "open", projectId: pid, sprintSlot: .active)!
@@ -181,7 +181,7 @@ final class TaskStoreTests: XCTestCase {
         let other = store.addProject(name: "Other")!
         let otherNext = store.addTask(title: "other next", projectId: other, sprintSlot: .next)!
 
-        store.completeSprint(projectId: pid)
+        store.completeSprint()
 
         XCTAssertEqual(store.task(doneActive)?.sprintSlot, .closed)
         XCTAssertEqual(store.task(openActive)?.sprintSlot, .active)
@@ -189,15 +189,15 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(store.task(next)?.sprintSlot, .active)
         XCTAssertEqual(store.task(backlog)?.sprintSlot, .backlog)
         XCTAssertEqual(store.task(doneBacklog)?.sprintSlot, .backlog)
-        XCTAssertEqual(store.task(otherNext)?.sprintSlot, .next, "other projects are untouched")
+        XCTAssertEqual(store.task(otherNext)?.sprintSlot, .active, "the sprint is shared: other projects move on with it")
 
-        let sprint = store.project(pid)!.sprint
+        let sprint = store.sprint
         XCTAssertEqual(sprint.number, 2)
         // The next sprint starts on the day the sprint is completed, so dates never drift
         XCTAssertEqual(sprint.startDate, Calendar.current.startOfDay(for: Date()))
-        XCTAssertEqual(store.project(pid)!.pastSprints.first?.startDate, start)
+        XCTAssertEqual(store.workspace.pastSprints.first?.startDate, start)
         XCTAssertEqual(sprint.displayGoal, SprintState.goalPlaceholder)
-        XCTAssertEqual(store.sprintName(pid), "Sprint 2")
+        XCTAssertEqual(store.sprintName(), "Sprint 2")
         XCTAssertEqual(store.boardTasks(in: .project(pid), status: .done).count, 0)
 
         // Reopening a closed task, or starting its timer, brings it back to the backlog
@@ -205,7 +205,7 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(store.task(doneActive)?.sprintSlot, .backlog)
         store.moveTask(doneActive, toSlot: .active)
         store.setStatus(doneActive, .done)
-        store.completeSprint(projectId: pid)
+        store.completeSprint()
         XCTAssertEqual(store.task(doneActive)?.sprintSlot, .closed)
         store.startTimer(doneActive)
         XCTAssertEqual(store.task(doneActive)?.sprintSlot, .backlog)
@@ -280,7 +280,7 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(store.tasks(in: .project(pid)).map(\.id), [a, c, b])
         XCTAssertEqual(store.task(c)?.statusId, WorkflowStatus.inProgress.id)
         store.moveTask(a, toSlot: .backlog)
-        XCTAssertEqual(store.sprintTasks(projectId: pid, slot: .backlog).map(\.id), [a])
+        XCTAssertEqual(store.sprintTasks(slot: .backlog, in: .project(pid)).map(\.id), [a])
         XCTAssertEqual(store.tasks(in: .project(pid)).last?.id, a)
     }
 

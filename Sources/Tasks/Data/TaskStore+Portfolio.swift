@@ -76,6 +76,8 @@ enum PortfolioSort: String, CaseIterable, Identifiable, Sendable, TolerantString
 /// One project card of the Overview.
 struct ProjectOverview: Identifiable, Equatable, Sendable {
     let project: Project
+    /// The workspace's sprint, the same on every card
+    let sprint: SprintState
     let sprintDay: SprintDay
     /// Active-sprint tasks done / planned (canceled ones left out); without sprints, every task not
     /// closed with a past sprint
@@ -113,7 +115,7 @@ struct ProjectOverview: Identifiable, Equatable, Sendable {
     /// "No sprints · 12 open" for a project without sprints
     var sprintLine: String {
         guard project.usesSprints else { return "No sprints · \(openCount) open" }
-        return PortfolioRules.sprintLine(project.sprint, day: sprintDay)
+        return PortfolioRules.sprintLine(sprint, day: sprintDay)
     }
 }
 
@@ -305,15 +307,16 @@ extension TaskStore {
     func projectOverview(_ projectId: UUID, now: Date = Date(), calendar: Calendar = .current) -> ProjectOverview? {
         guard let project = project(projectId) else { return nil }
         let tasks = workspace.tasks.filter { $0.projectId == projectId }
-        let sprint = tasks.filter { isCurrentWork($0) && !$0.isCanceled }
+        let sprintWork = tasks.filter { isCurrentWork($0) && !$0.isCanceled }
         let next = nextMilestone(of: projectId)
         let activity = lastActivity(projectId: projectId, now: now)
-        let sprintRange = Self.days(project.sprint.startDate, through: project.sprint.endDate, calendar: calendar)
+        let sprintRange = sprintInterval(calendar: calendar)
         return ProjectOverview(
             project: project,
-            sprintDay: PortfolioRules.sprintDay(project.sprint, now: now, calendar: calendar),
-            sprintDone: sprint.filter(\.isDone).count,
-            sprintPlanned: sprint.count,
+            sprint: self.sprint,
+            sprintDay: PortfolioRules.sprintDay(self.sprint, now: now, calendar: calendar),
+            sprintDone: sprintWork.filter(\.isDone).count,
+            sprintPlanned: sprintWork.count,
             openCount: tasks.filter { !$0.isClosed }.count,
             trackedInSprint: trackedSeconds(.project(projectId), in: sprintRange, now: now),
             trackedThisWeek: trackedSeconds(.project(projectId), in: PortfolioRules.weekInterval(now, calendar: calendar), now: now),

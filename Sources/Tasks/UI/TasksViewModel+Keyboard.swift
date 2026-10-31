@@ -94,7 +94,7 @@ enum QuickPickValue: Equatable {
     case priority(TaskPriority)
     case milestone(UUID?)
     case newMilestone(String)
-    case slot(SprintSlot)
+    case sprint(SprintChoice)
     case due(Date?)
     case expected(Int)
     case setSpent(TimeInterval)
@@ -243,13 +243,18 @@ extension TasksViewModel {
             }
             return rows
         case .sprint:
-            return SprintSlot.plannable.map { slot in
-                let title = commonProject.map { store.sprintLabel(slot, projectId: $0) } ?? Self.slotTitle(slot)
-                let words: [SprintSlot: [String]] = [.active: ["now", "active", "current"], .next: ["next"], .backlog: ["backlog", "later"]]
-                return QuickPickOption(id: "slot-\(slot.rawValue)", title: title,
-                                       detail: slot == .active ? "active" : slot == .next ? "next" : "",
-                                       keywords: words[slot] ?? [], isCurrent: all({ $0.sprintSlot }, equal: slot),
-                                       icon: .symbol("arrow.clockwise"), value: .slot(slot))
+            return store.sprintChoices().map { choice in
+                let words: [String]
+                switch choice {
+                case .active: words = ["now", "active", "current"]
+                case .upcoming(1): words = ["next"]
+                case .backlog: words = ["backlog", "later"]
+                default: words = []
+                }
+                return QuickPickOption(id: "sprint-\(choice)", title: store.sprintTitle(choice),
+                                       detail: store.sprintTag(choice),
+                                       keywords: words, isCurrent: all({ store.sprintChoice(of: $0) }, equal: choice),
+                                       icon: .symbol("arrow.clockwise"), value: .sprint(choice))
             }
         case .due:
             var rows = DuePreset.allCases.map { preset in
@@ -342,14 +347,6 @@ extension TasksViewModel {
         }
     }
 
-    private static func slotTitle(_ slot: SprintSlot) -> String {
-        switch slot {
-        case .active: return "Active sprint"
-        case .next: return "Next sprint"
-        case .backlog, .closed: return "Backlog"
-        }
-    }
-
     // MARK: - Choosing
 
     /// Applies a picker row to the tasks: one undo step, with a toast that offers Undo.
@@ -380,9 +377,9 @@ extension TasksViewModel {
                     }
                 }
             }
-        case let .slot(slot):
-            let title = store.commonProjectId(ids).map { store.sprintLabel(slot, projectId: $0) } ?? Self.slotTitle(slot)
-            edit("\(subject) moved to \(title)", store: store) { store.setSprintSlot(ids, slot) }
+        case let .sprint(choice):
+            let title = store.sprintTitle(choice)
+            edit("\(subject) moved to \(title)", store: store) { store.setSprint(ids, choice) }
         case let .due(date):
             edit(date.map { "\(subject) due \(TaskDates.dueLabel($0, now: now))" } ?? "Due date cleared on \(TaskStore.taskCount(n))",
                  store: store) { store.setDueDate(ids, date) }
@@ -459,9 +456,7 @@ extension TasksViewModel {
             guard sort.isManual else { return nil }
             return (boardColumns(store).map { boardTasks(store, column: $0, now: now).map(\.id) }, false)
         case .sprints:
-            guard let projectId = scope.projectId else { return nil }
-            return (Self.sprintSlots.filter { !isCollapsed(Self.sprintGroupKey($0)) }
-                .map { store.sprintTasks(projectId: projectId, slot: $0).map(\.id) }, false)
+            return (sprintGroupTasks(store).map { $0.map(\.id) }, false)
         case .milestones, .overview:
             return nil
         }

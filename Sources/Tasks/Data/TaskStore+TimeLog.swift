@@ -202,20 +202,26 @@ extension TaskStore {
     }
 
     /// The active sprint's days, start to end.
-    func sprintInterval(projectId: UUID, calendar: Calendar = .current) -> DateInterval? {
-        guard let sprint = project(projectId)?.sprint else { return nil }
-        return Self.days(sprint.startDate, through: sprint.endDate, calendar: calendar)
+    func sprintInterval(calendar: Calendar = .current) -> DateInterval {
+        Self.days(workspace.sprint.startDate, through: workspace.sprint.endDate, calendar: calendar)
     }
 
-    /// Seconds tracked on the project's tasks during its active sprint's dates.
-    func trackedInSprint(projectId: UUID, now: Date = Date(), calendar: Calendar = .current) -> TimeInterval {
-        guard let range = sprintInterval(projectId: projectId, calendar: calendar) else { return 0 }
-        return trackedSeconds(.project(projectId), in: range, now: now)
+    /// Seconds tracked during the active sprint's dates: on one project's tasks, or on all tasks
+    /// of the projects in the sprint when `projectId` is nil.
+    func trackedInSprint(projectId: UUID? = nil, now: Date = Date(), calendar: Calendar = .current) -> TimeInterval {
+        trackedSeconds(sprintTimeScope(projectId), in: sprintInterval(calendar: calendar), now: now)
     }
 
-    /// Seconds tracked on the project's tasks during a past sprint's dates.
-    func trackedInSprint(_ sprint: PastSprint, projectId: UUID, now: Date = Date(), calendar: Calendar = .current) -> TimeInterval {
-        trackedSeconds(.project(projectId), in: Self.days(sprint.startDate, through: sprint.endDate, calendar: calendar), now: now)
+    /// Seconds tracked during a past sprint's dates (see `trackedInSprint(projectId:)`).
+    func trackedInSprint(_ sprint: PastSprint, projectId: UUID? = nil, now: Date = Date(), calendar: Calendar = .current) -> TimeInterval {
+        trackedSeconds(sprintTimeScope(projectId), in: Self.days(sprint.startDate, through: sprint.endDate, calendar: calendar), now: now)
+    }
+
+    /// The time-log scope of a sprint number: one project, or every project that takes part.
+    private func sprintTimeScope(_ projectId: UUID?) -> TimeScope {
+        if let projectId { return .project(projectId) }
+        let ids = Set(workspace.projects.filter(\.usesSprints).map(\.id))
+        return .tasks(Set(workspace.tasks.filter { ids.contains($0.projectId) }.map(\.id)))
     }
 
     private func taskFilter(_ scope: TimeScope) -> (UUID) -> Bool {
