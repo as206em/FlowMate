@@ -186,21 +186,31 @@ extension TaskStore {
 // MARK: - Fixing tracked time
 
 extension TaskStore {
-    /// Sets the total time spent on a task ("Adjust time…"). A running timer keeps running from the
-    /// new total. Undo takes the change back out. Ignores changes under a second.
+    /// Sets the total time spent on a task ("Adjust time…") by editing its time log: more time is
+    /// one `manual` entry ending now; less time is taken off its latest entries (a running session
+    /// is recorded first when the entries alone don't cover the cut). A running timer keeps running.
+    /// Undo puts the entries back. Ignores changes under a second.
     func setTimeSpent(_ id: UUID, seconds: TimeInterval, now: Date = Date()) {
         guard let task = task(id) else { return }
         let newTotal = max(0, seconds.rounded())
         let delta = newTotal - elapsed(task, now: now)
         guard abs(delta) >= 1 else { return }
-        pendingTimeDelta[id, default: 0] += delta
+        if delta < 0, -delta > task.spentSeconds + 0.5, let started = startedAt(id), now > started {
+            // The cut reaches into the running session: record it, the timer goes on from now
+            mutate(recordsUndo: false) { ws in
+                ws.closeSession(id, at: now)
+                ws.runningTimers[id] = now
+            }
+        }
         mutate("Adjust time", coalesce: "time-\(id)") { ws in
             guard let i = ws.tasks.firstIndex(where: { $0.id == id }) else { return }
-            ws.tasks[i].spentSeconds = newTotal
+            if delta > 0 {
+                ws.timeEntries.append(TimeEntry(taskId: id, start: now.addingTimeInterval(-delta), end: now, source: .manual))
+            } else {
+                ws.trimTrackedTime(id, by: -delta)
+            }
             ws.tasks[i].updatedAt = now
-            if ws.runningTimers[id] != nil { ws.runningTimers[id] = now }
         }
-        pendingTimeDelta = [:]
     }
 
     /// Adds (or with a negative value removes) time spent. Never goes below zero.

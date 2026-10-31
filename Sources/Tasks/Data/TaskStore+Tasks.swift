@@ -141,7 +141,9 @@ extension TaskStore {
         let status = project(original.projectId)?.defaultStatus ?? .todo
         copy.statusId = status.id
         copy.statusCategory = status.category
+        // Time entries stay with the original (the copy has none, so no time spent)
         copy.spentSeconds = 0
+        copy.completedAt = nil
         copy.createdAt = now
         copy.updatedAt = now
         copy.subtasks = original.subtasks.map { Subtask(title: $0.title) }

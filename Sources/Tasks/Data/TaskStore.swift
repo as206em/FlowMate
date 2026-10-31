@@ -54,10 +54,8 @@ final class TaskStore: ObservableObject {
     var undoGroupDepth = 0
     var undoGroupStart: (name: String, before: Workspace)?
     var undoGroupHasChanges = false
-    /// Hand time adjustments made inside the open undo group
-    var undoGroupTimeDelta: [UUID: TimeInterval] = [:]
-    /// Set by an "Adjust time" edit just before its mutation, so the undo step can take it back out.
-    var pendingTimeDelta: [UUID: TimeInterval] = [:]
+    /// Time log edits made inside the open undo group (see TimeLogChanges)
+    var undoGroupTimeChanges = TimeLogChanges()
     /// After an undo or redo, the next edit starts a new step even if it would coalesce.
     var undoCoalescingBlocked = false
     /// Clock for coalescing rapid edits; tests replace it.
@@ -67,8 +65,18 @@ final class TaskStore: ObservableObject {
     /// workspace preferences so it survives a relaunch; the prompt comes back one interval later.
     var longRunAcknowledged: [UUID: Date] { workspace.preferences.longRunKeptAt }
 
+    // Sleep and screen lock (TaskStore+Away.swift)
+    /// Times the Mac slept (or was locked) while timers ran, waiting for Keep or Discard sleep time.
+    @Published var awayGaps: [AwayGap] = []
+    /// The sleep or lock in progress, if any.
+    var away = AwayTracker()
+
     init(repository: WorkspaceRepository, workspace: Workspace = .empty, saveDelay: TimeInterval = 0.5) {
         self.repository = repository
+        // Time counted without entries (hand-built data) becomes an imported entry; totals stay
+        var workspace = workspace
+        workspace.normalizeCompletion()
+        workspace.reconcileTrackedTime()
         self.workspace = workspace
         self.saveDelay = saveDelay
         ticker.setActive(!workspace.runningTimers.isEmpty)
@@ -103,7 +111,7 @@ final class TaskStore: ObservableObject {
                     persistenceIssue = nil
                 }
             } else {
-                workspace = .sample()
+                workspace = Workspace.sample().migrated()
                 persistenceIssue = nil
                 hasUnsavedChanges = true
                 await flush()
@@ -236,12 +244,17 @@ final class TaskStore: ObservableObject {
         guard !savesBlocked else { return }
         var copy = workspace
         change(&copy)
-        // Every task keeps a status of its own project's workflow, whatever the change did
+        // Every task keeps a status of its own project's workflow, a completion date when closed and
+        // a time spent that matches its entries, whatever the change did
         copy.normalizeStatuses()
+        copy.normalizeCompletion()
+        copy.normalizeTime()
         guard copy != workspace else { return }
         let before = workspace
         workspace = copy
-        if recordsUndo { recordUndo(action, before: before, coalesce: coalesce) }
+        if recordsUndo {
+            recordUndo(action, before: before, coalesce: coalesce, timeChanges: TimeLogChanges(from: before, to: copy))
+        }
         scheduleSave()
     }
 

@@ -34,15 +34,14 @@ extension TaskStore {
         return task.isClosed ? project.defaultStatus : nil
     }
 
-    /// Stops the task's timer and adds the session to `spentSeconds`.
+    /// Stops the task's timer and writes the session to the time log (a `timer` entry), which
+    /// adds it to `spentSeconds`. Not an undo step.
     func pauseTimer(_ taskId: UUID, now: Date = Date()) {
         guard isRunning(taskId) else { return }
         mutate(recordsUndo: false) { ws in
-            // A Keep answer only applies to the session it answered
-            ws.preferences.longRunKeptAt[taskId] = nil
-            guard let started = ws.runningTimers.removeValue(forKey: taskId),
-                  let i = ws.tasks.firstIndex(where: { $0.id == taskId }) else { return }
-            ws.tasks[i].spentSeconds += max(0, now.timeIntervalSince(started))
+            // A Keep answer only applies to the session it answered (closeSession clears it)
+            ws.closeSession(taskId, at: now)
+            guard let i = ws.tasks.firstIndex(where: { $0.id == taskId }) else { return }
             ws.tasks[i].updatedAt = now
         }
     }

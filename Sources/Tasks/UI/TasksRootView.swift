@@ -60,6 +60,7 @@ struct TasksRootView: View {
             }
             notices
             LongRunBanner()
+            AwayBanner()
             if usesNativeTable {
                 // List and Sprints scroll inside their own native table (rows are recycled)
                 nativeTableContent

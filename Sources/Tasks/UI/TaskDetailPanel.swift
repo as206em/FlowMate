@@ -204,6 +204,7 @@ private struct TaskDetailBody: View {
                 onEscape: { model.closePanel() }
             )
             SubtasksSection(task: task)
+            TaskTimeLogSection(task: task)
         }
     }
 

@@ -8,6 +8,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // The shortcut and copy/paste need Accessibility access; ask once at launch if it's missing
         Task { @MainActor in
             AppState.promptForAccessibilityAccess()
+            // Timers that run through sleep or a locked screen ask whether that time counts
+            SystemAwayMonitor.shared.start(store: TaskStore.shared)
         }
     }
 

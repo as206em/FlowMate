@@ -89,10 +89,14 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
     var subtasks: [Subtask]
     var dueDate: Date?
     var expectedMinutes: Int
-    /// Accumulated time from paused sessions; a running session is added on top (see TaskStore.elapsed)
+    /// Time tracked so far: the sum of the task's time entries (Workspace.timeEntries), kept in step
+    /// by the store (Workspace.normalizeTime). A running session is added on top (TaskStore.elapsed).
     var spentSeconds: TimeInterval
     var createdAt: Date
     var updatedAt: Date
+    /// When the task last moved into a done or canceled status (which one: `statusCategory`); nil
+    /// while it's open. Kept by the store (Workspace.normalizeCompletion).
+    var completedAt: Date?
     var sortIndex: Double
     /// The sprint number a `closed` task was closed in ("Sprint 3"); nil for older data.
     var closedSprintNumber: Int?
@@ -113,7 +117,8 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         createdAt: Date = Date(),
         updatedAt: Date? = nil,
         sortIndex: Double = 0,
-        closedSprintNumber: Int? = nil
+        closedSprintNumber: Int? = nil,
+        completedAt: Date? = nil
     ) {
         self.id = id
         self.projectId = projectId
@@ -132,6 +137,7 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         self.updatedAt = updatedAt ?? createdAt
         self.sortIndex = sortIndex
         self.closedSprintNumber = closedSprintNumber
+        self.completedAt = status.category.isClosed ? (completedAt ?? self.updatedAt) : nil
     }
 
     /// Finished: done or canceled. Closed tasks have no timer, aren't overdue and collapse in List.
@@ -145,7 +151,7 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, projectId, milestoneId, sprintSlot, statusId, statusCategory, priority, title, notes, subtasks
-        case dueDate, expectedMinutes, spentSeconds, createdAt, updatedAt, sortIndex, closedSprintNumber
+        case dueDate, expectedMinutes, spentSeconds, createdAt, updatedAt, completedAt, sortIndex, closedSprintNumber
     }
 
     private enum LegacyKeys: String, CodingKey { case status }
@@ -177,6 +183,8 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         spentSeconds = max(0, c.decode(.spentSeconds, or: 0))
         createdAt = c.decode(.createdAt, or: Date())
         updatedAt = c.decode(.updatedAt, or: createdAt)
+        // Schema 6 and older have none; Workspace.normalizeCompletion fills it for closed tasks
+        completedAt = c.decodeOptional(.completedAt)
         sortIndex = c.decode(.sortIndex, or: 0)
         closedSprintNumber = c.decodeOptional(.closedSprintNumber)
     }

@@ -42,7 +42,7 @@ final class WorkflowTests: XCTestCase {
         let ws = try decoder.decode(Workspace.self, from: Data(json.utf8)).migrated()
 
         XCTAssertEqual(ws.schemaVersion, Workspace.currentSchemaVersion)
-        XCTAssertEqual(Workspace.currentSchemaVersion, 6)
+        XCTAssertEqual(Workspace.currentSchemaVersion, 7)
         for project in ws.projects {
             XCTAssertEqual(project.statuses, WorkflowPreset.simple.statuses, "every project gets the Simple workflow")
         }

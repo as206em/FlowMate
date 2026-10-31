@@ -12,7 +12,10 @@ struct Workspace: Codable, Equatable, Sendable {
     /// 6: statuses per project (Project.statuses, a custom workflow). Tasks store a status id and
     ///    its category instead of the fixed To do / In progress / Done; older files get the Simple
     ///    workflow, whose ids match the old values.
-    static let currentSchemaVersion = 6
+    /// 7: a time log (timeEntries: timer sessions, time added by hand) and TaskItem.completedAt.
+    ///    Time tracked before becomes one `imported` entry per task, so totals don't change; tasks
+    ///    already done or canceled get their last update as completion date.
+    static let currentSchemaVersion = 7
 
     var schemaVersion: Int
     var projects: [Project]
@@ -20,6 +23,8 @@ struct Workspace: Codable, Equatable, Sendable {
     var tasks: [TaskItem]
     /// Task id -> when its current timer session started. Several can run at once.
     var runningTimers: [UUID: Date]
+    /// Every stretch of time tracked, of any task (see TimeEntry). Task.spentSeconds is their sum.
+    var timeEntries: [TimeEntry]
     /// Small settings that travel with the data (the last project used, timer prompts).
     var preferences: WorkspacePreferences
 
@@ -29,6 +34,7 @@ struct Workspace: Codable, Equatable, Sendable {
         milestones: [Milestone] = [],
         tasks: [TaskItem] = [],
         runningTimers: [UUID: Date] = [:],
+        timeEntries: [TimeEntry] = [],
         preferences: WorkspacePreferences = WorkspacePreferences()
     ) {
         self.schemaVersion = schemaVersion
@@ -36,13 +42,14 @@ struct Workspace: Codable, Equatable, Sendable {
         self.milestones = milestones
         self.tasks = tasks
         self.runningTimers = runningTimers
+        self.timeEntries = timeEntries
         self.preferences = preferences
     }
 
     static let empty = Workspace()
 
     /// Upgrades older stored data to the current schema and drops dangling references.
-    func migrated() -> Workspace {
+    func migrated(now: Date = Date()) -> Workspace {
         var ws = self
         if ws.schemaVersion < 2 {
             // The new fields decode to their defaults (no description, not archived, 2-week sprints,
@@ -58,6 +65,8 @@ struct Workspace: Codable, Equatable, Sendable {
         // 5: older files have no Keep answers (decodes to none). Answers only matter while that timer runs.
         ws.preferences.longRunKeptAt = ws.preferences.longRunKeptAt.filter { ws.runningTimers[$0.key] != nil }
         // 6: projects decode the Simple workflow and tasks their old status under the same id.
+        // 7: no time entries yet: reconcileTrackedTime (below) turns each task's total into one
+        //    imported entry; normalizeCompletion dates closed tasks by their last update.
         ws.schemaVersion = Workspace.currentSchemaVersion
 
         let projectIds = Set(ws.projects.map(\.id))
@@ -73,11 +82,13 @@ struct Workspace: Codable, Equatable, Sendable {
         ws.runningTimers = ws.runningTimers.filter { taskIds.contains($0.key) }
         ws.preferences.longRunKeptAt = ws.preferences.longRunKeptAt.filter { ws.runningTimers[$0.key] != nil }
         ws.normalizeStatuses()
+        ws.normalizeCompletion()
+        ws.reconcileTrackedTime(now: now)
         return ws
     }
 
     // Running timers are stored as {"<uuid>": "<date>"} so the JSON stays readable.
-    private enum CodingKeys: String, CodingKey { case schemaVersion, projects, milestones, tasks, runningTimers, preferences }
+    private enum CodingKeys: String, CodingKey { case schemaVersion, projects, milestones, tasks, runningTimers, timeEntries, preferences }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -88,6 +99,7 @@ struct Workspace: Codable, Equatable, Sendable {
         let raw: [String: Date] = c.decode(.runningTimers, or: [:])
         runningTimers = Dictionary(raw.compactMap { key, value in UUID(uuidString: key).map { ($0, value) } },
                                    uniquingKeysWith: { a, _ in a })
+        timeEntries = c.decodeLossyArray(.timeEntries)
         preferences = c.decode(.preferences, or: WorkspacePreferences())
     }
 
@@ -99,6 +111,7 @@ struct Workspace: Codable, Equatable, Sendable {
         try c.encode(tasks, forKey: .tasks)
         let raw = Dictionary(runningTimers.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { a, _ in a })
         try c.encode(raw, forKey: .runningTimers)
+        try c.encode(timeEntries, forKey: .timeEntries)
         try c.encode(preferences, forKey: .preferences)
     }
 }

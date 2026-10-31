@@ -334,6 +334,13 @@ struct MenuInProgressSection: View {
             .padding(.top, 4)
             .padding(.bottom, 2)
 
+            // "Timers ran while your Mac slept 2h 05m · Keep · Discard"
+            if !store.awayGaps.isEmpty {
+                AwayPrompt(compact: true)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+            }
+
             if listed.running.isEmpty && listed.paused.isEmpty {
                 emptyState
             }

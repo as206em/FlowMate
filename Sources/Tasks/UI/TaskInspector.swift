@@ -21,6 +21,8 @@ struct TaskInspector: View {
                 .padding(.top, 16)
                 .overlay(alignment: .top) { FocusDivider() }
 
+                TaskDatesSection(task: task)
+
                 HStack(spacing: 4) {
                     Button {
                         model.duplicateTask(task.id, store: store)

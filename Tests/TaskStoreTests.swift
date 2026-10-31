@@ -37,6 +37,8 @@ final class TaskStoreTests: XCTestCase {
         ws.tasks[0].dueDate = t0.addingTimeInterval(86_400)
         ws.tasks[0].subtasks = [Subtask(title: "One", isDone: true)]
         ws.tasks[0].spentSeconds = 123.5
+        // Loading reconciles time with the log; give it the entry it would get
+        ws.reconcileTrackedTime(now: t0)
         ws.runningTimers[ws.tasks[1].id] = t0.addingTimeInterval(0.25)
         ws.milestones.append(Milestone(projectId: pid, name: "Undated"))
         try await repo.save(ws)

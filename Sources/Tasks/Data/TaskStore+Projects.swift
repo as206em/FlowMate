@@ -225,6 +225,19 @@ extension TaskStore {
     ///   drift), keeps the project's length, and takes `nextGoal`.
     func completeSprint(projectId: UUID, unfinished: UnfinishedSprintTasks = .moveToNextSprint,
                         nextGoal: String = "", now: Date = Date()) {
+        undoGroup("Complete sprint") {
+            // Unfinished tasks closing with the sprint are hidden from List, so their timers stop
+            // first. A pause isn't undone, so the session stays in the time log.
+            if unfinished == .keepInSprint {
+                for task in runningTasks where task.projectId == projectId && task.sprintSlot == .active && !task.isClosed {
+                    pauseTimer(task.id, now: now)
+                }
+            }
+            completeSprintStep(projectId: projectId, unfinished: unfinished, nextGoal: nextGoal, now: now)
+        }
+    }
+
+    private func completeSprintStep(projectId: UUID, unfinished: UnfinishedSprintTasks, nextGoal: String, now: Date) {
         mutate("Complete sprint") { ws in
             guard let p = ws.projects.firstIndex(where: { $0.id == projectId }) else { return }
             let old = ws.projects[p].sprint
@@ -251,12 +264,6 @@ extension TaskStore {
                             ws.tasks[i].sprintSlot = .closed
                             ws.tasks[i].closedSprintNumber = old.number
                             ws.tasks[i].updatedAt = now
-                            // A closed task is hidden from List, so its timer stops with the sprint
-                            let id = ws.tasks[i].id
-                            if let started = ws.runningTimers.removeValue(forKey: id) {
-                                ws.tasks[i].spentSeconds += max(0, now.timeIntervalSince(started))
-                                ws.preferences.longRunKeptAt[id] = nil
-                            }
                         }
                     }
                 case .next:
