@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>FlowMate</title>
+    <link>https://github.com/as206em/FlowMate</link>
+    <description>FlowMate updates</description>
+    <language>en</language>
+    <item>
+      <title>Version 1.1.1</title>
+      <pubDate>Sat, 31 Oct 2026 19:19:29 +0000</pubDate>
+      <sparkle:version>202610311916</sparkle:version>
+      <sparkle:shortVersionString>1.1.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[## What's Changed<br>* Add Claude Code GitHub Workflow by @as206em in https://github.com/as206em/FlowMate/pull/4<br>* Add task manager with Focus design system by @as206em in https://github.com/as206em/FlowMate/pull/6<br>* Task manager: workflows, time log, milestone pages, Today, ⌘K, overview, capacity, labels by @as206em in https://github.com/as206em/FlowMate/pull/7<br>* Sparkle updates, pre-update backup, CI and release workflows by @as206em in https://github.com/as206em/FlowMate/pull/8<br><br>## New Contributors<br>* @as206em made their first contribution in https://github.com/as206em/FlowMate/pull/4<br><br>**Full Changelog**: https://github.com/as206em/FlowMate/commits/v1.1.1]]></description>
+      <enclosure url="https://github.com/as206em/FlowMate/releases/download/v1.1.1/FlowMate-1.1.1.zip" length="11645100" type="application/octet-stream" sparkle:edSignature="jl/oo8JjaQNDl9I1EGUcqrURjPlg/Z5AO6Mh8ueXSd/RKYDGjvrIpTC+Qp2zGRnv6JxMe3qgMivwom29kM3SCQ=="/>
+    </item>
+  </channel>
+</rss>
