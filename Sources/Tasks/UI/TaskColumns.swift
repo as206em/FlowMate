@@ -5,9 +5,9 @@ import SwiftUI
 //
 //   TaskTable(showProject:, sort:, rows:, drops:)
 //
-// TaskTable measures the width, picks the columns that fit (TaskColumnLayout), pins the
-// header and hands the layout to the rows through the environment. Rows lay out their cells
-// with `TaskColumnCells`, the header with `TaskColumnHeaderRow`; both use the same widths.
+// TaskTable measures the width, picks the columns that fit (TaskColumnLayout) and hands the
+// layout to the rows through the environment. Rows lay out their cells with `TaskColumnCells`;
+// each group's header band puts its labels at the same widths (GroupHeaderRow).
 
 /// One column of the task list, left to right.
 enum TaskColumn: String, CaseIterable, Identifiable, Sendable {
@@ -138,41 +138,7 @@ struct TaskColumnCells<Cell: View>: View {
     }
 }
 
-/// The header row: one label per column. With `sort`, labels that can sort are clickable.
-struct TaskColumnHeaderRow: View {
-    let layout: TaskColumnLayout
-    var sort: Binding<TaskSort>?
-
-    var body: some View {
-        HStack(spacing: TaskColumnLayout.spacing) {
-            TaskColumnCells(layout: layout) { column in
-                header(column)
-            }
-        }
-        .padding(.leading, TaskColumnLayout.leadingPadding)
-        .padding(.trailing, TaskColumnLayout.trailingPadding)
-        .frame(height: 30)
-    }
-
-    @ViewBuilder
-    private func header(_ column: TaskColumn) -> some View {
-        if column.title.isEmpty {
-            Color.clear.frame(height: 1)
-        } else if let sort, let key = column.sortKey {
-            FocusColumnHeader(
-                title: column.title,
-                alignment: column.alignment,
-                sortAscending: sort.wrappedValue.key == key ? sort.wrappedValue.ascending : nil
-            ) {
-                withAnimation(Focus.hoverAnimation) { sort.wrappedValue = sort.wrappedValue.toggled(key) }
-            }
-        } else {
-            FocusColumnHeader(title: column.title, alignment: column.alignment)
-        }
-    }
-}
-
-/// A table of task rows with a sticky column header. Measures its width, picks the columns
+/// A table of task rows; each group's header band carries the column labels (GroupHeaderRow). Measures its width, picks the columns
 /// and shares them with every TaskRow inside through the environment. The rows live in a native
 /// NSTableView (NativeTaskTable.swift) that only keeps the visible ones.
 struct TaskTable: View {
@@ -180,8 +146,6 @@ struct TaskTable: View {
     @EnvironmentObject private var model: TasksViewModel
     let showProject: Bool
     var excluding: Set<TaskColumn> = []
-    /// Clickable headers sort by this; nil for tables in manual (drag) order.
-    var sort: Binding<TaskSort>?
     /// Optional line above the header, e.g. a hint.
     var caption: String = ""
     let rows: [TaskTableRow]
@@ -190,7 +154,7 @@ struct TaskTable: View {
     var draggable: Set<String> = []
 
     var body: some View {
-        let topPadding: CGFloat = model.showsFilterBar ? 16 : 24
+        let topPadding: CGFloat = 16
         GeometryReader { proxy in
             let layout = TaskColumnLayout.make(
                 showProject: showProject,
@@ -206,11 +170,7 @@ struct TaskTable: View {
                         .padding(.top, topPadding)
                         .padding(.bottom, 10)
                 }
-                TaskColumnHeaderRow(layout: layout, sort: sort)
-                    .background(Focus.canvas)
-                    .overlay(alignment: .bottom) { FocusDivider() }
-                    .padding(.horizontal, TaskTableCell.sidePadding)
-                    .padding(.top, caption.isEmpty ? topPadding : 0)
+                Color.clear.frame(height: caption.isEmpty ? topPadding : 0)
                 NativeTaskTable(rows: rows, drops: drops, draggable: draggable, layout: layout, store: store, model: model)
             }
         }

@@ -21,7 +21,7 @@ struct TodayView: View {
         let plan = store.todayPlan()
         let sections = TasksViewModel.todaySections(plan)
         var builder = TaskTableBuilder()
-        builder.spacer("top", 6)
+        builder.spacer("top", 8)
         for (index, section) in sections.enumerated() {
             let focus = section.kind == .focus
             builder.group(
@@ -35,7 +35,7 @@ struct TodayView: View {
                 composerIsDefault: focus,
                 composerOnTop: focus && model.isComposerPinned(TasksViewModel.listComposerKey(section.key)),
                 open: !model.isCollapsed(section.key),
-                gap: index == 0 ? 0 : 22,
+                gap: index == 0 ? 0 : 24,
                 actions: actions(section, hasOverdue: !plan.overdue.isEmpty),
                 liveHint: focus ? .todayPlanned : nil,
                 risk: section.kind == .due && !plan.overdue.isEmpty,

@@ -13,6 +13,9 @@ final class SprintCapacityTests: XCTestCase {
     private func makeStore() async -> (TaskStore, UUID) {
         let store = TaskStore(repository: InMemoryWorkspaceRepository(.empty), saveDelay: 0.05)
         await store.load()
+        // The sprint starts on the test's fixed day, not the real today, or time logged at `now`
+        // falls outside it once the calendar moves on
+        store.setSprintStart(date: now)
         let pid = store.addProject(name: "Atlas", now: now)!
         return (store, pid)
     }

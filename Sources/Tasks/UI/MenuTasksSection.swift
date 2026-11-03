@@ -492,7 +492,7 @@ struct MenuInProgressSection: View {
         let why = reason(task)
         return HStack(spacing: 10) {
             TaskTimerButton(task: task, size: 28)
-            Button { MenuNavigation.openTask(task.id) } label: {
+            Button { if !HoldGate.isHolding { MenuNavigation.openTask(task.id) } } label: {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(task.title)
                         .font(Focus.row)
@@ -548,7 +548,7 @@ struct MenuInProgressSection: View {
         let highlighted = menu.highlight == .running(task.id)
         return HStack(spacing: 10) {
             TaskTimerButton(task: task, size: 32)
-            Button { MenuNavigation.openTask(task.id) } label: {
+            Button { if !HoldGate.isHolding { MenuNavigation.openTask(task.id) } } label: {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(task.title)
                         .font(Focus.rowStrong)
@@ -577,6 +577,7 @@ struct MenuInProgressSection: View {
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(highlighted ? Focus.liveText.opacity(0.5) : .clear, lineWidth: 1.5)
         )
+        .modifier(HoldToFinish(task: task))
         .id(MenuRowItem.running(task.id))
         .accessibilityAddTraits(highlighted ? .isSelected : [])
     }
@@ -585,7 +586,7 @@ struct MenuInProgressSection: View {
         let project = store.project(of: task)
         return HStack(spacing: 10) {
             TaskTimerButton(task: task, size: 32)
-            Button { MenuNavigation.openTask(task.id) } label: {
+            Button { if !HoldGate.isHolding { MenuNavigation.openTask(task.id) } } label: {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(task.title)
                         .font(Focus.row)
@@ -608,7 +609,117 @@ struct MenuInProgressSection: View {
             TaskTimeText(task: task, font: .system(size: 12))
         }
         .modifier(MenuHover(highlighted: menu.highlight == .task(task.id)))
+        .modifier(HoldToFinish(task: task))
         .id(MenuRowItem.task(task.id))
+    }
+}
+
+// MARK: - Hold to finish
+
+/// Set while a press-and-hold is under way (and a moment after it's let go), so the row's buttons
+/// ignore the release: only a quick click opens the task or starts the timer.
+@MainActor
+enum HoldGate {
+    private(set) static var isHolding = false
+    /// Each hold's number, so a late release of an earlier hold can't open the gate on a newer one
+    private static var current = 0
+
+    static func begin() {
+        current += 1
+        isHolding = true
+    }
+
+    /// The buttons see the release after the gesture ends: open the gate a moment later.
+    static func end() {
+        guard isHolding else { return }
+        let hold = current
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if current == hold { isHolding = false }
+        }
+    }
+}
+
+/// Press and hold a row: after a short delay a green fill sweeps left to right, and when it
+/// reaches the end the task is marked done (with a light haptic). Letting go before that slides
+/// the fill back and changes nothing; so does the menu closing or the press being cancelled.
+/// Quick clicks still open the task or start the timer.
+private struct HoldToFinish: ViewModifier {
+    @EnvironmentObject private var store: TaskStore
+    let task: TaskItem
+
+    @GestureState private var pressing = false
+    @State private var progress: CGFloat = 0
+    @State private var hold: Task<Void, Never>?
+
+    private static let delay: UInt64 = 250_000_000
+    private static let sweep = 0.8
+
+    func body(content: Content) -> some View {
+        content
+            // Over the row (its hover fill is opaque), light enough to read the title through
+            .overlay(alignment: .leading) {
+                GeometryReader { geo in
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Focus.ok.opacity(0.28))
+                        .frame(width: geo.size.width * progress)
+                }
+                .allowsHitTesting(false)
+            }
+            // GestureState resets on release and on cancellation alike
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0).updating($pressing) { _, state, _ in state = true }
+            )
+            .onChange(of: pressing) { down in
+                if down { begin() } else { cancel() }
+            }
+            .onDisappear { cancel() }
+    }
+
+    /// Steps the fill itself (about 60 times a second): implicit animations don't run reliably in
+    /// the menu bar window.
+    private func begin() {
+        guard hold == nil else { return }
+        hold = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: Self.delay)
+            guard !Task.isCancelled else { return }
+            HoldGate.begin()
+            let start = Date()
+            while !Task.isCancelled {
+                let elapsed = Date().timeIntervalSince(start)
+                progress = min(1, CGFloat(elapsed / Self.sweep))
+                if elapsed >= Self.sweep { break }
+                try? await Task.sleep(nanoseconds: 16_000_000)
+            }
+            guard !Task.isCancelled else { return }
+            NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+            // A beat on the full bar so the finish reads before the row leaves
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            // Only while the button is still down: a menu that closed mid-hold never sent the release
+            guard !Task.isCancelled, NSEvent.pressedMouseButtons & 1 != 0 else { return }
+            hold = nil
+            _ = store.toggleDone([task.id])
+            progress = 0
+            HoldGate.end()
+        }
+    }
+
+    private func cancel() {
+        hold?.cancel()
+        hold = nil
+        HoldGate.end()
+        // Slide back
+        let from = progress
+        guard from > 0 else { return }
+        Task { @MainActor in
+            let start = Date()
+            while hold == nil {
+                let t = min(1, Date().timeIntervalSince(start) / 0.2)
+                progress = from * CGFloat(1 - t)
+                if t >= 1 { break }
+                try? await Task.sleep(nanoseconds: 16_000_000)
+            }
+        }
     }
 }
 

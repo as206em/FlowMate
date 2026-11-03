@@ -34,6 +34,8 @@ struct TaskTimerButton: View {
                 size: size,
                 label: task.title
             ) {
+                // The release of a press-and-hold in the menu isn't a click
+                guard !HoldGate.isHolding else { return }
                 // ⌥-click: this timer runs, every other one pauses
                 if NSEvent.modifierFlags.contains(.option) {
                     store.startTimerExclusively(task.id)
@@ -236,6 +238,13 @@ struct TaskContextMenu: View {
                     .keyboardShortcut(.space, modifiers: .option)
                 Button(store.isInFocus(task) ? "Remove from Today" : "Add to Today") { model.toggleToday([task.id], store: store) }
                     .keyboardShortcut("t", modifiers: .command)
+            }
+        }
+        let sprintTasks = ids.compactMap { store.task($0) }.filter { store.usesSprints($0.projectId) && $0.sprintSlot != .closed }
+        if !sprintTasks.isEmpty {
+            let inSprint = sprintTasks.allSatisfy { $0.sprintSlot == .active }
+            Button(inSprint ? "Remove from sprint" : "Add to sprint") {
+                store.setSprint(sprintTasks.map(\.id), inSprint ? .backlog : .active)
             }
         }
         let allDone = ids.compactMap { store.task($0) }.allSatisfy { $0.statusCategory == .done }

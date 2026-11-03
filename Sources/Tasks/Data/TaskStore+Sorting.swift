@@ -4,7 +4,17 @@ import Foundation
 extension TaskStore {
     /// Sorts tasks by a column. Empty values (no due date, no milestone) always go last,
     /// whichever direction is chosen.
+    /// Done and canceled tasks always follow the open ones, each part keeping its order.
     func sorted(_ tasks: [TaskItem], by sort: TaskSort) -> [TaskItem] {
+        Self.openFirst(sortedIgnoringClosed(tasks, by: sort))
+    }
+
+    /// Open tasks first, then closed ones; the order inside each part is kept.
+    nonisolated static func openFirst(_ tasks: [TaskItem]) -> [TaskItem] {
+        tasks.filter { !$0.isClosed } + tasks.filter(\.isClosed)
+    }
+
+    private func sortedIgnoringClosed(_ tasks: [TaskItem], by sort: TaskSort) -> [TaskItem] {
         let manual = tasks.sorted { $0.sortIndex < $1.sortIndex }
         guard !sort.isManual else { return manual }
         let position = Dictionary(uniqueKeysWithValues: manual.enumerated().map { ($1.id, $0) })

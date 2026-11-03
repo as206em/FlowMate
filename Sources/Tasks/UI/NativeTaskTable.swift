@@ -45,6 +45,27 @@ struct GroupHeaderInfo: Equatable {
     var liveHint: GroupLiveHint? = nil
     /// The title in `risk` (Today's Overdue)
     var risk = false
+    /// What the group holds, shown under the columns while it is collapsed
+    var summary = GroupSummary()
+    /// The labels sort the table when clicked (the List; the other tables keep their manual order)
+    var sortable = false
+}
+
+/// A group's contents in one line per column: the earliest due date, the top priority, the time.
+struct GroupSummary: Equatable {
+    var due = ""
+    var priority = ""
+    var minutes = 0
+
+    init() {}
+
+    init(_ tasks: [TaskItem]) {
+        let open = tasks.filter { !$0.isClosed }
+        if let date = open.compactMap(\.dueDate).min() { due = TaskDates.dueLabel(date) }
+        if let top = open.map(\.priority).max(by: { $0.rank < $1.rank }) { priority = top.title }
+        // Canceled tasks aren't part of the work (as in Completion)
+        minutes = tasks.filter { !$0.isCanceled }.reduce(0) { $0 + $1.expectedMinutes }
+    }
 }
 
 /// A button in a group header.
@@ -136,7 +157,7 @@ enum TaskTableRow: Equatable, Identifiable {
         switch self {
         case let .spacer(_, height): return height
         case .task(let info): return Focus.rowHeight + (info.position.hasTopEdge ? 0 : 1)
-        case let .groupHeader(info): return info.gap + 32
+        case let .groupHeader(info): return info.gap + 36
         case .sectionTitle: return 50
         case .empty: return 52
         case .composer: return 44
@@ -195,12 +216,14 @@ struct TaskTableBuilder {
         liveHint: GroupLiveHint? = nil,
         risk: Bool = false,
         draggable: Bool = false,
+        sortable: Bool = false,
         display: (TaskItem) -> RowDisplay
     ) {
         rows.append(.groupHeader(GroupHeaderInfo(
             key: key, title: title, hint: hint, colorHex: colorHex, icon: icon, statusKind: statusKind,
             statusColorHex: statusColorHex, labelColorHex: labelColorHex, count: tasks.count, open: open, gap: gap,
-            actions: actions, liveHint: liveHint, risk: risk
+            actions: actions, liveHint: liveHint, risk: risk, summary: open ? GroupSummary() : GroupSummary(tasks),
+            sortable: sortable
         )))
         if let drop { drops[key] = drop }
         if draggable { self.draggable.insert(key) }
@@ -357,8 +380,16 @@ private struct GroupHeaderRow: View {
     @EnvironmentObject private var model: TasksViewModel
     let info: GroupHeaderInfo
 
+    @Environment(\.taskColumnLayout) private var layout
+
+    /// The columns after the title, whose labels (or, collapsed, totals) the band carries.
+    private var columns: [TaskColumn] {
+        guard let layout, let title = layout.columns.firstIndex(of: .title) else { return [] }
+        return layout.columns[(title + 1)...].filter { !$0.title.isEmpty }
+    }
+
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: TaskColumnLayout.spacing) {
             toggle
             ForEach(Array(info.actions.enumerated()), id: \.offset) { index, action in
                 if index > 0 { Text("·").font(Focus.meta).foregroundColor(Focus.text3) }
@@ -369,9 +400,49 @@ private struct GroupHeaderRow: View {
                     .focusPointerCursor()
                     .fixedSize()
             }
+            ForEach(columns) { column in
+                cell(column)
+                    .frame(width: column.width, alignment: column.alignment)
+            }
         }
+        .padding(.leading, 4)
+        .padding(.trailing, TaskColumnLayout.trailingPadding)
+        .frame(height: 32)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(hex: 0xF1F1EE)))
         .padding(.top, info.gap)
-        .padding(.trailing, info.actions.isEmpty ? 0 : 6)
+        .padding(.bottom, 4)
+    }
+
+    /// Open: the column's label (it sorts when clicked). Collapsed: what the group holds there.
+    @ViewBuilder
+    private func cell(_ column: TaskColumn) -> some View {
+        if info.open {
+            if info.sortable, let key = column.sortKey {
+                FocusColumnHeader(
+                    title: column.title,
+                    alignment: column.alignment,
+                    sortAscending: model.sort.key == key ? model.sort.ascending : nil
+                ) {
+                    withAnimation(Focus.hoverAnimation) { model.sort = model.sort.toggled(key) }
+                }
+            } else {
+                FocusColumnHeader(title: column.title, alignment: column.alignment)
+            }
+        } else {
+            Text(summary(column))
+                .font(Focus.meta.monospacedDigit())
+                .foregroundColor(Focus.text3)
+                .lineLimit(1)
+        }
+    }
+
+    private func summary(_ column: TaskColumn) -> String {
+        switch column {
+        case .due: return info.summary.due
+        case .priority: return info.summary.priority
+        case .time: return info.summary.minutes > 0 ? Focus.durationString(minutes: info.summary.minutes) : ""
+        default: return ""
+        }
     }
 
     private func perform(_ action: GroupHeaderAction) {
@@ -423,12 +494,14 @@ private struct GroupHeaderRow: View {
         Button {
             model.toggleGroup(info.key)
         } label: {
-            HStack(spacing: 8) {
+            // The chevron hugs the left edge so the status icon sits above the rows' status circles
+            HStack(spacing: 4.5) {
                 Image(systemName: "arrowtriangle.right.fill")
                     .font(.system(size: 8))
                     .foregroundColor(Focus.text3)
                     .rotationEffect(.degrees(info.open ? 90 : 0))
-                    .frame(width: 10)
+                    .frame(width: 8)
+                HStack(spacing: 8) {
                 if let colorHex = info.colorHex {
                     FocusProjectTile(name: info.title, colorHex: colorHex, icon: info.icon)
                 }
@@ -446,11 +519,10 @@ private struct GroupHeaderRow: View {
                 if !info.hint.isEmpty {
                     Text(info.hint).font(Focus.meta).foregroundColor(Focus.text3).lineLimit(1)
                 }
+                }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 4)
-            .padding(.top, 4)
-            .padding(.bottom, 8)
+            .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

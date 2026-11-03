@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The bar under the header on List and Board: search (⌘F), filter chips, Group (List only),
+/// The part of the header row on List and Board after the tabs: search (⌘F), filter chips, Group (List only),
 /// Sort, Save view… and Clear. Settings are kept per project (TasksViewModel.optionsByScope).
 /// On a saved view whose filters changed: "Modified · Update view · Revert".
 struct TaskFilterBar: View {
@@ -14,10 +14,11 @@ struct TaskFilterBar: View {
 
     /// Narrow: icons for Filter, Group and Sort. A modified saved view's Update and Revert, or
     /// Save view…, need room on the right, so the bar goes compact sooner then.
+    /// The bar shares the header's row, so `width` is what is left after the title and tabs.
     private var compact: Bool {
-        if model.activeViewId != nil, model.isViewModified(store) { return width < 1200 }
-        if model.canSaveView { return width < 1000 }
-        return width < 900
+        if model.activeViewId != nil, model.isViewModified(store) { return width < 760 }
+        if model.canSaveView { return width < 640 }
+        return width < 560
     }
 
     /// Which popover is open
@@ -57,7 +58,7 @@ struct TaskFilterBar: View {
                     model.moveSelection(1, store: store)
                 }
             )
-            .frame(width: compact ? 160 : 210)
+            .frame(width: compact ? 130 : 190)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -96,14 +97,12 @@ struct TaskFilterBar: View {
                 }
             }
         }
-        .padding(.horizontal, 28)
-        .frame(height: 48)
+        .frame(height: Focus.controlHeight + 4)
         .background(GeometryReader { geo in
             Color.clear
                 .onAppear { width = geo.size.width }
                 .onChange(of: geo.size.width) { width = $0 }
         })
-        .overlay(alignment: .bottom) { FocusDivider() }
         .onAppear(perform: takeFocusRequest)
         .onChange(of: model.focusRequest) { _ in takeFocusRequest() }
     }

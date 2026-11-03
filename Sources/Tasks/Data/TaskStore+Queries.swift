@@ -92,7 +92,7 @@ extension TaskStore {
     /// Projects that don't take part in sprints have none.
     func sprintTasks(slot: SprintSlot, in scope: TaskScope = .all) -> [TaskItem] {
         if slot == .next { return sprintTasks(ahead: 1, in: scope) }
-        return tasks(in: scope).filter { $0.sprintSlot == slot && usesSprints($0.projectId) }
+        return Self.openFirst(tasks(in: scope).filter { $0.sprintSlot == slot && usesSprints($0.projectId) })
     }
 
     /// Case-insensitive title search across all projects, open tasks first (menu bar search).

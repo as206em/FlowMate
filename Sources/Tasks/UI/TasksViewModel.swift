@@ -100,6 +100,9 @@ final class TasksViewModel: ObservableObject {
     @Published var expandedProjects: Set<UUID> = [] {
         didSet { if expandedProjects != oldValue { saveWindowState() } }
     }
+    /// All projects › Overview: "3 projects · 1 needs attention", kept by the Overview as it draws
+    /// its cards so the header doesn't build them again.
+    @Published var overviewSummary = OverviewSummary()
     /// All projects › Overview: how the project cards are ordered.
     @Published var overviewSort: PortfolioSort = .attention {
         didSet { if overviewSort != oldValue { saveWindowState() } }
@@ -538,7 +541,31 @@ final class TasksViewModel: ObservableObject {
 
     /// Forgets selected tasks that no longer exist.
     func pruneSelection(_ store: TaskStore) {
-        let alive = selectedTaskIds.filter { store.task($0) != nil }
+        keepSelected(selectedTaskIds.filter { store.task($0) != nil })
+    }
+
+    /// After a change, forgets selected tasks that left the screen (moved to another project or
+    /// filtered out), so the bulk bar goes once nothing it acts on is shown. Tasks in collapsed
+    /// groups and past sprints are still on screen. Tabs without task rows keep the selection.
+    func pruneSelectionToView(_ store: TaskStore) {
+        guard isMultiSelecting else { return }
+        var shown: Set<UUID>
+        if scope.isToday {
+            shown = Set(visibleTasks(store, includingCollapsed: true).map(\.id))
+        } else {
+            switch effectiveTab {
+            case .milestones, .overview: return
+            case .sprints:
+                shown = Set(visibleTasks(store, includingCollapsed: true).map(\.id))
+                for sprint in store.pastSprints() { shown.formUnion(store.tasks(of: sprint, in: scope).map(\.id)) }
+            case .list, .board:
+                shown = Set(visibleTasks(store, includingCollapsed: true).map(\.id))
+            }
+        }
+        keepSelected(selectedTaskIds.filter { store.task($0) != nil && shown.contains($0) })
+    }
+
+    private func keepSelected(_ alive: Set<UUID>) {
         guard alive != selectedTaskIds else { return }
         let focus = selectedTaskId.flatMap { alive.contains($0) ? $0 : nil } ?? alive.first
         setSelection(alive, focus: focus, anchor: selectionAnchorId.flatMap { alive.contains($0) ? $0 : nil } ?? focus)
@@ -553,6 +580,32 @@ final class TasksViewModel: ObservableObject {
     static func startsCollapsed(_ key: String) -> Bool { key.hasPrefix("past-") || key.hasPrefix("closed-") }
 
     static func pastSprintGroupKey(_ sprint: PastSprint) -> String { "past-\(sprint.id.uuidString)" }
+
+    /// The keys of the groups the current view can collapse (List, Sprints, Today); nil on Board
+    /// and the other tabs.
+    func collapsibleGroupKeys(_ store: TaskStore) -> [String]? {
+        if scope.isToday { return Self.todaySections(store.todayPlan()).map(\.key) }
+        switch effectiveTab {
+        case .list:
+            // The keys only: group without sorting
+            let filter = appliedFilter
+            var tasks = store.filtered(store.tasks(in: scope), by: filter)
+            if !filter.sprintSlots.contains(.closed) { tasks.removeAll { $0.sprintSlot == .closed } }
+            return store.groups(tasks, by: grouping, in: scope).map(\.id)
+        case .sprints:
+            var keys = Self.sprintSlots.map(Self.sprintGroupKey)
+            keys += store.upcomingSprints().filter { $0.ahead > 1 }.map { Self.upcomingGroupKey($0.ahead) }
+            keys += store.pastSprints().map(Self.pastSprintGroupKey)
+            return keys
+        case .board, .milestones, .overview:
+            return nil
+        }
+    }
+
+    /// Collapses or expands these groups at once.
+    func setGroups(_ keys: [String], collapsed: Bool) {
+        for key in keys where isCollapsed(key) != collapsed { toggleGroup(key) }
+    }
 
     func toggleGroup(_ key: String) {
         if collapsedGroups.contains(key) {
@@ -712,7 +765,7 @@ final class TasksViewModel: ObservableObject {
     static func upcomingGroupKey(_ ahead: Int) -> String { "upcoming-\(ahead)" }
 
     /// The Sprints view's groups top to bottom, open ones only: active, next, later sprints, backlog.
-    func sprintGroupTasks(_ store: TaskStore) -> [[TaskItem]] {
+    func sprintGroupTasks(_ store: TaskStore, includingCollapsed: Bool = false) -> [[TaskItem]] {
         var groups: [(key: String, tasks: [TaskItem])] = [
             (Self.sprintGroupKey(.active), store.sprintTasks(slot: .active, in: scope)),
             (Self.sprintGroupKey(.next), store.sprintTasks(slot: .next, in: scope)),
@@ -721,24 +774,25 @@ final class TasksViewModel: ObservableObject {
             groups.append((Self.upcomingGroupKey(sprint.ahead), store.sprintTasks(ahead: sprint.ahead, in: scope)))
         }
         groups.append((Self.sprintGroupKey(.backlog), store.sprintTasks(slot: .backlog, in: scope)))
-        return groups.filter { !isCollapsed($0.key) }.map(\.tasks)
+        return groups.filter { includingCollapsed || !isCollapsed($0.key) }.map(\.tasks)
     }
 
     /// Every task the current view shows, top to bottom, skipping collapsed groups.
     /// ↑/↓ walk this order.
-    func visibleTasks(_ store: TaskStore, now: Date = Date()) -> [TaskItem] {
+    /// `includingCollapsed`: the tasks of collapsed groups too (the ones still in the view).
+    func visibleTasks(_ store: TaskStore, now: Date = Date(), includingCollapsed: Bool = false) -> [TaskItem] {
         if scope.isToday {
-            return Self.todaySections(store.todayPlan(now: now)).filter { !isCollapsed($0.key) }.flatMap(\.tasks)
+            return Self.todaySections(store.todayPlan(now: now)).filter { includingCollapsed || !isCollapsed($0.key) }.flatMap(\.tasks)
         }
         switch effectiveTab {
         case .list:
             // Grouped by label a task can be under several groups; ↑/↓ visit it once
             var seen = Set<UUID>()
-            return listGroups(store, now: now).filter { !isCollapsed($0.id) }.flatMap(\.tasks).filter { seen.insert($0.id).inserted }
+            return listGroups(store, now: now).filter { includingCollapsed || !isCollapsed($0.id) }.flatMap(\.tasks).filter { seen.insert($0.id).inserted }
         case .board:
             return allBoardTasks(store, now: now)
         case .sprints:
-            return sprintGroupTasks(store).flatMap { $0 }
+            return sprintGroupTasks(store, includingCollapsed: includingCollapsed).flatMap { $0 }
         case .milestones, .overview:
             return []
         }
@@ -1225,4 +1279,10 @@ final class TasksViewModel: ObservableObject {
         guard let id = store.convertSubtaskToTask(taskId, subtaskId) else { return }
         show(Toast(message: "Converted to a task", undoId: store.lastUndoId, openTaskId: id))
     }
+}
+
+/// All projects › Overview in one line: how many projects, how many need attention.
+struct OverviewSummary: Equatable {
+    var count = 0
+    var attention = 0
 }

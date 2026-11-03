@@ -10,7 +10,7 @@ struct TaskListView: View {
     var body: some View {
         if let reason = model.listEmptyReason(store) {
             TasksEmptyStateView(reason: reason)
-                .padding(.top, model.showsFilterBar ? 16 : 24)
+                .padding(.top, 16)
                 .padding(.horizontal, TaskTableCell.sidePadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
@@ -25,7 +25,7 @@ struct TaskListView: View {
         let firstOpen = groups.first(where: \.acceptsDrop)?.id
         let showProject = model.scope.projectId == nil
         var builder = TaskTableBuilder()
-        builder.spacer("top", 6)
+        builder.spacer("top", 8)
         for (index, group) in groups.enumerated() {
             builder.group(
                 key: group.id,
@@ -43,7 +43,8 @@ struct TaskListView: View {
                 composerIsDefault: group.id == firstOpen,
                 composerOnTop: model.isComposerPinned(TasksViewModel.listComposerKey(group.id)),
                 open: !model.isCollapsed(group.id),
-                gap: index == 0 ? 0 : 22,
+                gap: index == 0 ? 0 : 24,
+                sortable: true,
                 display: RowDisplay.maker(store: store, model: model)
             )
         }
@@ -51,7 +52,6 @@ struct TaskListView: View {
         return TaskTable(
             showProject: showProject,
             excluding: excluded(groups),
-            sort: Binding(get: { model.sort }, set: { model.sort = $0 }),
             caption: hidden > 0 ? "\(hidden) \(hidden == 1 ? "task" : "tasks") from past sprints hidden. Filter by Sprint › Past sprints to show them." : "",
             rows: builder.rows,
             drops: builder.drops
@@ -121,18 +121,22 @@ struct SprintPlanView: View {
     var body: some View {
         let sprint = store.sprint
         var builder = TaskTableBuilder()
-        builder.spacer("top", 6)
-        if scope.projectId == nil { builder.burnup() }
+        builder.spacer("top", 8)
         group(&builder, .active, title: "\(sprint.name) · active", hint: sprint.dateRange,
               empty: "Nothing in this sprint yet. Drag tasks here from Next or Backlog, or add one with the New task field.", gap: 0)
         let upcoming = store.upcomingSprints()
         group(&builder, .next, title: "\(sprint.nextName) · next", hint: upcoming.first?.hint ?? sprint.nextDateRange,
-              empty: "Nothing planned for the next sprint. Drag tasks here to line them up.", gap: 22)
+              empty: "Nothing planned for the next sprint. Drag tasks here to line them up.", gap: 24)
         for later in upcoming where later.ahead > 1 {
             laterGroup(&builder, later)
         }
         group(&builder, .backlog, title: "Backlog", hint: "",
-              empty: "No ideas parked for later. Drag tasks here, or pick Backlog on the New task field's sprint chip.", gap: 22)
+              empty: "No ideas parked for later. Drag tasks here, or pick Backlog on the New task field's sprint chip.", gap: 24)
+        // The charts close the page; they used to push the plan 240pt down
+        if scope.projectId == nil {
+            builder.sectionTitle("Burn-up")
+            builder.burnup()
+        }
         pastSprints(&builder)
         builder.spacer("bottom", 72)
         // Manual order only: rows are dragged between and within groups here, so headers don't sort
@@ -163,7 +167,7 @@ struct SprintPlanView: View {
                 showProject: scope.projectId == nil,
                 drop: nil,
                 open: !model.isCollapsed(key),
-                gap: 12,
+                gap: 24,
                 display: RowDisplay.maker(store: store, model: model)
             )
         }
@@ -181,7 +185,7 @@ struct SprintPlanView: View {
             showProject: scope.projectId == nil,
             drop: .upcoming(later.ahead),
             open: !model.isCollapsed(key),
-            gap: 22,
+            gap: 24,
             liveHint: .sprintLoad(scope: scope, slot: .next, ahead: later.ahead),
             display: RowDisplay.maker(store: store, model: model)
         )

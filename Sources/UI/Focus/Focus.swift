@@ -761,18 +761,17 @@ struct FocusColumnHeader: View {
 
     private var label: some View {
         HStack(spacing: 3) {
-            Text(title.uppercased())
-                .font(Focus.caption)
-                .tracking(0.5)
+            Text(title)
+                .font(.system(size: 12, weight: sortAscending != nil ? .semibold : .medium))
                 .lineLimit(1)
             if let sortAscending {
                 Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
                     .font(.system(size: 8, weight: .bold))
             }
         }
-        .foregroundColor(sortAscending != nil || hovering ? Focus.text : Focus.text3)
+        .foregroundColor(sortAscending != nil || hovering ? Focus.text : Focus.text2)
         .frame(maxWidth: .infinity, alignment: alignment)
-        .frame(height: 28)
+        .frame(height: 32)
         .contentShape(Rectangle())
     }
 }

@@ -64,6 +64,8 @@ struct TasksRootView: View {
             model.pruneSelection(store)
         }
         .onChange(of: store.lastUndoId) { _ in
+            // Every edit is an undo step: selected tasks it moved off this screen leave the selection
+            model.pruneSelectionToView(store)
             // A newer step means the toast's Undo would revert something else: hide it
             if let toast = model.toast, toast.undoId != nil, toast.undoId != store.lastUndoId { model.dismissToast() }
         }
@@ -74,9 +76,6 @@ struct TasksRootView: View {
             TasksHeader()
             if let milestone = model.scope.milestoneId.flatMap({ store.milestone($0) }) {
                 MilestonePageHeader(milestone: milestone)
-            }
-            if model.showsFilterBar, !showsFirstProject {
-                TaskFilterBar()
             }
             notices
             PaletteHint()
@@ -92,7 +91,7 @@ struct TasksRootView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         content
-                            .padding(.top, model.showsFilterBar ? 16 : 24)
+                            .padding(.top, 16)
                             .padding(.horizontal, 28)
                             .padding(.bottom, 72)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -210,9 +209,6 @@ struct TasksRootView: View {
     private var nativeTableContent: some View {
         if model.effectiveTab == .sprints {
             VStack(alignment: .leading, spacing: 0) {
-                SprintHeader(scope: model.scope, tight: true)
-                    .padding(.top, 24)
-                    .padding(.horizontal, TaskTableCell.sidePadding)
                 SprintPlanView(scope: model.scope)
             }
         } else {
@@ -233,9 +229,6 @@ struct TasksRootView: View {
     private var scopeContent: some View {
         let project = model.scope.projectId.flatMap { store.project($0) }
         VStack(alignment: .leading, spacing: 0) {
-            if model.scopeUsesSprints, !model.scope.isMilestone, model.effectiveTab == .board || model.effectiveTab == .sprints {
-                SprintHeader(scope: model.scope)
-            }
             switch model.effectiveTab {
             case .board:
                 BoardView()

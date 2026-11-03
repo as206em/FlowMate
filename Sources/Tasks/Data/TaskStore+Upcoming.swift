@@ -54,7 +54,7 @@ extension TaskStore {
 
     /// Tasks in `scope` planned in the upcoming sprint `ahead`.
     func sprintTasks(ahead: Int, in scope: TaskScope = .all) -> [TaskItem] {
-        tasks(in: scope).filter { usesSprints($0.projectId) && upcomingAhead(of: $0) == ahead }
+        Self.openFirst(tasks(in: scope).filter { usesSprints($0.projectId) && upcomingAhead(of: $0) == ahead })
     }
 
     /// The picker rows: Active, every upcoming sprint, Backlog.

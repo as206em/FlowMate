@@ -122,6 +122,14 @@ final class TaskRowController: NSObject {
                 }
             }
         }
+        let sprintTasks = ids.compactMap { store.task($0) }.filter { store.usesSprints($0.projectId) && $0.sprintSlot != .closed }
+        if !sprintTasks.isEmpty {
+            let inSprint = sprintTasks.allSatisfy { $0.sprintSlot == .active }
+            let sprintIds = sprintTasks.map(\.id)
+            menu.addItem(item(inSprint ? "Remove from sprint" : "Add to sprint") { [weak store] in
+                store?.setSprint(sprintIds, inSprint ? .backlog : .active)
+            })
+        }
         let allDone = ids.compactMap { store.task($0) }.allSatisfy { $0.statusCategory == .done }
         menu.addItem(item(allDone ? "Reopen" : "Mark done", key: "x") { [weak store, weak model] in
             guard let store, let model else { return }

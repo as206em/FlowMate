@@ -20,19 +20,8 @@ struct PortfolioOverview: View {
 
     private func content(now: Date) -> some View {
         let cards = store.portfolio(sortedBy: model.overviewSort, now: now)
-        let attention = cards.filter { $0.attentionLevel > 0 }.count
+        let summary = OverviewSummary(count: cards.count, attention: cards.filter { $0.attentionLevel > 0 }.count)
         return VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                Text(summary(count: cards.count, attention: attention))
-                    .font(Focus.meta)
-                    .foregroundColor(Focus.text3)
-                    .lineLimit(1)
-                Spacer(minLength: 12)
-                Text("Sort").font(Focus.meta).foregroundColor(Focus.text3)
-                FocusTabs(options: PortfolioSort.allCases.map { (value: $0, label: $0.title) }, selection: $model.overviewSort)
-                    .fixedSize()
-                    .accessibilityLabel("Sort projects")
-            }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.cardMinWidth), spacing: Self.spacing, alignment: .top)],
                       alignment: .leading, spacing: Self.spacing) {
                 ForEach(cards) { card in
@@ -41,15 +30,9 @@ struct PortfolioOverview: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func summary(count: Int, attention: Int) -> String {
-        let projects = "\(count) \(count == 1 ? "project" : "projects")"
-        switch attention {
-        case 0: return "\(projects) · all on track"
-        case 1: return "\(projects) · 1 needs attention"
-        default: return "\(projects) · \(attention) need attention"
-        }
+        // The header line reads it (TasksHeader)
+        .onAppear { model.overviewSummary = summary }
+        .onChange(of: summary) { model.overviewSummary = $0 }
     }
 }
 

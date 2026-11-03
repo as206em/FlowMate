@@ -1,16 +1,40 @@
 import AppKit
 import SwiftUI
 
-/// 54pt header: the project (or All projects) with the tabs (Board · List · Sprints · Milestones)
-/// right after it. The New task composer has its own row under it (TaskComposer).
+/// The header, two lines on every screen so they all read the same:
+///   1 (52pt)  the title (project, All projects, Today, a milestone or a saved view), the numbers
+///             of the active sprint, and the Sprint menu on the right
+///   2 (42pt)  the tabs (Board · List · Sprints · Milestones), underlined, with the tools of the
+///             tab after them: search and filters, Group and Sort, the milestones layout, Sort
+/// Today has no tabs, so it has the first line only. The New task composer lives in the groups.
 struct TasksHeader: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
 
+    private var hasTabs: Bool { !model.tabs.isEmpty }
+
+    /// The active sprint's menu, where the project (or every project) plans in sprints.
+    private var showsSprint: Bool {
+        model.scopeUsesSprints && !model.scope.isMilestone && !model.scope.isToday
+    }
+
     var body: some View {
+        VStack(spacing: 0) {
+            titleLine
+            if hasTabs { toolLine }
+        }
+        // Drag the window from anywhere on the header that isn't a control
+        .background(WindowDragArea())
+        .overlay(alignment: .bottom) { FocusDivider() }
+        .zIndex(1)
+    }
+
+    // MARK: Line 1
+
+    private var titleLine: some View {
         let project = model.scope.projectId.flatMap { store.project($0) }
         let milestone = model.scope.milestoneId.flatMap { store.milestone($0) }
-        HStack(spacing: 14) {
+        return HStack(spacing: 14) {
             if model.scope.isToday {
                 TodayHeaderTitle()
             } else if let view = model.activeView(store) {
@@ -29,25 +53,195 @@ struct TasksHeader: View {
                     .font(Focus.header)
                     .foregroundColor(Focus.text)
                     .lineLimit(1)
-                Text("\(store.projects.count) \(store.projects.count == 1 ? "project" : "projects")")
-                    .font(Focus.meta)
-                    .foregroundColor(Focus.text3)
-                    .lineLimit(1)
             }
-            if !model.tabs.isEmpty {
-                FocusTabs(
-                    options: model.tabs.map { (value: $0, label: $0.title) },
-                    selection: Binding(get: { model.effectiveTab }, set: { model.tab = $0 })
-                )
-                .fixedSize()
-                .padding(.leading, 4)
-            }
+            HeaderStats(scope: model.scope, showsSprint: showsSprint)
             Spacer(minLength: 12)
+            if !hasTabs, let keys = model.collapsibleGroupKeys(store) {
+                CollapseAllButton(keys: keys)
+            }
+            if showsSprint {
+                SprintHeaderItems(scope: model.scope)
+            }
         }
         .padding(.horizontal, 28)
-        .frame(height: 54)
-        .overlay(alignment: .bottom) { FocusDivider() }
-        .zIndex(1)
+        .frame(height: 52)
+    }
+
+    // MARK: Line 2
+
+    private var toolLine: some View {
+        HStack(spacing: 10) {
+            HeaderTabs()
+            Rectangle().fill(Focus.hairline).frame(width: 1, height: 16).padding(.horizontal, 4)
+            tools
+        }
+        .padding(.horizontal, 28)
+        .frame(height: 42)
+    }
+
+    @ViewBuilder
+    private var tools: some View {
+        let keys = model.collapsibleGroupKeys(store)
+        switch model.effectiveTab {
+        case .board, .list:
+            if model.showsFilterBar, !(store.isLoaded && store.projects.isEmpty && model.scope.projectId == nil) {
+                TaskFilterBar().frame(maxWidth: .infinity)
+            } else {
+                Spacer(minLength: 12)
+            }
+            if let keys { CollapseAllButton(keys: keys) }
+        case .sprints:
+            Spacer(minLength: 12)
+            if let keys { CollapseAllButton(keys: keys) }
+            SprintHeaderItems(scope: model.scope, showsChip: false, showsActions: true)
+        case .milestones:
+            MilestonesHeaderTools()
+        case .overview:
+            OverviewHeaderTools()
+        }
+    }
+}
+
+/// Board · List · Sprints · Milestones as underlined tabs.
+private struct HeaderTabs: View {
+    @EnvironmentObject private var model: TasksViewModel
+
+    var body: some View {
+        HStack(spacing: 20) {
+            ForEach(model.tabs, id: \.self) { tab in
+                let selected = tab == model.effectiveTab
+                Button { model.tab = tab } label: {
+                    Text(tab.title)
+                        .font(Focus.control)
+                        .foregroundColor(selected ? Focus.text : Focus.text2)
+                        .frame(height: 42)
+                        .overlay(alignment: .bottom) {
+                            Rectangle().fill(selected ? Focus.text : .clear).frame(height: 2)
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .fixedSize()
+    }
+}
+
+private struct CollapseAllButton: View {
+    @EnvironmentObject private var model: TasksViewModel
+    let keys: [String]
+
+    var body: some View {
+        let allCollapsed = keys.allSatisfy(model.isCollapsed)
+        FocusIconButton(
+            systemName: allCollapsed ? "arrow.up.and.line.horizontal.and.arrow.down" : "arrow.down.and.line.horizontal.and.arrow.up",
+            label: allCollapsed ? "Expand all groups" : "Collapse all groups"
+        ) { model.setGroups(keys, collapsed: !allCollapsed) }
+    }
+}
+
+/// The numbers beside the title: how far the active sprint is, what is overdue, the time tracked
+/// in the sprint and the days left. Without sprints (and on Today) the ones that still apply.
+private struct HeaderStats: View {
+    @EnvironmentObject private var store: TaskStore
+    @EnvironmentObject private var model: TasksViewModel
+    let scope: TaskScope
+    let showsSprint: Bool
+
+    var body: some View {
+        // Minutes are the finest unit shown, so a minute's tick is enough (not the second ticker)
+        TimelineView(.periodic(from: Date(), by: 60)) { context in
+            let now = context.date
+            HStack(spacing: 0) {
+                if scope.isToday {
+                    let plan = store.todayPlan(now: now)
+                    stat(Focus.durationString(minutes: Int((plan.plannedSeconds / 60).rounded())), "planned")
+                    overdue(plan.overdue.count)
+                } else if model.activeView(store) == nil {
+                    if showsSprint {
+                        stat(store.sprintCompletion(scope: scope).percentText, "\(store.sprint.name) done")
+                    }
+                    overdue(store.tasks(in: scope).filter { store.isOverdue($0, now: now) }.count)
+                    if showsSprint {
+                        let tracked = Int((store.trackedInSprint(projectId: scope.projectId, now: now) / 60).rounded())
+                        stat(Focus.durationString(minutes: tracked), "tracked")
+                        let left = max(0, (Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: now),
+                                                                         to: Calendar.current.startOfDay(for: store.sprint.endDate)).day ?? 0) + 1)
+                        stat("\(left) \(left == 1 ? "day" : "days")", "left")
+                    }
+                }
+            }
+        }
+        .padding(.leading, 2)
+    }
+
+    @ViewBuilder
+    private func overdue(_ count: Int) -> some View {
+        if count > 0 { stat("\(count)", "overdue", tint: Focus.risk) }
+    }
+
+    private func stat(_ value: String, _ label: String, tint: Color = Focus.text) -> some View {
+        HStack(spacing: 6) {
+            Text(value).font(Focus.rowStrong.monospacedDigit()).foregroundColor(tint)
+            Text(label).font(Focus.meta).foregroundColor(Focus.text3)
+        }
+        .lineLimit(1)
+        .fixedSize()
+        .padding(.leading, 16)
+        .padding(.trailing, 2)
+        .overlay(alignment: .leading) { Rectangle().fill(Focus.hairline).frame(width: 1, height: 14) }
+        .padding(.leading, 14)
+    }
+}
+
+/// Milestones: List or Timeline, and the timeline's Today and zoom.
+private struct MilestonesHeaderTools: View {
+    @EnvironmentObject private var model: TasksViewModel
+
+    var body: some View {
+        FocusTabs(options: MilestonesLayout.allCases.map { (value: $0, label: $0.title) }, selection: $model.milestonesLayout)
+            .fixedSize()
+            .accessibilityLabel("Milestones layout")
+        Spacer(minLength: 12)
+        if model.milestonesLayout == .timeline {
+            Button("Today") {
+                NotificationCenter.default.post(name: RoadmapTimeline.scrollToTodayNotification, object: nil)
+            }
+            .buttonStyle(.focus(.ghost))
+            .help("Scroll back to today")
+            FocusTabs(options: TimelineZoom.allCases.map { (value: $0, label: $0.title) }, selection: $model.timelineZoom)
+                .fixedSize()
+                .accessibilityLabel("Timeline zoom")
+        }
+    }
+}
+
+/// All projects › Overview: how many projects need attention, and the sort of the cards.
+private struct OverviewHeaderTools: View {
+    @EnvironmentObject private var store: TaskStore
+    @EnvironmentObject private var model: TasksViewModel
+
+    var body: some View {
+        let attention = model.overviewSummary.attention
+        Text(summary(count: model.overviewSummary.count, attention: attention))
+            .font(Focus.meta)
+            .foregroundColor(attention > 0 ? Focus.progress : Focus.text3)
+            .lineLimit(1)
+        Spacer(minLength: 12)
+        Text("Sort").font(Focus.meta).foregroundColor(Focus.text3)
+        FocusTabs(options: PortfolioSort.allCases.map { (value: $0, label: $0.title) }, selection: $model.overviewSort)
+            .fixedSize()
+            .accessibilityLabel("Sort projects")
+    }
+
+    private func summary(count: Int, attention: Int) -> String {
+        let projects = "\(count) \(count == 1 ? "project" : "projects")"
+        switch attention {
+        case 0: return "\(projects) · all on track"
+        case 1: return "\(projects) · 1 needs attention"
+        default: return "\(projects) · \(attention) need attention"
+        }
     }
 }
 
@@ -85,18 +279,69 @@ private struct ProjectTitleButton: View {
     }
 }
 
-/// Sprint line above Board and Sprints: name, dates (click to change the start and length), goal
-/// (click to edit), the plan against capacity ("Planned 11h of 20h · tracked 6h", amber near it,
-/// red over it; in a project, that project's part), Complete sprint (opens CompleteSprintSheet).
-/// The sprint is the workspace's, so it reads the same in every project.
-struct SprintHeader: View {
+/// The active sprint in the header: a chip with its name and completion that opens the sprint menu
+/// (dates, goal, the plan against capacity, Plan sprints, Complete sprint). The Sprints tab also
+/// shows Plan sprints and Complete sprint as buttons. The sprint is the workspace's, so it reads the
+/// same in every project.
+struct SprintHeaderItems: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
     let scope: TaskScope
-    /// Above the Sprints table, which has its own top spacing
-    var tight = false
+    var showsChip = true
+    /// The Sprints tab: its two actions sit in its tool line
+    var showsActions = false
 
-    @State private var editingGoal = false
+    @State private var showingMenu = false
+    @State private var planning = false
+
+    var body: some View {
+        let sprint = store.sprint
+        HStack(spacing: 8) {
+          if showsChip {
+            Button { showingMenu = true } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(Focus.text3)
+                    Text(sprint.name).font(Focus.control).foregroundColor(Focus.text)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(Focus.text3)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: Focus.controlHeight)
+                .overlay(RoundedRectangle(cornerRadius: Focus.radiusControl).strokeBorder(Focus.lineStrong, lineWidth: 1))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help("\(sprint.name) · \(sprint.dateRange)")
+            .popover(isPresented: $showingMenu, arrowEdge: .bottom) {
+                SprintMenu(scope: scope, close: { showingMenu = false })
+                    .environmentObject(store)
+                    .environmentObject(model)
+            }
+          }
+            if showsActions {
+                Button("Plan sprints") { planning = true }
+                    .buttonStyle(.focus(.ghost))
+                    .help("Create sprints ahead and set their goals")
+                    .popover(isPresented: $planning, arrowEdge: .bottom) { SprintPlanner() }
+                Button("Complete sprint") { model.completingSprint = true }
+                    .buttonStyle(.focus())
+                    .help("Close \(store.sprintName()) for every project and start \(store.sprint.nextName) today")
+            }
+        }
+    }
+}
+
+/// Popover of the sprint chip: dates (click to change), goal (edit in place) and the plan line.
+struct SprintMenu: View {
+    @EnvironmentObject private var store: TaskStore
+    @EnvironmentObject private var model: TasksViewModel
+    let scope: TaskScope
+    let close: () -> Void
+
     @State private var goalDraft = ""
     @State private var editingDates = false
     @State private var planning = false
@@ -104,74 +349,56 @@ struct SprintHeader: View {
 
     var body: some View {
         let sprint = store.sprint
-        HStack(spacing: 12) {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(Focus.text3)
-            Text(sprint.name).font(Focus.groupTitle).foregroundColor(Focus.text)
-            FocusCellButton(help: "Change sprint dates", action: { editingDates = true }) {
-                Text(sprint.dateRange).font(Focus.body).foregroundColor(Focus.text3).fixedSize()
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(sprint.name).font(Focus.groupTitle).foregroundColor(Focus.text)
+                FocusCellButton(help: "Change sprint dates", action: { editingDates = true }) {
+                    Text(sprint.dateRange).font(Focus.body).foregroundColor(Focus.text3).fixedSize()
+                }
+                .fixedSize()
+                .popover(isPresented: $editingDates, arrowEdge: .bottom) { SprintDatesEditor() }
             }
-            .fixedSize()
-            .popover(isPresented: $editingDates, arrowEdge: .bottom) {
-                SprintDatesEditor()
-            }
-            Text("·").foregroundColor(Focus.text2)
-            if editingGoal {
+            VStack(alignment: .leading, spacing: 4) {
+                FocusCaption(text: "Goal")
                 TextField(SprintState.goalPlaceholder, text: $goalDraft)
                     .focused($goalFocused)
-                    .focusField(focused: true)
-                    .frame(maxWidth: 420)
+                    .focusField()
                     .onSubmit(commitGoal)
-                    .onExitCommand { editingGoal = false }
                     .onChange(of: goalFocused) { focused in if !focused { commitGoal() } }
-            } else {
-                Button {
-                    goalDraft = sprint.goal
-                    editingGoal = true
-                    DispatchQueue.main.async { goalFocused = true }
-                } label: {
-                    Text(sprint.displayGoal)
-                        .font(Focus.body)
-                        .foregroundColor(sprint.goal.isEmpty ? Focus.text3 : Focus.text2)
-                        .lineLimit(1)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Edit sprint goal")
             }
-            Spacer(minLength: 12)
-            Text(store.sprintCompletion(scope: scope).percentText + " done")
-                .font(Focus.meta.monospacedDigit().weight(.semibold))
-                .foregroundColor(Focus.text2)
-                .fixedSize()
-                .help("Done time of the active sprint's planned time" + (scope.projectId == nil ? "" : ", for this project"))
             LiveTime { now in
                 let line = store.sprintPlanLine(scope: scope, now: now)
-                Text(line.text)
+                Text(store.sprintCompletion(scope: scope).percentText + " done · " + line.text)
                     .font(Focus.meta.monospacedDigit())
                     .foregroundColor(CapacityColors.color(line.level))
-                    .lineLimit(1)
-                    .fixedSize()
-                    .help(store.sprintCapacityMinutes(in: scope) == nil
-                          ? "Expected time of the active sprint's tasks, and time tracked in its dates. Set hours per week in a project's settings to see the capacity."
-                          : "Expected time of the active sprint's tasks against the weekly hours set on the projects, and time tracked in its dates")
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Button("Plan sprints") { planning = true }
-                .buttonStyle(.focus(.ghost))
-                .help("Create sprints ahead and set their goals")
-                .popover(isPresented: $planning, arrowEdge: .bottom) { SprintPlanner() }
-            Button("Complete sprint") { model.completingSprint = true }
+            FocusDivider()
+            HStack(spacing: 8) {
+                Button("Plan sprints") { planning = true }
+                    .buttonStyle(.focus(.ghost))
+                    .popover(isPresented: $planning, arrowEdge: .bottom) { SprintPlanner() }
+                Spacer(minLength: 0)
+                Button("Complete sprint") {
+                    close()
+                    model.completingSprint = true
+                }
                 .buttonStyle(.focus())
-                .help("Close \(store.sprintName()) for every project and start \(store.sprint.nextName) today")
+            }
         }
-        .padding(.bottom, tight ? 0 : 20)
+        .padding(14)
+        .frame(width: 320)
+        .background(Focus.raised)
+        .focusLight()
+        .onAppear { goalDraft = store.sprint.goal }
+        // Closing the popover by clicking away may not end the field's focus first
+        .onDisappear(perform: commitGoal)
     }
 
+    /// Saves the goal once, whichever of ↵, leaving the field or closing the popover comes first.
     private func commitGoal() {
-        guard editingGoal else { return }
+        guard goalDraft != store.sprint.goal else { return }
         store.setSprintGoal(goalDraft)
-        editingGoal = false
     }
 }
 
@@ -408,5 +635,25 @@ struct CompleteSprintSheet: View {
         model.completeSprint(unfinished: unfinished, nextGoal: goal, store: store)
         model.completingSprint = false
         dismiss()
+    }
+}
+
+
+/// A background that moves the window when dragged (double-click zooms it, like a title bar).
+/// Controls drawn above it keep their clicks.
+private struct WindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DragView() }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    private final class DragView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+
+        override func mouseDown(with event: NSEvent) {
+            if event.clickCount == 2 {
+                window?.performZoom(nil)
+            } else {
+                window?.performDrag(with: event)
+            }
+        }
     }
 }
