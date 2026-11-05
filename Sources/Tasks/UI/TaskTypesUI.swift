@@ -504,3 +504,50 @@ private struct NextBestRow: View {
         return "\(up ? "Send up" : "Send down") (\(delta >= 0 ? "+" : "−")\(abs(delta)))"
     }
 }
+
+// MARK: - Score popover
+
+/// The Sprints view's Score cell popover: the number, how it's made, and the nudges.
+struct TaskScoreEditor: View {
+    @EnvironmentObject private var store: TaskStore
+    let task: TaskItem
+    let close: () -> Void
+
+    var body: some View {
+        let score = store.nextBestScore(task, behind: store.sprintMix().behind)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("\(score.score)").font(.system(size: 22, weight: .semibold).monospacedDigit()).foregroundColor(Focus.text)
+                Text("of 100").font(Focus.meta).foregroundColor(Focus.text3)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                line("Impact", "\(score.impact) (\(score.impactSource))")
+                line("Effort", "\(Focus.durationString(minutes: score.minutesLeft)) left → base \(score.base)")
+                if score.boost > 0 { line("Mix", "+\(score.boost), its bucket is behind the target") }
+                if score.nudge != 0 { line("Nudge", score.nudge > 0 ? "+\(score.nudge)" : "\(score.nudge)") }
+                if score.pinnedTop { line("Pinned", "First in Next best today") }
+            }
+            FocusDivider()
+            HStack(spacing: 6) {
+                Button("Send up") { store.sendNextBest(task.id, up: true) }.buttonStyle(.focus(.ghost))
+                Button("Send down") { store.sendNextBest(task.id, up: false) }.buttonStyle(.focus(.ghost))
+                Button("To top") { store.sendToTop(task.id) }.buttonStyle(.focus(.ghost))
+            }
+            if task.isNudged {
+                Button("Back to normal") { store.resetNextBest(task.id) }.buttonStyle(.focus(.ghost))
+            }
+        }
+        .padding(14)
+        .frame(width: 290, alignment: .leading)
+        .background(Focus.raised)
+        .focusLight()
+    }
+
+    private func line(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label).font(Focus.meta).foregroundColor(Focus.text3).frame(width: 52, alignment: .leading)
+            Text(value).font(Focus.meta.monospacedDigit()).foregroundColor(Focus.text2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}

@@ -192,6 +192,63 @@ final class NextBestTests: XCTestCase {
         XCTAssertEqual(store.task(id)!.nudgeRun, 0)
     }
 
+    // MARK: - Sprint planning
+
+    private func backlog(_ store: TaskStore, _ title: String, _ pid: UUID, minutes: Int) -> UUID {
+        let id = store.addTask(title: title, projectId: pid, sprintSlot: .backlog, now: t0)!
+        store.setExpectedMinutes(id, minutes)
+        return id
+    }
+
+    func testFillToCapacityTakesTheBestThatFit() async {
+        let (store, pid) = await makeStore()
+        store.setWeeklyCapacity(pid, hours: 1)  // 2h in a 2-week sprint
+        let best = backlog(store, "Best", pid, minutes: 60)
+        let low = backlog(store, "Low", pid, minutes: 60)
+        let big = backlog(store, "Big", pid, minutes: 90)
+        store.setTaskImpact([best], 9)
+        store.setTaskImpact([low], 2)
+        store.setTaskImpact([big], 8)
+        let moved = store.fillSprintToCapacity(now: t0)
+        XCTAssertEqual(moved, [best, low], "Big no longer fits after Best")
+        XCTAssertEqual(store.task(big)!.sprintSlot, .backlog)
+        store.undo()
+        XCTAssertEqual(store.task(best)!.sprintSlot, .backlog, "one undo step")
+    }
+
+    func testFillToCapacityRebalancesTheMix() async {
+        let (store, pid) = await makeStore()
+        store.setWeeklyCapacity(pid, hours: 1)
+        store.setReachTarget(50)
+        let a = backlog(store, "Build A", pid, minutes: 30)
+        let b = backlog(store, "Build B", pid, minutes: 30)
+        let sell = backlog(store, "Sell", pid, minutes: 30)
+        store.setType([a, b], build)
+        store.setType([sell], sales)
+        store.setTaskImpact([a, b], 10)
+        store.setTaskImpact([sell], 4)
+        // Build A: (10+5)/2 → 8 → 80. Sell: (4+9)/2 → 7 → 70, +5 once Reach is behind
+        let moved = store.fillSprintToCapacity(now: t0)
+        XCTAssertEqual(moved.first, a)
+        XCTAssertEqual(moved.count, 3)
+    }
+
+    func testFillToCapacityNeedsACapacity() async {
+        let (store, pid) = await makeStore()
+        _ = backlog(store, "Idea", pid, minutes: 30)
+        XCTAssertTrue(store.fillSprintToCapacity(now: t0).isEmpty)
+    }
+
+    func testSortByScoreOrdersTheBacklog() async {
+        let (store, pid) = await makeStore()
+        let low = backlog(store, "Low", pid, minutes: 30)
+        let high = backlog(store, "High", pid, minutes: 30)
+        store.setTaskImpact([low], 2)
+        store.setTaskImpact([high], 9)
+        store.sortByScore(slot: .backlog, now: t0)
+        XCTAssertEqual(store.sprintTasks(slot: .backlog).map(\.id), [high, low])
+    }
+
     // MARK: - Keep warm
 
     func testKeepWarmListsAProjectPastItsCadence() async {

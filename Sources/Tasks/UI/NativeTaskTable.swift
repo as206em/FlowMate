@@ -71,12 +71,26 @@ struct GroupSummary: Equatable {
 /// A button in a group header.
 enum GroupHeaderAction: Equatable {
     case moveOverdueToToday, moveOverdueToTomorrow, pauseAll
+    /// Sprints view, Backlog: pull the best-scoring tasks into the active sprint until it's full
+    case fillToCapacity(scope: TaskScope)
+    /// Sprints view: reorder the slot's tasks by Next best score, highest first
+    case sortByScore(scope: TaskScope, slot: SprintSlot)
 
     var title: String {
         switch self {
         case .moveOverdueToToday: return "Move overdue to today"
         case .moveOverdueToTomorrow: return "Overdue to tomorrow"
         case .pauseAll: return "Pause all"
+        case .fillToCapacity: return "Fill to capacity"
+        case .sortByScore: return "Sort by score"
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .fillToCapacity: return "Move the highest-scoring backlog tasks into the active sprint until its capacity is used. Each pick rechecks the Make / Reach mix. ⌘Z undoes."
+        case .sortByScore: return "Order these tasks by their Next best score, highest first. ⌘Z undoes."
+        default: return ""
         }
     }
 }
@@ -404,6 +418,7 @@ private struct GroupHeaderRow: View {
             ForEach(Array(info.actions.enumerated()), id: \.offset) { index, action in
                 if index > 0 { Text("·").font(Focus.meta).foregroundColor(Focus.text3) }
                 Button(action.title) { perform(action) }
+                    .help(action.help)
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(Focus.text2)
@@ -460,6 +475,11 @@ private struct GroupHeaderRow: View {
         case .moveOverdueToToday: model.moveAllOverdue(.today, store: store)
         case .moveOverdueToTomorrow: model.moveAllOverdue(.tomorrow, store: store)
         case .pauseAll: store.pauseAllTimers()
+        case let .fillToCapacity(scope):
+            let moved = store.fillSprintToCapacity(scope: scope)
+            model.showUndoToast(moved.isEmpty ? "Nothing fits in the sprint's capacity" : "\(TaskStore.taskCount(moved.count)) added to \(store.sprintName())", store: store)
+        case let .sortByScore(scope, slot):
+            store.sortByScore(scope: scope, slot: slot)
         }
     }
 

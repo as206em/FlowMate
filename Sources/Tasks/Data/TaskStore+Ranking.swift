@@ -405,6 +405,53 @@ extension TaskStore {
         return NextBestList(ranked: ranked, keepWarm: Array(keepWarm))
     }
 
+    /// Fill to capacity: moves backlog tasks of `scope` into the active sprint, best score first,
+    /// while they fit what's left of the capacity. The mix is rechecked after every pick, so a
+    /// light bucket's tasks keep their boost until it catches up. Returns the moved tasks, in pick
+    /// order. Nothing moves without a capacity. One undo step.
+    @discardableResult
+    func fillSprintToCapacity(scope: TaskScope = .all, now: Date = Date(), calendar: Calendar = .current) -> [UUID] {
+        guard let capacity = sprintCapacityMinutes(in: scope) else { return [] }
+        var planned = slotLoad(scope: scope, slot: .active, now: now).plannedMinutes
+        var active = sprintTasks(slot: .active, in: scope).filter { !$0.isCanceled }
+        var pool = sprintTasks(slot: .backlog, in: scope).filter { !$0.isClosed && usesSprints($0.projectId) }
+        var picked: [UUID] = []
+        while planned < capacity {
+            let behind = mix(of: active).behind
+            let fitting = pool.filter { planned + $0.expectedMinutes <= capacity }
+            guard let best = fitting.max(by: { a, b in
+                let x = nextBestScore(a, behind: behind, now: now, calendar: calendar)
+                let y = nextBestScore(b, behind: behind, now: now, calendar: calendar)
+                if x.pinnedTop != y.pinnedTop { return y.pinnedTop }
+                if x.score != y.score { return x.score < y.score }
+                return a.sortIndex > b.sortIndex
+            }) else { break }
+            picked.append(best.id)
+            planned += best.expectedMinutes
+            active.append(best)
+            pool.removeAll { $0.id == best.id }
+        }
+        guard !picked.isEmpty else { return [] }
+        undoGroup("Fill to capacity") { setSprintSlot(picked, .active) }
+        return picked
+    }
+
+    /// Orders a sprint slot's tasks by score, highest first (closed ones keep their place at the
+    /// end), reusing their own sort positions. One undo step.
+    func sortByScore(scope: TaskScope = .all, slot: SprintSlot, ahead: Int = 1, now: Date = Date()) {
+        let tasks = slot == .next ? sprintTasks(ahead: ahead, in: scope) : sprintTasks(slot: slot, in: scope)
+        let behind = sprintMix().behind
+        let scored = tasks.map { ($0, $0.isClosed ? -1 : nextBestScore($0, behind: behind, now: now).score) }
+        let ordered = scored.sorted { a, b in a.1 != b.1 ? a.1 > b.1 : a.0.sortIndex < b.0.sortIndex }.map(\.0.id)
+        let slots = tasks.map(\.sortIndex).sorted()
+        mutate("Sort by score") { ws in
+            for (id, index) in zip(ordered, slots) {
+                guard let i = ws.tasks.firstIndex(where: { $0.id == id }) else { continue }
+                ws.tasks[i].sortIndex = index
+            }
+        }
+    }
+
     /// Send up (`up`) or Send down: the nth press in a row moves 5, 10, then 15 points.
     func sendNextBest(_ id: UUID, up: Bool) {
         updateTask(id, action: up ? "Send up" : "Send down") { task in

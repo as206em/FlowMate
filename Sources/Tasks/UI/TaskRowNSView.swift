@@ -39,6 +39,8 @@ struct RowDisplay: Equatable {
     var labels: [RowLabel] = []
     /// A button shown at the end of the title while the row is hovered (Today: "→ Tomorrow")
     var quickAction: RowQuickAction?
+    /// The Next best score (the Sprints view's Score column); nil elsewhere and for closed tasks
+    var score: NextBestScore? = nil
 }
 
 /// A label as a row draws it.
@@ -216,6 +218,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             case .sprint: drawMeta(display.sprintLabel, in: cell)
             case .due: drawDue(task, display, in: cell)
             case .priority: drawPriority(task.priority, in: cell)
+            case .score: drawScore(display.score, in: cell)
             case .time: drawTime(task, display, in: cell)
             case .timer: drawTimer(task, display, in: cell)
             }
@@ -514,6 +517,20 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
                  in: NSRect(x: textX, y: cell.minY, width: max(0, cell.maxX - textX), height: cell.height))
     }
 
+    /// The 0–100 score as a small badge, filled from 70; a dot when Send up/down or to top moved it.
+    private func drawScore(_ score: NextBestScore?, in cell: NSRect) {
+        guard let score else { return drawEmpty(in: cell) }
+        let strong = score.score >= 70
+        let badge = NSRect(x: cell.midX - 16, y: cell.midY - 10, width: 32, height: 20)
+        (strong ? Style.done : Style.ringTrack).setFill()
+        NSBezierPath(roundedRect: badge, xRadius: 6, yRadius: 6).fill()
+        drawText("\(score.score)", font: Style.count, color: strong ? .white : Style.text, in: badge, align: .center)
+        if score.nudge != 0 || score.pinnedTop {
+            Style.progress.setFill()
+            NSBezierPath(ovalIn: NSRect(x: badge.maxX - 3, y: badge.minY - 2, width: 6, height: 6)).fill()
+        }
+    }
+
     private func elapsed(_ task: TaskItem, _ display: RowDisplay) -> TimeInterval {
         let running = display.runningSince.map { max(0, nowProvider().timeIntervalSince($0)) } ?? 0
         return task.spentSeconds + running
@@ -686,6 +703,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         case .sprint: return task.sprintSlot == .closed ? info.display.sprintLabel : "Change sprint"
         case .due: return "Change due date"
         case .priority: return "Change priority"
+        case .score: return info.display.score.map { "Score \($0.score): \($0.reason). Click to send it up or down" } ?? ""
         case .time: return "Change time spent or expected time"
         case .timer: return task.isClosed ? "" : (info.display.runningSince != nil ? "Pause timer" : "Start timer")
         }
