@@ -6,6 +6,15 @@
     <description>FlowMate updates</description>
     <language>en</language>
     <item>
+      <title>Version 1.1.5</title>
+      <pubDate>Thu, 05 Nov 2026 19:23:55 +0000</pubDate>
+      <sparkle:version>202611051918</sparkle:version>
+      <sparkle:shortVersionString>1.1.5</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[## What's Changed<br>* Remove Board and Milestones, per-group sort, Score everywhere, simpler Today by @as206em in https://github.com/as206em/FlowMate/pull/11<br><br><br>**Full Changelog**: https://github.com/as206em/FlowMate/compare/v1.1.4...v1.1.5]]></description>
+      <enclosure url="https://github.com/as206em/FlowMate/releases/download/v1.1.5/FlowMate-1.1.5.zip" length="10823682" type="application/octet-stream" sparkle:edSignature="am74EwxMs032YwhDpefWQaoP28i4epWjvJCIyJ0XBkhZMTJOuo2iKz9A8OEe0BJH8Pp+DWZtna11V9q0ydvqBw=="/>
+    </item>
+    <item>
       <title>Version 1.1.4</title>
       <pubDate>Thu, 05 Nov 2026 17:40:48 +0000</pubDate>
       <sparkle:version>202611051733</sparkle:version>
