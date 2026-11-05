@@ -80,7 +80,8 @@ struct TaskColumnLayout: Equatable, Sendable {
     /// The title keeps at least this much room; other columns drop out to make it.
     static let minTitleWidth: CGFloat = 200
     /// Dropped first when the table is narrow
-    static let dropOrder: [TaskColumn] = [.sprint, .labels, .milestone, .score, .project, .priority]
+    /// (Score, where shown, is what the Sprints view plans by: it goes last)
+    static let dropOrder: [TaskColumn] = [.sprint, .labels, .milestone, .project, .priority, .score]
     /// Shown only where a table asks for them (`including`)
     static let optIn: Set<TaskColumn> = [.score]
 

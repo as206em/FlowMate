@@ -476,8 +476,17 @@ private struct GroupHeaderRow: View {
         case .moveOverdueToTomorrow: model.moveAllOverdue(.tomorrow, store: store)
         case .pauseAll: store.pauseAllTimers()
         case let .fillToCapacity(scope):
+            guard store.sprintCapacityMinutes(in: scope) != nil else {
+                // Nothing changed, so no Undo button
+                model.show(.init(message: "Set Hours per week in the project's settings first: the sprint fills up to that capacity"))
+                return
+            }
             let moved = store.fillSprintToCapacity(scope: scope)
-            model.showUndoToast(moved.isEmpty ? "Nothing fits in the sprint's capacity" : "\(TaskStore.taskCount(moved.count)) added to \(store.sprintName())", store: store)
+            if moved.isEmpty {
+                model.show(.init(message: "Nothing in the backlog fits what's left of the capacity"))
+            } else {
+                model.showUndoToast("\(TaskStore.taskCount(moved.count)) added to \(store.sprintName())", store: store)
+            }
         case let .sortByScore(scope, slot):
             store.sortByScore(scope: scope, slot: slot)
         }

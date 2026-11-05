@@ -192,14 +192,14 @@ struct SprintPlanView: View {
         )
     }
 
-    /// Backlog: Fill to capacity (when a capacity is set) and Sort by score; Next: Sort by score.
+    /// Backlog: Fill to capacity and Sort by score; Next: Sort by score (each needs tasks to act on).
     private func actions(_ slot: SprintSlot) -> [GroupHeaderAction] {
         let open = store.sprintTasks(slot: slot, in: scope).filter { !$0.isClosed }
         guard open.count > 0 else { return [] }
         switch slot {
         case .backlog:
-            let fill: [GroupHeaderAction] = store.sprintCapacityMinutes(in: scope) != nil ? [.fillToCapacity(scope: scope)] : []
-            return fill + (open.count > 1 ? [.sortByScore(scope: scope, slot: .backlog)] : [])
+            // Always offered: without a capacity it says how to set one
+            return [.fillToCapacity(scope: scope)] + (open.count > 1 ? [.sortByScore(scope: scope, slot: .backlog)] : [])
         case .next:
             return open.count > 1 ? [.sortByScore(scope: scope, slot: .next)] : []
         default:
