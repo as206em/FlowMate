@@ -18,9 +18,6 @@ struct RowDisplay: Equatable {
     var projectColorHex: UInt32?
     /// The project's emoji or symbol in place of its letter
     var projectIcon: ProjectIcon? = nil
-    var milestoneName: String?
-    /// The milestone's color: its chip is tinted with it
-    var milestoneColorHex: UInt32?
     var sprintLabel: String
     var dueLabel: String?
     var dueIsRisk: Bool
@@ -213,7 +210,6 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             case .status: drawStatus(display.status, in: cell)
             case .project: drawProject(display, in: cell)
             case .title: if !isRenaming { drawTitle(task, display, in: cell) }
-            case .milestone: drawMilestone(display, in: cell)
             case .labels: drawLabels(display.labels, in: cell)
             case .sprint: drawMeta(display.sprintLabel, in: cell)
             case .due: drawDue(task, display, in: cell)
@@ -270,32 +266,6 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
     private func drawMeta(_ text: String?, in cell: NSRect) {
         guard let text, !text.isEmpty else { return drawEmpty(in: cell) }
         drawText(text, font: Style.meta, color: Style.text3, in: cell)
-    }
-
-    /// A chip tinted with the milestone's color: ◆ and the name.
-    private func drawMilestone(_ display: RowDisplay, in cell: NSRect) {
-        guard let name = display.milestoneName, !name.isEmpty else { return drawEmpty(in: cell) }
-        guard let hex = display.milestoneColorHex else { return drawMeta(name, in: cell) }
-        let color = Self.projectColor(hex)
-        let textColor = Self.darkened(hex)
-        let font = Style.tag
-        let pad: CGFloat = 6, diamond: CGFloat = 7, gap: CGFloat = 5
-        let chipWidth = min(cell.width, pad + diamond + gap + textWidth(name, font: font) + pad)
-        let chip = NSRect(x: cell.minX - 2, y: cell.midY - 10, width: chipWidth, height: 20)
-        color.withAlphaComponent(0.10).setFill()
-        NSBezierPath(roundedRect: chip, xRadius: Focus.radiusTag, yRadius: Focus.radiusTag).fill()
-        let d = NSBezierPath()
-        let cx = chip.minX + pad + diamond / 2, cy = chip.midY
-        d.move(to: NSPoint(x: cx, y: cy - diamond / 2 - 0.5))
-        d.line(to: NSPoint(x: cx + diamond / 2, y: cy))
-        d.line(to: NSPoint(x: cx, y: cy + diamond / 2 + 0.5))
-        d.line(to: NSPoint(x: cx - diamond / 2, y: cy))
-        d.close()
-        color.setFill()
-        d.fill()
-        let textX = chip.minX + pad + diamond + gap
-        drawText(name, font: font, color: textColor,
-                 in: NSRect(x: textX, y: cell.minY, width: max(0, chip.maxX - pad - textX + 1), height: cell.height))
     }
 
     /// Label chips (a dot and the name in the label's tint) that fit the cell, then "+2" for the rest.
@@ -698,7 +668,6 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             }
             return "Click to open, double-click to rename"
         case .project: return info.display.projectName ?? ""
-        case .milestone: return "Change milestone"
         case .labels: return info.display.labels.isEmpty ? "Add labels (L)" : info.display.labels.map(\.name).joined(separator: ", ") + " · click to change (L)"
         case .sprint: return task.sprintSlot == .closed ? info.display.sprintLabel : "Change sprint"
         case .due: return "Change due date"

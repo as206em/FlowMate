@@ -26,7 +26,6 @@ final class KeyboardSpeedTests: XCTestCase {
     func testSingleKeysAndNewShortcutsMatch() {
         XCTAssertEqual(match(1, "s"), .pickStatus)
         XCTAssertEqual(match(35, "p"), .pickPriority)
-        XCTAssertEqual(match(46, "m"), .pickMilestone)
         XCTAssertEqual(match(15, "r"), .pickSprint)
         XCTAssertEqual(match(2, "d"), .pickDue)
         XCTAssertEqual(match(14, "e"), .pickExpected)
@@ -68,7 +67,7 @@ final class KeyboardSpeedTests: XCTestCase {
     }
 
     func testSingleKeysWaitWhileTyping() {
-        let typingOnly: [TasksShortcut] = [.pickStatus, .pickPriority, .pickMilestone, .pickSprint, .pickDue, .pickExpected,
+        let typingOnly: [TasksShortcut] = [.pickStatus, .pickPriority, .pickSprint, .pickDue, .pickExpected,
                                            .pickTimeSpent, .pickProject, .toggleDone, .priority1, .priority2, .priority3,
                                            .priority4, .moveUp, .moveDown, .deselectAll, .togglePanel, .pauseAllTimers,
                                            .soloTimer, .left, .right, .toggleTimer, .undo]
@@ -113,7 +112,7 @@ final class KeyboardSpeedTests: XCTestCase {
         XCTAssertEqual(model.quickPicker?.anchor, .bulk)
 
         model.openTask(b)
-        XCTAssertTrue(model.perform(.pickMilestone, store: store))
+        XCTAssertTrue(model.perform(.pickPriority, store: store))
         XCTAssertEqual(model.quickPicker?.taskIds, [b], "the open task")
         XCTAssertEqual(model.quickPicker?.anchor, .panel)
 
@@ -173,22 +172,9 @@ final class KeyboardSpeedTests: XCTestCase {
         XCTAssertEqual(model.quickPickOptions(.timeSpent, ids: ids, query: "-5m", store: store).first?.value, .adjustSpent(-300))
         XCTAssertEqual(model.quickPickOptions(.timeSpent, ids: ids, query: "1h", store: store).first?.value, .setSpent(3600))
 
-        // M: a new milestone by typing its name, one step
-        let before = store.undoStack.count
-        let new = model.quickPickOptions(.milestone, ids: ids, query: "Beta", store: store).first!
-        XCTAssertEqual(new.value, .newMilestone("Beta"))
-        model.applyQuickPick(new.value, ids: ids, store: store)
-        let beta = store.milestones(of: pid).first { $0.name == "Beta" }
-        XCTAssertNotNil(beta)
-        XCTAssertTrue(ids.allSatisfy { store.task($0)?.milestoneId == beta?.id })
-        XCTAssertEqual(store.undoStack.count, before + 1)
-        XCTAssertEqual(model.quickPickOptions(.milestone, ids: ids, query: "", store: store).first { $0.isCurrent }?.value,
-                       .milestone(beta?.id))
-
         // Every edit undoes
         store.undo()
-        XCTAssertTrue(ids.allSatisfy { store.task($0)?.milestoneId == nil })
-        XCTAssertTrue(store.milestones(of: pid).isEmpty)
+        XCTAssertTrue(ids.allSatisfy { store.elapsed($0, now: t0) == 0 })
     }
 
     func testPickerOptionsAcrossProjectsUseSharedStatusesAndCategories() async {
@@ -200,7 +186,6 @@ final class KeyboardSpeedTests: XCTestCase {
         let options = model.quickPickOptions(.status, ids: [a, b], query: "", store: store)
         XCTAssertTrue(options.contains { $0.value == .category(.done) })
         XCTAssertFalse(options.contains { $0.title == "Review" }, "Beta's workflow has no Review")
-        XCTAssertEqual(model.quickPickOptions(.milestone, ids: [a, b], query: "", store: store).map(\.title), ["No milestone"])
         XCTAssertEqual(model.quickPickOptions(.project, ids: [a], query: "bet", store: store).first?.value, .project(other))
     }
 
@@ -271,16 +256,9 @@ final class KeyboardSpeedTests: XCTestCase {
         XCTAssertEqual(order(), [b, c, a, d], "the block is at the top")
 
         // A sorted list has no manual order: it says so instead
-        model.sort = TaskSort(key: .priority, ascending: false)
+        for group in model.listGroups(store) { model.toggleGroupSort(.priority, group: group.id) }
         XCTAssertTrue(model.perform(.moveDown, store: store))
         XCTAssertEqual(model.toast?.message, "Sort by Manual to move tasks by hand")
-
-        // Board columns keep their own order
-        model.sort = .manual
-        model.tab = .board
-        model.selectedTaskId = a
-        model.perform(.moveUp, store: store)
-        XCTAssertEqual(model.allBoardTasks(store).map(\.id), [b, a, c, d])
     }
 
     func testOptionArrowsReorderMyFocusOnToday() async {
@@ -300,8 +278,7 @@ final class KeyboardSpeedTests: XCTestCase {
 
     func testPaletteRanksPlacesTasksAndCommandsInOneList() async {
         let (store, pid) = await makeStore()
-        let atlas = store.addProject(name: "Atlas", now: t0)!
-        let launch = store.addMilestone(projectId: atlas, name: "Beta launch")!
+        let atlas = store.addProject(name: "Atlas launch", now: t0)!
         let task = store.addTask(title: "Write the launch post", projectId: pid, now: t0)!
         store.addTask(title: "Unrelated", projectId: pid, now: t0)
         let model = TasksViewModel()
@@ -311,24 +288,20 @@ final class KeyboardSpeedTests: XCTestCase {
         XCTAssertEqual(model.paletteResults(store).items.first, .project(atlas))
         model.paletteQuery = "launch"
         let items = model.paletteResults(store).items
-        XCTAssertTrue(items.contains(.milestone(launch)))
+        XCTAssertTrue(items.contains(.project(atlas)))
         XCTAssertTrue(items.contains(.task(task)))
         XCTAssertFalse(items.contains { if case .task = $0 { return $0 != .task(task) } else { return false } })
-        model.paletteQuery = "bl"
-        XCTAssertEqual(model.paletteResults(store).items.first, .milestone(launch), "initials")
         model.paletteQuery = "tod"
         XCTAssertEqual(model.paletteResults(store).items.first, .today)
 
         // ">" lists commands only
         model.tab = .list
-        model.paletteQuery = "> board"
+        model.paletteQuery = "> sprints"
         let commands = model.paletteResults(store).items
-        XCTAssertEqual(commands.first, .command(.switchTab(.board)))
+        XCTAssertEqual(commands.first, .command(.switchTab(.sprints)))
         XCTAssertTrue(commands.allSatisfy { if case .command = $0 { return true } else { return false } })
         model.paletteQuery = ">"
         XCTAssertTrue(model.paletteResults(store).items.contains(.command(.newTask)))
-        model.paletteQuery = "new mile"
-        XCTAssertEqual(model.paletteResults(store).items.first, .command(.newMilestone(pid)), "the project on screen first")
 
         // ↑/↓ and the row ↵ runs
         model.paletteQuery = "launch"
@@ -383,11 +356,10 @@ final class KeyboardSpeedTests: XCTestCase {
 
     func testPaletteCommandsRun() async {
         let (store, pid) = await makeStore()
-        let other = store.addProject(name: "Beta", now: t0)!
         let a = store.addTask(title: "A", projectId: pid, now: t0)!
         let model = TasksViewModel()
         model.select(.project(pid))
-        model.tab = .board
+        model.tab = .sprints
 
         model.run(.showOverdue, store: store)
         XCTAssertEqual(model.filter.due, [.overdue])
@@ -396,13 +368,8 @@ final class KeyboardSpeedTests: XCTestCase {
         XCTAssertEqual(model.grouping, .priority)
         model.run(.switchTab(.sprints), store: store)
         XCTAssertEqual(model.tab, .sprints)
-        model.run(.newMilestone(other), store: store)
-        XCTAssertTrue(model.isProjectExpanded(other))
-        XCTAssertEqual(model.focusRequest?.field, .newMilestone(other))
         model.run(.completeSprint, store: store)
         XCTAssertTrue(model.completingSprint)
-        model.run(.toggleMilestones(other), store: store)
-        XCTAssertFalse(model.isProjectExpanded(other))
 
         var opened = false
         TasksViewModel.openSettings = { opened = true }
@@ -440,20 +407,11 @@ final class KeyboardSpeedTests: XCTestCase {
     func testSidebarTakesTheKeyboardWithCommandZero() async {
         let (store, pid) = await makeStore()
         let other = store.addProject(name: "Beta", now: t0)!
-        let m = store.addMilestone(projectId: pid, name: "M1")!
         let model = TasksViewModel()
         model.select(.project(pid))
 
         XCTAssertTrue(model.perform(.focusSidebar, store: store))
         XCTAssertEqual(model.sidebarCursor, .project(pid))
-        XCTAssertTrue(model.perform(.right, store: store))
-        XCTAssertTrue(model.isProjectExpanded(pid), "→ lists its milestones")
-        XCTAssertTrue(model.perform(.right, store: store))
-        XCTAssertEqual(model.sidebarCursor, .milestone(m, projectId: pid), "→ again steps into them")
-        XCTAssertTrue(model.perform(.left, store: store))
-        XCTAssertEqual(model.sidebarCursor, .project(pid), "← goes back to the project")
-        XCTAssertTrue(model.perform(.left, store: store))
-        XCTAssertFalse(model.isProjectExpanded(pid))
         XCTAssertTrue(model.perform(.selectNext, store: store))
         XCTAssertEqual(model.sidebarCursor, .project(other))
         XCTAssertEqual(model.scope, .project(pid), "moving the cursor doesn't change the view")
@@ -472,8 +430,6 @@ final class KeyboardSpeedTests: XCTestCase {
         let (store, pid) = await makeStore()
         let a = store.addTask(title: "A", projectId: pid, now: t0)!
         let b = store.addTask(title: "B", projectId: pid, now: t0)!
-        let m1 = store.addMilestone(projectId: pid, name: "M1")!
-        let m2 = store.addMilestone(projectId: pid, name: "M2")!
         let model = TasksViewModel()
         model.select(.project(pid))
         model.tab = .list
@@ -488,14 +444,9 @@ final class KeyboardSpeedTests: XCTestCase {
         XCTAssertTrue(model.perform(.togglePanel, store: store))
         XCTAssertFalse(model.isPanelOpen)
 
-        // ⌘[ ⌘] walk the milestones while a milestone panel is open
-        model.openMilestone(m1)
-        XCTAssertTrue(model.perform(.nextTask, store: store))
-        XCTAssertEqual(model.openDetail, .milestone(m2))
-        XCTAssertFalse(model.perform(.nextTask, store: store))
-        XCTAssertTrue(model.perform(.previousTask, store: store))
-        XCTAssertEqual(model.openDetail, .milestone(m1))
-        XCTAssertFalse(model.perform(.selectNext, store: store), "a milestone panel keeps the arrows for scrolling")
+        // A project panel keeps the arrows for scrolling
+        model.openProject(pid)
+        XCTAssertFalse(model.perform(.selectNext, store: store), "a project panel keeps the arrows for scrolling")
 
         // ⌘I with nothing selected: the panel of what's on screen
         model.closePanel()
@@ -519,21 +470,19 @@ final class KeyboardSpeedTests: XCTestCase {
         XCTAssertNil(ComposerInput.token("*"))
         XCTAssertNil(ComposerInput.token("**bold**"))
         XCTAssertEqual(ComposerInput.token("+\"side project\""), .project("side project"))
-        XCTAssertEqual(ComposerInput.token("@beta_launch"), .milestone("beta launch"))
         XCTAssertNotNil(ComposerInput.token("due:\"nov 18\"", now: now))
         XCTAssertEqual(ComposerInput.activeTrigger("Write *rev")?.trigger, .status)
-        XCTAssertEqual(ComposerInput.words("Ship @\"Beta launch\" now"), ["Ship", "@\"Beta launch\"", "now"])
+        XCTAssertEqual(ComposerInput.words("Ship +\"Beta launch\" now"), ["Ship", "+\"Beta launch\"", "now"])
         XCTAssertEqual(ComposerInput.extract("Fix *review ").tokens, [.status("review")])
     }
 
     func testQuickAddInputReadsEveryToken() {
-        let input = QuickAddInput.parse("Fix login +atlas #next *review !high @beta due:fri ~1h30m", now: t0)
+        let input = QuickAddInput.parse("Fix login +atlas #next *review !high due:fri ~1h30m", now: t0)
         XCTAssertEqual(input.title, "Fix login")
         XCTAssertEqual(input.projectQuery, "atlas")
         XCTAssertEqual(input.slot, .next)
         XCTAssertEqual(input.statusQuery, "review")
         XCTAssertEqual(input.priority, .high)
-        XCTAssertEqual(input.milestoneQuery, "beta")
         XCTAssertNotNil(input.dueDate)
         XCTAssertEqual(input.expectedMinutes, 90)
         // The composer's bare words work here too
@@ -549,17 +498,15 @@ final class KeyboardSpeedTests: XCTestCase {
         let (store, pid) = await makeStore()
         let atlas = store.addProject(name: "Atlas", now: t0)!
         store.applyWorkflowPreset(projectId: atlas, .dev, now: t0)
-        let beta = store.addMilestone(projectId: atlas, name: "Beta launch")!
         store.clearUndoHistory()
 
         // What the menu bar's ⌘↵ and the List's field call
-        let outcome = store.quickAddTask("Write post +atl #next *review @beta !low ~45m", projectId: pid, now: t0)!
+        let outcome = store.quickAddTask("Write post +atl #next *review !low ~45m", projectId: pid, now: t0)!
         let task = store.task(outcome.taskId)!
         XCTAssertEqual(task.title, "Write post")
         XCTAssertEqual(task.projectId, atlas, "+project overrides the box's project")
         XCTAssertEqual(task.sprintSlot, .next)
         XCTAssertEqual(task.statusId, "review")
-        XCTAssertEqual(task.milestoneId, beta)
         XCTAssertEqual(task.priority, .low)
         XCTAssertEqual(task.expectedMinutes, 45)
         XCTAssertEqual(outcome.projectId, atlas)
@@ -603,19 +550,13 @@ final class KeyboardSpeedTests: XCTestCase {
     func testTabCompletesTheWordBeingTyped() async {
         let (store, pid) = await makeStore()
         let atlas = store.addProject(name: "Atlas works", now: t0)!
-        store.addMilestone(projectId: pid, name: "Beta launch")
-        store.addMilestone(projectId: atlas, name: "Gamma")
-        XCTAssertEqual(store.completeQuickAdd("Fix @be", projectId: pid), "Fix @Beta_launch ")
         XCTAssertEqual(store.completeQuickAdd("Fix +atl", projectId: pid), "Fix +Atlas_works ")
         XCTAssertEqual(store.completeQuickAdd("Fix #ne", projectId: pid), "Fix #next ")
         XCTAssertEqual(store.completeQuickAdd("Fix !h", projectId: pid), "Fix !high ")
         XCTAssertEqual(store.completeQuickAdd("Fix *do", projectId: pid), "Fix *Done ")
-        XCTAssertEqual(store.completeQuickAdd("Fix +atlas @ga", projectId: pid), "Fix +atlas @Gamma ", "milestones of the +project")
         XCTAssertNil(store.completeQuickAdd("Fix it", projectId: pid))
-        XCTAssertNil(store.completeQuickAdd("Fix @zzz", projectId: pid))
         // A completed word reads back as the same thing
-        let input = QuickAddInput.parse("Fix @Beta_launch +Atlas_works")
-        XCTAssertEqual(store.matchMilestone(input.milestoneQuery!, projectId: pid)?.name, "Beta launch")
+        let input = QuickAddInput.parse("Fix +Atlas_works")
         XCTAssertEqual(store.matchProject(input.projectQuery!)?.id, atlas)
     }
 

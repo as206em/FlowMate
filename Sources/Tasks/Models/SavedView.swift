@@ -1,16 +1,15 @@
 import Foundation
 
-/// A saved view ("smart list") in the sidebar's Views section: a scope (All projects, a project or
-/// a milestone's page), Board or List, and the filters, sort and grouping to show it with.
+/// A saved view ("smart list") in the sidebar's Views section: a scope (All projects or a project) and the filters, sort and grouping to show it with.
 /// Clicking it shows exactly that; changing the filters afterwards marks it Modified until you
 /// Update it or Revert.
 struct SavedView: Identifiable, Codable, Equatable, Sendable {
     /// The two layouts a view can open on (the ones with a filter bar).
     enum Layout: String, CaseIterable, Sendable, TolerantStringEnum {
-        case board, list
+        case list
         static var fallback: Layout { .list }
 
-        var title: String { self == .board ? "Board" : "List" }
+        var title: String { "List" }
     }
 
     /// Icons offered in the Save view sheet (SF Symbols).
@@ -25,7 +24,7 @@ struct SavedView: Identifiable, Codable, Equatable, Sendable {
     var name: String
     /// An SF Symbol; nil shows the default filter icon
     var icon: String?
-    /// The scope as TaskScope.storageKey ("all", a project id, "milestone-<id>@<project>")
+    /// The scope as TaskScope.storageKey ("all" or a project id)
     var scopeKey: String
     var layout: Layout
     /// Filter, sort and grouping (the search text included)

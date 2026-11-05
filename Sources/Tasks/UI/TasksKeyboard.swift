@@ -10,14 +10,14 @@ enum TasksShortcut: Equatable, CaseIterable {
     case selectPrevious, selectNext, open, toggleTimer
     case extendUp, extendDown, selectAll
     case previousTask, nextTask
-    /// ⌥⌘↑ / ⌥⌘↓: the sidebar item above or below (All projects, projects, listed milestones)
+    /// ⌥⌘↑ / ⌥⌘↓: the sidebar item above or below (All projects, views and projects)
     case previousScope, nextScope
     case delete, duplicate
     /// ⌘T: add the selected tasks to Today, or remove them
     case toggleToday
     case help, clearSelection
-    /// Single keys on the selection or the open task: S, P, M, R, D, E, T, L, ⇧M
-    case pickStatus, pickPriority, pickMilestone, pickSprint, pickDue, pickExpected, pickTimeSpent, pickLabels, pickProject
+    /// Single keys on the selection or the open task: S, P, R, D, E, T, L, ⇧M
+    case pickStatus, pickPriority, pickSprint, pickDue, pickExpected, pickTimeSpent, pickLabels, pickProject
     /// X: done, or back to Not started
     case toggleDone
     /// 1–4: priority by level (4 does nothing while there are three levels)
@@ -34,7 +34,7 @@ enum TasksShortcut: Equatable, CaseIterable {
     case togglePanel
     /// ⇧Space: pause every timer; ⌥Space: run only this one
     case pauseAllTimers, soloTimer
-    /// ← / →: fold a project's milestones while the sidebar has the keyboard
+    /// ← / →: unused (the sidebar has no folding rows)
     case left, right
 
     /// Shortcuts that still work while a text field has focus. The others belong to the text
@@ -84,7 +84,6 @@ enum TasksShortcut: Equatable, CaseIterable {
         switch self {
         case .pickStatus: return .status
         case .pickPriority: return .priority
-        case .pickMilestone: return .milestone
         case .pickSprint: return .sprint
         case .pickDue: return .due
         case .pickExpected: return .expected
@@ -135,7 +134,6 @@ enum TasksShortcut: Equatable, CaseIterable {
             switch key {
             case "s": return .pickStatus
             case "p": return .pickPriority
-            case "m": return .pickMilestone
             case "r": return .pickSprint
             case "d": return .pickDue
             case "e": return .pickExpected
@@ -234,7 +232,7 @@ extension TasksViewModel {
             guard store.canRedo else { return false }
             redo(store)
         case .newTask:
-            // The composer opens at the top of the first group, below the panel's scrim; Milestones has none
+            // The composer opens at the top of the first group, below the panel's scrim
             startNewTask(store)
         case .newProject:
             requestFocus(.newProject)
@@ -250,7 +248,7 @@ extension TasksViewModel {
             tab = tabs[index]
         case .selectPrevious, .selectNext:
             let offset = shortcut == .selectNext ? 1 : -1
-            // With a task open the selection moves and the panel follows; a project or milestone
+            // With a task open the selection moves and the panel follows; a project
             // panel keeps the arrows for scrolling
             if openTaskId != nil, openDetail == nil { return stepOpenTask(offset, store: store) }
             guard !panelOpen, moveSelection(offset, store: store) != nil else { return false }
@@ -269,7 +267,7 @@ extension TasksViewModel {
         case .previousTask, .nextTask:
             let offset = shortcut == .nextTask ? 1 : -1
             if openTaskId != nil { return stepOpenTask(offset, store: store) }
-            return stepMilestonePanel(offset, store: store)
+            return false
         case .previousScope, .nextScope:
             return stepSidebar(shortcut == .nextScope ? 1 : -1, store: store)
         case .toggleTimer:
@@ -325,7 +323,7 @@ extension TasksViewModel {
             selectedTaskId = nil
         case .left, .right:
             return false
-        case .pickStatus, .pickPriority, .pickMilestone, .pickSprint, .pickDue, .pickExpected, .pickTimeSpent, .pickLabels, .pickProject,
+        case .pickStatus, .pickPriority, .pickSprint, .pickDue, .pickExpected, .pickTimeSpent, .pickLabels, .pickProject,
              .priority1, .priority2, .priority3, .priority4:
             return false
         }
@@ -337,8 +335,6 @@ extension TasksViewModel {
         switch shortcut {
         case .selectPrevious: return moveSidebarCursor(-1, store: store)
         case .selectNext: return moveSidebarCursor(1, store: store)
-        case .right: return expandSidebarCursor(true, store: store)
-        case .left: return expandSidebarCursor(false, store: store)
         case .open:
             activateSidebarCursor(store: store)
             return true

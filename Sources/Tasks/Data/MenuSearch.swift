@@ -7,8 +7,6 @@ enum MenuSearchItem: Hashable, Sendable {
     /// The Today page (palette)
     case today
     case project(UUID)
-    /// Opens the milestone's page
-    case milestone(UUID)
     case task(UUID)
     /// A command (palette)
     case command(PaletteCommand)
@@ -23,16 +21,14 @@ enum MenuSearchItem: Hashable, Sendable {
 struct MenuSearchResultsModel: Equatable {
     var canAdd: Bool
     var projects: [UUID]
-    var milestones: [UUID] = []
     var tasks: [UUID]
     /// The palette's one list, best match first (with Today and commands mixed in). When set it is
     /// the display order instead of the grouped one.
     var ranked: [MenuSearchItem]?
 
-    init(canAdd: Bool, projects: [UUID], milestones: [UUID] = [], tasks: [UUID]) {
+    init(canAdd: Bool, projects: [UUID], tasks: [UUID]) {
         self.canAdd = canAdd
         self.projects = projects
-        self.milestones = milestones
         self.tasks = tasks
     }
 
@@ -43,18 +39,16 @@ struct MenuSearchResultsModel: Equatable {
         for item in ranked {
             switch item {
             case let .project(id): projects.append(id)
-            case let .milestone(id): milestones.append(id)
             case let .task(id): tasks.append(id)
             case .add, .today, .command, .label, .savedView: break
             }
         }
     }
 
-    /// Display order: the Add row, then projects, milestones, then tasks (or the palette's ranking)
+    /// Display order: the Add row, then projects, then tasks (or the palette's ranking)
     var items: [MenuSearchItem] {
         if let ranked { return ranked }
-        return (canAdd ? [.add] : []) + projects.map(MenuSearchItem.project) + milestones.map(MenuSearchItem.milestone)
-            + tasks.map(MenuSearchItem.task)
+        return (canAdd ? [.add] : []) + projects.map(MenuSearchItem.project) + tasks.map(MenuSearchItem.task)
     }
 
     /// What ↵ opens before the user moves: the first project or task. Never the Add row,
@@ -81,23 +75,19 @@ struct MenuSearchResultsModel: Equatable {
 }
 
 extension TaskStore {
-    /// Results for the menu bar search: projects and milestones whose name matches (open
-    /// milestones of active projects, up to `milestoneLimit`) and up to `taskLimit` tasks.
-    func menuSearchResults(_ query: String, canAdd: Bool, taskLimit: Int = 6, milestoneLimit: Int = 4) -> MenuSearchResultsModel {
+    /// Results for the menu bar search: projects whose name matches and up to `taskLimit` tasks.
+    func menuSearchResults(_ query: String, canAdd: Bool, taskLimit: Int = 6) -> MenuSearchResultsModel {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return MenuSearchResultsModel(canAdd: false, projects: [], tasks: []) }
         return MenuSearchResultsModel(
             canAdd: canAdd,
             projects: projects.filter { $0.name.localizedCaseInsensitiveContains(q) }.map(\.id),
-            milestones: Array(milestones(in: .all)
-                .filter { !$0.isCompleted && $0.name.localizedCaseInsensitiveContains(q) }
-                .prefix(milestoneLimit).map(\.id)),
             tasks: searchTasks(q, limit: taskLimit).map(\.id)
         )
     }
 
     /// The palette's places, scored against the typed text (FuzzyMatch): Today, projects
-    /// (archived ones too, lower), milestones (open ones first), saved views, labels and tasks of every project (open
+    /// (archived ones too, lower), saved views, labels and tasks of every project (open
     /// ones first; a task needs a closer match than a place, so a short query isn't all tasks).
     func paletteMatches(_ query: String) -> [(item: MenuSearchItem, score: Int)] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -109,12 +99,6 @@ extension TaskStore {
         for project in allProjects {
             guard let score = FuzzyMatch.score(q, in: project.name) else { continue }
             matches.append((.project(project.id), score + (project.isArchived ? -60 : 4)))
-        }
-        let archived = Set(archivedProjects.map(\.id))
-        for milestone in workspace.milestones where !archived.contains(milestone.projectId) {
-            let projectName = self.project(milestone.projectId)?.name ?? ""
-            guard let score = FuzzyMatch.score(q, in: [milestone.name, projectName + " " + milestone.name]) else { continue }
-            matches.append((.milestone(milestone.id), score + (milestone.isCompleted ? -60 : 2)))
         }
         for view in savedViews {
             guard let score = FuzzyMatch.score(q, in: [view.name, "View " + view.name]) else { continue }

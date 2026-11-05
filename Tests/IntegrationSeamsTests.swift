@@ -2,10 +2,10 @@ import AppKit
 import XCTest
 @testable import FlowMate
 
-/// Seams between the features built in separate phases: custom workflows, the time log, milestone
-/// pages, Today, keyboard pickers and ⌘K, the portfolio, sprint capacity, projects without sprints,
+/// Seams between the features built in separate phases: custom workflows, the time log,
+/// Today, keyboard pickers and ⌘K, the portfolio, sprint capacity, projects without sprints,
 /// labels and saved views. Plus the fixes of the final QA pass (label drags, sleep prompt
-/// persistence, milestone colors, the past sprint header, the bulk bar, the timeline).
+/// persistence, the past sprint header, the bulk bar).
 @MainActor
 final class IntegrationSeamsTests: XCTestCase {
     private let now = Date()
@@ -57,13 +57,9 @@ final class IntegrationSeamsTests: XCTestCase {
         XCTAssertEqual(card.sprintDone, 1)
     }
 
-    func testDevWorkflowInMilestoneProgressAndCapacity() async {
+    func testDevWorkflowInCapacityAndStats() async {
         let (store, dev, _, review, canceled, done, backlog) = await devFixture()
-        let m = store.addMilestone(projectId: dev, name: "Beta", dueDate: day(-2))!
-        for id in [review, canceled, done, backlog] { store.setMilestone(id, m); store.setExpectedMinutes(id, 60) }
-        XCTAssertEqual(store.milestoneProgress(m), MilestoneProgress(done: 1, total: 3))
-        XCTAssertTrue(store.isOverdue(store.milestone(m)!, now: now))
-        XCTAssertEqual(store.milestoneForecast(m, now: now)?.remainingHours ?? 0, 2, accuracy: 0.01)
+        for id in [review, canceled, done, backlog] { store.setExpectedMinutes(id, 60) }
         let load = store.slotLoad(scope: .project(dev), slot: .active, now: now)
         XCTAssertEqual(load.count, 3)
         XCTAssertEqual(load.plannedMinutes, 180)
@@ -153,12 +149,10 @@ final class IntegrationSeamsTests: XCTestCase {
 
     // MARK: - Moving a task between projects
 
-    func testMoveBetweenProjectsRemapsStatusKeepsLabelsAndTimeClearsMilestone() async {
+    func testMoveBetweenProjectsRemapsStatusKeepsLabelsAndTime() async {
         let (store, dev, simple, review, _, _, _) = await devFixture()
         let label = store.addLabel("bug")!
         store.setLabels(review, [label])
-        let m = store.addMilestone(projectId: dev, name: "Beta")!
-        store.setMilestone(review, m)
         store.addTimeEntry(taskId: review, start: now.addingTimeInterval(-3600), end: now.addingTimeInterval(-600))
         store.addToToday([review], now: now)
         store.setProject(review, simple)
@@ -167,7 +161,6 @@ final class IntegrationSeamsTests: XCTestCase {
         XCTAssertEqual(moved.statusCategory, .started)
         XCTAssertEqual(moved.statusId, store.project(simple)!.firstStatus(.started).id)
         XCTAssertEqual(moved.labelIds, [label])
-        XCTAssertNil(moved.milestoneId)
         XCTAssertEqual(moved.spentSeconds, 3000, accuracy: 0.5)
         XCTAssertEqual(store.workspace.timeEntries.filter { $0.taskId == review }.count, 1)
         XCTAssertTrue(moved.isPinned)
@@ -175,7 +168,6 @@ final class IntegrationSeamsTests: XCTestCase {
         store.undo()
         XCTAssertEqual(store.task(review)?.projectId, dev)
         XCTAssertEqual(store.task(review)?.statusId, "review")
-        XCTAssertEqual(store.task(review)?.milestoneId, m)
     }
 
     func testMoveIntoAndOutOfProjectsWithoutSprintsSetsTheSlot() async {
@@ -201,21 +193,17 @@ final class IntegrationSeamsTests: XCTestCase {
 
     // MARK: - Deleting things views, focus and timers point at
 
-    func testDeletingProjectMilestoneAndLabelCleansViewsTimersAndPreferences() async {
+    func testDeletingProjectAndLabelCleansViewsTimersAndPreferences() async {
         let (store, dev, simple, review, _, _, _) = await devFixture()
         let label = store.addLabel("bug")!
         store.setLabels(review, [label])
-        let m = store.addMilestone(projectId: dev, name: "Beta")!
         var options = TaskViewOptions.standard
         options.filter.labels = [label]
-        let msView = store.addSavedView(name: "Beta bugs", scope: .milestone(m, projectId: dev), layout: .list, options: options)!
         let allView = store.addSavedView(name: "Bugs", scope: .all, layout: .list, options: options)!
-        let projectView = store.addSavedView(name: "Atlas", scope: .project(dev), layout: .board, options: .standard)!
+        let projectView = store.addSavedView(name: "Atlas", scope: .project(dev), layout: .list, options: .standard)!
         store.deleteLabel(label)
         XCTAssertEqual(store.savedView(allView)?.options.filter.labels, [])
         XCTAssertEqual(store.task(review)?.labelIds, [])
-        store.deleteMilestone(m)
-        XCTAssertNil(store.savedView(msView))
         XCTAssertNotNil(store.savedView(projectView))
 
         store.startTimer(review, now: now.addingTimeInterval(-600))
@@ -335,7 +323,7 @@ final class IntegrationSeamsTests: XCTestCase {
     func testSchema11FileLoadsWithNoSleepPromptAndBadGapsAreDropped() throws {
         let pid = UUID(), tid = UUID()
         let json = """
-        {"schemaVersion":11,"projects":[{"id":"\(pid)","name":"Atlas","colorHex":16739146}],"milestones":[],
+        {"schemaVersion":11,"projects":[{"id":"\(pid)","name":"Atlas","colorHex":16739146}],
          "tasks":[{"id":"\(tid)","projectId":"\(pid)","title":"T","statusId":"todo","statusCategory":"notStarted"}],
          "runningTimers":{},"timeEntries":[],
          "preferences":{"pendingAway":[{"start":"2026-10-30T10:00:00Z","end":"2026-10-30T12:00:00Z","kind":"sleep","taskIds":["\(tid)"]},
@@ -347,34 +335,9 @@ final class IntegrationSeamsTests: XCTestCase {
         XCTAssertEqual(ws.preferences.pendingAway.count, 1)
         XCTAssertEqual(ws.preferences.pendingAway.first?.taskIds, [tid])
         let none = try LocalJSONWorkspaceRepository.makeDecoder().decode(Workspace.self, from: Data("""
-        {"schemaVersion":11,"projects":[],"milestones":[],"tasks":[],"runningTimers":{}}
+        {"schemaVersion":11,"projects":[],"tasks":[],"runningTimers":{}}
         """.utf8)).migrated()
         XCTAssertTrue(none.preferences.pendingAway.isEmpty)
-    }
-
-    func testMilestoneColorAvoidsColorsCloseToTheProjects() {
-        // A custom red close to the palette's coral (0xFF6B4A): coral is skipped
-        XCTAssertLessThan(ColorDistance.deltaE(0xEF5350, 0xFF6B4A), Milestone.minimumDistanceFromProject)
-        let first = Milestone.nextColor(projectColor: 0xEF5350, used: [])
-        XCTAssertNotEqual(first, 0xFF6B4A)
-        XCTAssertGreaterThanOrEqual(ColorDistance.deltaE(first, 0xEF5350), Milestone.minimumDistanceFromProject)
-        // Walking the palette never lands near the project color
-        var used: [UInt32] = []
-        for _ in 0..<20 {
-            let hex = Milestone.nextColor(projectColor: 0xFF7043, used: used)
-            XCTAssertGreaterThanOrEqual(ColorDistance.deltaE(hex, 0xFF7043), Milestone.minimumDistanceFromProject)
-            used.append(hex)
-        }
-        // Palette colors themselves are all far enough apart to stay choices for each other
-        for a in Focus.projectPalette {
-            XCTAssertEqual(Milestone.palette.filter { ColorDistance.deltaE(a, $0) < Milestone.minimumDistanceFromProject }, [a])
-        }
-        XCTAssertEqual(ColorDistance.deltaE(0x123456, 0x123456), 0, accuracy: 0.0001)
-        // Migration uses the same rule
-        let p = Project(name: "Red", colorHex: 0xEF5350)
-        var ws = Workspace(projects: [p], milestones: [Milestone(projectId: p.id, name: "M")])
-        ws.assignMilestoneColors()
-        XCTAssertNotEqual(ws.milestones[0].colorHex, 0xFF6B4A)
     }
 
     func testPastSprintHeaderHintDoesNotRepeatTheCount() {
@@ -383,34 +346,6 @@ final class IntegrationSeamsTests: XCTestCase {
                                 trackedSeconds: 7200)
         XCTAssertTrue(sprint.headerHint.hasPrefix("2 done · 3h planned · 2h tracked"))
         XCTAssertFalse(sprint.headerHint.contains("of 3"))
-    }
-
-    func testTimelineStickyMonthLabelAndLabelRoom() {
-        // Scrolled past the month start: pinned to the visible edge
-        XCTAssertEqual(TimelineScale.stickyLabelX(8, visibleLeft: 40, nextX: 400, labelWidth: 100), 48)
-        // Not scrolled: where it is
-        XCTAssertEqual(TimelineScale.stickyLabelX(8, visibleLeft: 0, nextX: 400, labelWidth: 100), 8)
-        // The next month's label pushes it back, never left of its own start
-        XCTAssertEqual(TimelineScale.stickyLabelX(8, visibleLeft: 250, nextX: 300, labelWidth: 100), 192)
-        XCTAssertEqual(TimelineScale.stickyLabelX(200, visibleLeft: 250, nextX: 260, labelWidth: 100), 200)
-        let scale = TimelineScale.fitting([], now: now, zoom: .quarter, visibleWidth: 800)
-        XCTAssertEqual(scale.labelRoom(from: 100, before: [100, 180, 400]), 58)
-        XCTAssertEqual(scale.labelRoom(from: 100, before: [130]), 8, "a target flag right after the diamond")
-        XCTAssertEqual(scale.labelRoom(from: 100, before: []), scale.width - 122)
-    }
-
-    func testDroppingAnUndatedMilestoneOnTheTimelineSetsItsDate() async {
-        let store = await makeStore()
-        let p = store.addProject(name: "Atlas")!
-        let m = store.addMilestone(projectId: p, name: "Someday")!
-        let target = day(9).addingTimeInterval(13 * 3600)
-        XCTAssertEqual(store.placeMilestone(m, on: target), "Someday")
-        XCTAssertEqual(store.milestone(m)?.dueDate, day(9))
-        XCTAssertNil(store.placeMilestone(m, on: day(9)), "same day: nothing to do")
-        XCTAssertEqual(store.undo(), "Change milestone date")
-        XCTAssertNil(store.milestone(m)?.dueDate)
-        XCTAssertEqual(TimelineDateDrop.milestoneId(from: TimelineDateDrop.payload(m)), m)
-        XCTAssertNil(TimelineDateDrop.milestoneId(from: UUID().uuidString), "task drags aren't milestones")
     }
 
     func testQuickPickerAnchorsStackSoTheLatestVisibleWins() {
@@ -425,7 +360,7 @@ final class IntegrationSeamsTests: XCTestCase {
         root.addSubview(card)
         XCTAssertTrue(QuickPickerAnchors.resolve(.task(id), in: window)?.view === card)
         root.addSubview(panelRow)
-        XCTAssertTrue(QuickPickerAnchors.resolve(.task(id), in: window)?.view === panelRow, "the milestone panel's row wins")
+        XCTAssertTrue(QuickPickerAnchors.resolve(.task(id), in: window)?.view === panelRow, "the panel's row wins")
         panelRow.removeFromSuperview()
         XCTAssertTrue(QuickPickerAnchors.resolve(.task(id), in: window)?.view === card, "the card takes over again")
         card.removeFromSuperview()

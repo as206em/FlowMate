@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// 240pt sidebar: app tile, Today, All projects, the saved views, the project list (drag to reorder; the arrow lists a
-/// project's milestones), "New project", the Archived section and the running timers.
+/// 240pt sidebar: app tile, Today, All projects, the saved views, the project list (drag to reorder), "New project", the Archived section and the running timers.
 struct TasksSidebar: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
@@ -52,26 +51,11 @@ struct TasksSidebar: View {
                 }
             }
 
-            let onSprints = model.scope == .all && model.activeViewId == nil && model.effectiveTab == .sprints
-            FocusSidebarItem(selected: model.sidebarSelection == .all && !onSprints, focused: model.sidebarCursor == .all, action: { model.select(.all) }) {
+            FocusSidebarItem(selected: model.sidebarSelection == .all, focused: model.sidebarCursor == .all, action: { model.select(.all) }) {
                 Image(systemName: "square.grid.2x2")
                     .font(.system(size: 13, weight: .medium))
                     .frame(width: 18)
                 Text("All projects").frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            // The sprint belongs to the whole workspace: plan it, edit it and complete it here
-            if model.anyProjectUsesSprints {
-                FocusSidebarItem(selected: onSprints, focused: false, action: { model.showSprints() }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: 18)
-                    Text("Sprints").frame(maxWidth: .infinity, alignment: .leading)
-                    Text(store.sprintName())
-                        .font(.system(size: 12))
-                        .foregroundColor(Focus.text3)
-                }
-                .help("Plan the sprint across all projects, edit its dates and goal, or complete it to start the next one")
             }
 
             ScrollViewReader { proxy in
@@ -104,9 +88,6 @@ struct TasksSidebar: View {
                                         }
                                     }
                                 }
-                            if model.isProjectExpanded(project.id) {
-                                SidebarMilestones(project: project)
-                            }
                         }
                         newProjectField
                             .onDrop(of: [.plainText], delegate: SidebarProjectDrop(target: nil, store: store, model: model))
@@ -203,17 +184,6 @@ struct TasksSidebar: View {
                 Text("\(store.openCount(project.id))")
                     .font(.system(size: 12).monospacedDigit())
                     .foregroundColor(Focus.text3)
-                // Room for the disclosure arrow drawn on top
-                Color.clear.frame(width: 14, height: 1)
-            }
-            .overlay(alignment: .trailing) {
-                SidebarDisclosure(
-                    expanded: model.isProjectExpanded(project.id),
-                    label: "Milestones of \(project.name)"
-                ) {
-                    withAnimation(Focus.hoverAnimation) { model.toggleProjectExpanded(project.id) }
-                }
-                .padding(.trailing, 4)
             }
             .help(model.scope == .project(project.id) ? "Click again for project settings" : project.name)
             .contextMenu {
@@ -231,9 +201,6 @@ struct TasksSidebar: View {
                             }
                         }
                     }
-                }
-                Button(model.isProjectExpanded(project.id) ? "Hide milestones" : "Show milestones") {
-                    model.toggleProjectExpanded(project.id)
                 }
                 Divider()
                 Button("Archive project") { model.archiveProject(project.id, store: store) }
@@ -287,169 +254,6 @@ struct TasksSidebar: View {
         DispatchQueue.main.async { newProjectFocused = true }
     }
 
-}
-
-/// The small arrow on a sidebar project row that shows or hides its milestones.
-private struct SidebarDisclosure: View {
-    let expanded: Bool
-    let label: String
-    let action: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 8.5, weight: .bold))
-                .foregroundColor(hovering ? Focus.text : Focus.text3)
-                .rotationEffect(.degrees(expanded ? 90 : 0))
-                .frame(width: 16, height: 20)
-                .background(RoundedRectangle(cornerRadius: 5).fill(hovering ? Focus.hover : .clear))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help(expanded ? "Hide milestones" : "Show milestones")
-        .accessibilityLabel(label)
-        .accessibilityValue(expanded ? "Expanded" : "Collapsed")
-    }
-}
-
-/// A project's milestones under its sidebar row: diamond in its color, name and "done/total".
-/// A click shows the milestone's page (again for its panel); the last row adds one.
-private struct SidebarMilestones: View {
-    @EnvironmentObject private var store: TaskStore
-    @EnvironmentObject private var model: TasksViewModel
-    let project: Project
-
-    var body: some View {
-        let milestones = store.milestones(of: project.id)
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(milestones) { milestone in
-                let onScreen = model.activeViewId == nil && model.scope.milestoneId == milestone.id
-                SidebarMilestoneRow(milestone: milestone,
-                                    selected: onScreen || model.dropTarget == SidebarMilestoneDrop.key(milestone.id),
-                                    focused: model.sidebarCursor == .milestone(milestone.id, projectId: project.id)) {
-                    model.clickSidebarMilestone(milestone.id, store: store)
-                }
-                .id(SidebarItem.milestone(milestone.id, projectId: project.id))
-                .help(onScreen ? "Click again for milestone details" : milestone.name)
-                .onDrop(of: [.plainText], delegate: SidebarMilestoneDrop(milestone: milestone, store: store, model: model))
-                .contextMenu {
-                    Button("Show tasks") { model.showMilestone(milestone.id, store: store) }
-                    Button("Milestone details…") { model.openMilestone(milestone.id) }
-                    Menu("Color") {
-                        ForEach(Milestone.palette, id: \.self) { hex in
-                            Button {
-                                store.setMilestoneColor(milestone.id, colorHex: hex)
-                            } label: {
-                                if hex == milestone.colorHex {
-                                    Label(Focus.colorName(hex), systemImage: "checkmark")
-                                } else {
-                                    Text(Focus.colorName(hex))
-                                }
-                            }
-                        }
-                    }
-                    if milestone.isCompleted {
-                        Button("Reopen") { store.reopenMilestone(milestone.id) }
-                    } else {
-                        Button("Mark complete") {
-                            store.completeMilestone(milestone.id)
-                            model.showUndoToast("Milestone completed", store: store)
-                        }
-                    }
-                }
-            }
-            SidebarNewMilestoneField(project: project)
-        }
-        .padding(.bottom, 4)
-    }
-}
-
-/// "Add milestone" under a project's milestones. ↵ adds it (with an Open toast), ⇧↵ adds it and
-/// shows its page.
-private struct SidebarNewMilestoneField: View {
-    @EnvironmentObject private var store: TaskStore
-    @EnvironmentObject private var model: TasksViewModel
-    let project: Project
-
-    @State private var name = ""
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "plus")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundColor(Focus.text3)
-                .frame(width: 16)
-            TextField("Add milestone", text: $name)
-                .textFieldStyle(.plain)
-                .font(Focus.meta)
-                .focused($focused)
-                .onExitCommand { name = ""; focused = false }
-                .onSubmit {
-                    let open = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false
-                    guard model.addMilestone(name, projectId: project.id, open: open, store: store) != nil else { return }
-                    name = ""
-                    if !open { DispatchQueue.main.async { focused = true } }
-                }
-                .accessibilityLabel("New milestone in \(project.name)")
-                .accessibilityHint("Return adds it. Shift-Return adds it and shows its page.")
-        }
-        .onAppear(perform: takeFocusRequest)
-        .onChange(of: model.focusRequest) { _ in takeFocusRequest() }
-        .padding(.leading, 26)
-        .padding(.trailing, 8)
-        .frame(height: 26)
-        .background(RoundedRectangle(cornerRadius: Focus.radiusControl).strokeBorder(focused ? Focus.lineStrong : .clear, lineWidth: 1))
-    }
-}
-
-extension SidebarNewMilestoneField {
-    /// The palette's "New milestone in Atlas"
-    fileprivate func takeFocusRequest() {
-        guard model.focusRequest?.field == .newMilestone(project.id) else { return }
-        model.focusRequest = nil
-        DispatchQueue.main.async { focused = true }
-    }
-}
-
-private struct SidebarMilestoneRow: View {
-    @EnvironmentObject private var store: TaskStore
-    let milestone: Milestone
-    let selected: Bool
-    var focused = false
-    let action: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        let progress = store.milestoneProgress(milestone.id)
-        Button(action: action) {
-            HStack(spacing: 8) {
-                MilestoneIcon(milestone, size: 10)
-                Text(milestone.name)
-                    .font(Focus.meta)
-                    .foregroundColor(milestone.isCompleted ? Focus.text3 : (hovering || selected ? Focus.text : Focus.text2))
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text(progress.short)
-                    .font(.system(size: 11.5).monospacedDigit())
-                    .foregroundColor(store.isOverdue(milestone) ? Focus.risk : Focus.text3)
-            }
-            .padding(.leading, 26)
-            .padding(.trailing, 8)
-            .frame(height: 26)
-            .background(RoundedRectangle(cornerRadius: Focus.radiusControl).fill(selected ? Focus.raised : (hovering ? Focus.hover : .clear)))
-            .overlay(RoundedRectangle(cornerRadius: Focus.radiusControl).strokeBorder(focused ? Focus.text3 : .clear, lineWidth: 1.5))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help(progress.label)
-        .accessibilityLabel("\(milestone.name), \(progress.label)")
-    }
 }
 
 /// Drag a project row onto another to place it there (or onto New project to move it last).
@@ -524,48 +328,6 @@ private struct SidebarTodayDrop: DropDelegate {
         model.draggingTaskId = nil
         guard let id, let task = store.task(id), !task.isClosed, !store.isInFocus(task) else { return false }
         model.toggleToday([id], store: store)
-        return true
-    }
-}
-
-/// A sidebar milestone row as a drop target: a task dropped on it joins that milestone
-/// (moving to the milestone's project if needed). One undo step, with a toast.
-private struct SidebarMilestoneDrop: DropDelegate {
-    let milestone: Milestone
-    let store: TaskStore
-    let model: TasksViewModel
-
-    static func key(_ id: UUID) -> String { "sidebar-milestone-\(id.uuidString)" }
-
-    func validateDrop(info: DropInfo) -> Bool {
-        // Only task drags (project drags clear draggingTaskId when they start)
-        model.draggingTaskId != nil && info.hasItemsConforming(to: [.plainText])
-    }
-
-    func dropEntered(info: DropInfo) { model.dropTarget = Self.key(milestone.id) }
-
-    func dropExited(info: DropInfo) {
-        if model.dropTarget == Self.key(milestone.id) { model.dropTarget = nil }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-
-    func performDrop(info: DropInfo) -> Bool {
-        model.dropTarget = nil
-        model.draggingTaskId = nil
-        guard let provider = info.itemProviders(for: [.plainText]).first else { return false }
-        let milestone = milestone
-        let store = store
-        let model = model
-        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard let text = (object as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  let taskId = UUID(uuidString: text) else { return }
-            DispatchQueue.main.async {
-                guard let task = store.task(taskId), task.milestoneId != milestone.id else { return }
-                store.moveTask(taskId, to: .milestone(milestone.id), reorder: false)
-                model.showUndoToast("Added to \(milestone.name)", store: store)
-            }
-        }
         return true
     }
 }

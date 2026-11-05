@@ -4,21 +4,18 @@ import Foundation
 // filters), "Modified · Update view · Revert" once its filters change, Save view…, and the label
 // actions that give feedback (toasts with Undo).
 
-/// One item of the sidebar, top to bottom: Today, All projects, a saved view, a project or a
-/// milestone listed under its project. ⌘0's cursor and ⌥⌘↑/↓ walk these.
+/// One item of the sidebar, top to bottom: Today, All projects, a saved view, or a project. ⌘0's cursor and ⌥⌘↑/↓ walk these.
 enum SidebarItem: Hashable, Sendable {
     case today
     case all
     case view(UUID)
     case project(UUID)
-    case milestone(UUID, projectId: UUID)
 
     init(_ scope: TaskScope) {
         switch scope {
         case .today: self = .today
         case .all: self = .all
         case let .project(id): self = .project(id)
-        case let .milestone(id, projectId): self = .milestone(id, projectId: projectId)
         }
     }
 
@@ -29,7 +26,6 @@ enum SidebarItem: Hashable, Sendable {
         case .all: return .all
         case .view: return nil
         case let .project(id): return .project(id)
-        case let .milestone(id, projectId): return .milestone(id, projectId: projectId)
         }
     }
 }
@@ -53,7 +49,7 @@ extension TasksViewModel {
         activeViewId.flatMap { store.savedView($0) }
     }
 
-    static func tab(_ layout: SavedView.Layout) -> Tab { layout == .board ? .board : .list }
+    static func tab(_ layout: SavedView.Layout) -> Tab { .list }
 
     /// A click on a sidebar view: its scope, on its tab, with its filters, sort and grouping
     /// (fresh from the view each time, so a click also reverts unsaved changes).
@@ -65,10 +61,10 @@ extension TasksViewModel {
         tab = Self.tab(view.layout)
     }
 
-    /// The tab on screen as a view layout (Board, else List).
-    var currentLayout: SavedView.Layout { effectiveTab == .board ? .board : .list }
+    /// The tab on screen as a view layout (always List now).
+    var currentLayout: SavedView.Layout { .list }
 
-    /// The view on screen differs from what it saved (filters, sort, grouping or Board/List):
+    /// The view on screen differs from what it saved (filters, sort, or grouping):
     /// the filter bar shows "Modified · Update view · Revert".
     func isViewModified(_ store: TaskStore) -> Bool {
         guard let view = activeView(store) else { return false }

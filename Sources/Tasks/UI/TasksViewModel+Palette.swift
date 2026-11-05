@@ -1,6 +1,6 @@
 import Foundation
 
-// The ⌘K palette: one fuzzy list over Today, projects, milestones, tasks of every project and
+// The ⌘K palette: one fuzzy list over Today, projects, tasks of every project and
 // commands. ↵ goes there (or runs the command), ⇧↵ opens the item's panel over the current view,
 // a leading ">" lists commands only, and the empty palette shows recent picks.
 // ⌘F stays the filter of the view on screen; ⌘K jumps anywhere.
@@ -8,15 +8,12 @@ import Foundation
 /// A command the palette can run.
 enum PaletteCommand: Hashable, Sendable {
     case newTask, newProject
-    case newMilestone(UUID)
     case completeSprint
     case showOverdue
     case groupBy(TaskGrouping)
     case switchTab(TasksViewModel.Tab)
     /// All projects › Overview, from anywhere
     case goToOverview
-    /// List or hide a project's milestones in the sidebar
-    case toggleMilestones(UUID)
     case toggleArchived
     case pauseAllTimers
     case openSettings
@@ -106,7 +103,6 @@ extension TasksViewModel {
         case .today: return 0
         case .project: return 1
         case .savedView: return 2
-        case .milestone: return 3
         case .label: return 4
         case .command: return 5
         case .task: return 6
@@ -129,10 +125,6 @@ extension TasksViewModel {
     func paletteCommands(_ store: TaskStore) -> [PaletteCommand] {
         var commands: [PaletteCommand] = [.newTask, .newProject]
         let projects = store.projects
-        if let projectId = scope.projectId, store.project(projectId)?.isArchived == false {
-            commands.append(.newMilestone(projectId))
-        }
-        commands += projects.filter { $0.id != scope.projectId }.map { .newMilestone($0.id) }
         let targets = paletteTargets.filter { store.task($0) != nil }
         if !targets.isEmpty {
             // "Move to sprint…" only when a target's project uses sprints
@@ -153,7 +145,6 @@ extension TasksViewModel {
         // Overview has its own command ("Go to Overview"), which works from any scope
         commands += tabs.filter { ($0 != effectiveTab || scope.isToday) && $0 != .overview }.map(PaletteCommand.switchTab)
         if projects.contains(where: \.usesSprints) { commands.append(.completeSprint) }
-        commands += projects.map { .toggleMilestones($0.id) }
         if !store.archivedProjects.isEmpty { commands.append(.toggleArchived) }
         if canSaveView { commands.append(.saveView) }
         if isViewModified(store) { commands += [.updateView, .revertView] }
@@ -169,13 +160,11 @@ extension TasksViewModel {
         switch command {
         case .newTask: return "New task"
         case .newProject: return "New project"
-        case let .newMilestone(id): return "New milestone in \(name(id))"
         case .completeSprint: return "Complete \(store.sprintName())…"
         case .showOverdue: return "Show overdue tasks"
         case let .groupBy(grouping): return "Group by \(grouping.title.lowercased())"
         case let .switchTab(tab): return "Switch to \(tab.title)"
         case .goToOverview: return "Go to Overview"
-        case let .toggleMilestones(id): return isProjectExpanded(id) ? "Hide milestones of \(name(id)) in the sidebar" : "Show milestones of \(name(id)) in the sidebar"
         case .toggleArchived: return showingArchived ? "Hide archived projects" : "Show archived projects"
         case .pauseAllTimers: return "Pause all timers"
         case .openSettings: return "Open settings"
@@ -204,13 +193,11 @@ extension TasksViewModel {
         switch command {
         case .newTask: return ["add task", "create"]
         case .newProject: return ["add project", "create"]
-        case .newMilestone: return ["add milestone", "create"]
         case .completeSprint: return ["finish sprint", "close sprint"]
         case .showOverdue: return ["late", "filter"]
         case .groupBy: return ["grouping"]
         case let .switchTab(tab): return [tab.title, "view"]
         case .goToOverview: return ["portfolio", "all projects", "dashboard", "slipping"]
-        case .toggleMilestones: return ["sidebar", "expand", "collapse"]
         case .toggleArchived: return ["sidebar", "archive"]
         case .pauseAllTimers: return ["stop timers"]
         case .openSettings: return ["preferences"]
@@ -263,9 +250,6 @@ extension TasksViewModel {
         case let .project(id):
             guard store.project(id) != nil else { return }
             if inPanel { openProject(id) } else { select(.project(id)) }
-        case let .milestone(id):
-            guard store.milestone(id) != nil else { return }
-            if inPanel { openMilestone(id) } else { showMilestone(id, store: store) }
         case let .task(id):
             guard let task = store.task(id) else { return }
             if !inPanel, !store.tasks(in: scope).contains(where: { $0.id == id }) || scope.isToday {
@@ -289,11 +273,6 @@ extension TasksViewModel {
             startNewTask(store)
         case .newProject:
             requestFocus(.newProject)
-        case let .newMilestone(projectId):
-            guard store.project(projectId) != nil else { return }
-            closePanel()
-            expandedProjects.insert(projectId)
-            requestFocus(.newMilestone(projectId))
         case .completeSprint:
             completingSprint = true
         case .showOverdue:
@@ -312,8 +291,6 @@ extension TasksViewModel {
             self.tab = tab
         case .goToOverview:
             showOverview()
-        case let .toggleMilestones(projectId):
-            toggleProjectExpanded(projectId)
         case .toggleArchived:
             showingArchived.toggle()
         case .pauseAllTimers:
@@ -357,7 +334,6 @@ extension TasksViewModel {
         switch item {
         case .today: return "today"
         case let .project(id): return "project:\(id.uuidString)"
-        case let .milestone(id): return "milestone:\(id.uuidString)"
         case let .task(id): return "task:\(id.uuidString)"
         case let .label(id): return "label:\(id.uuidString)"
         case let .savedView(id): return "view:\(id.uuidString)"
@@ -372,7 +348,6 @@ extension TasksViewModel {
         guard parts.count == 2, let id = UUID(uuidString: parts[1]) else { return nil }
         switch parts[0] {
         case "project": return store.project(id) != nil ? .project(id) : nil
-        case "milestone": return store.milestone(id) != nil ? .milestone(id) : nil
         case "task": return store.task(id) != nil ? .task(id) : nil
         case "label": return store.label(id) != nil ? .label(id) : nil
         case "view": return store.savedView(id) != nil ? .savedView(id) : nil

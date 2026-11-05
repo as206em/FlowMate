@@ -216,8 +216,7 @@ final class TimeLogTests: XCTestCase {
 
     func testRangeQueriesAcrossMidnight() async {
         let (store, pid) = await makeStore()
-        let milestone = store.addMilestone(projectId: pid, name: "M1")!
-        let a = store.addTask(title: "A", projectId: pid, milestoneId: milestone, now: t0)!
+        let a = store.addTask(title: "A", projectId: pid, now: t0)!
         let b = store.addTask(title: "B", projectId: pid, now: t0)!
         let day = utc.startOfDay(for: t0)
         let midnight = utc.date(byAdding: .day, value: 1, to: day)!
@@ -232,7 +231,6 @@ final class TimeLogTests: XCTestCase {
         XCTAssertEqual(store.trackedSeconds(in: first, now: now), 3600)
         XCTAssertEqual(store.trackedSeconds(in: second, now: now), 5400 + 2 * 3600, "running session counts up to now")
         XCTAssertEqual(store.trackedSeconds(.task(a), in: second, now: now), 5400)
-        XCTAssertEqual(store.trackedSecondsByMilestone(in: second, now: now)[milestone], 5400)
         XCTAssertEqual(store.trackedSecondsByProject(in: first, now: now)[pid], 3600)
         XCTAssertEqual(store.trackedSecondsByTask(in: second, now: now), [a: 5400, b: 7200])
 

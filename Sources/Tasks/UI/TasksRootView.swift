@@ -20,7 +20,9 @@ struct TasksRootView: View {
             // The selected or open project was deleted elsewhere (e.g. the menu bar)
             model.dropStaleIds(store)
         }
-        .onChange(of: store.workspace.milestones.map(\.id)) { _ in model.dropStaleIds(store) }
+        // Every screen opens with only its first group open
+        .onChange(of: model.screenKey) { _ in model.openOnlyFirstGroup(store) }
+        .onChange(of: store.isLoaded) { _ in model.openOnlyFirstGroup(store) }
         // The saved view on screen was deleted (or undone away)
         .onChange(of: store.workspace.savedViews.map(\.id)) { _ in model.dropStaleIds(store) }
         // Sprints on or off and default views, which the tabs and filters follow
@@ -28,6 +30,7 @@ struct TasksRootView: View {
         // The restored scope (last launch) may name a project that's gone
         .onAppear {
             model.syncProjects(store)
+            model.openOnlyFirstGroup(store)
             if store.isLoaded { model.dropStaleIds(store) }
         }
         .onChange(of: store.isLoaded) { loaded in if loaded { model.dropStaleIds(store) } }
@@ -79,9 +82,6 @@ struct TasksRootView: View {
     private var main: some View {
         VStack(spacing: 0) {
             TasksHeader()
-            if let milestone = model.scope.milestoneId.flatMap({ store.milestone($0) }) {
-                MilestonePageHeader(milestone: milestone)
-            }
             notices
             PaletteHint()
             LongRunBanner()
@@ -107,12 +107,12 @@ struct TasksRootView: View {
                         withAnimation(Focus.hoverAnimation) { proxy.scrollTo(id) }
                     }
                     .onChange(of: model.pinnedComposer) { key in
-                        // ⌘N on the Board: the composer at the top of the first column
+                        // ⌘N: the composer at the top of the first group
                         guard let key else { return }
                         DispatchQueue.main.async { withAnimation(Focus.hoverAnimation) { proxy.scrollTo(key, anchor: .top) } }
                     }
                     .onChange(of: model.flashTaskId) { id in
-                        // A card just added from the composer at the top of its column
+                        // A task just added from the composer at the top of its group
                         guard let id else { return }
                         withAnimation(Focus.hoverAnimation) { proxy.scrollTo(id) }
                     }
@@ -206,7 +206,7 @@ struct TasksRootView: View {
         switch model.effectiveTab {
         case .list: return true
         case .sprints: return true
-        case .board, .milestones, .overview: return false
+        case .overview: return false
         }
     }
 
@@ -235,14 +235,10 @@ struct TasksRootView: View {
         let project = model.scope.projectId.flatMap { store.project($0) }
         VStack(alignment: .leading, spacing: 0) {
             switch model.effectiveTab {
-            case .board:
-                BoardView()
             case .list:
                 TaskListView()
             case .sprints:
                 SprintPlanView(scope: model.scope)
-            case .milestones:
-                MilestonesView()
             case .overview:
                 PortfolioOverview()
             }
@@ -251,15 +247,14 @@ struct TasksRootView: View {
 
     // MARK: - Side panel
 
-    /// What the side panel shows: a task, a project or a milestone (whichever is open and still exists).
+    /// What the side panel shows: a task or a project (whichever is open and still exists).
     private enum PanelContent: Equatable {
-        case task(UUID), project(UUID), milestone(UUID)
+        case task(UUID), project(UUID)
 
         var id: String {
             switch self {
             case let .task(id): return "task-\(id)"
             case let .project(id): return "project-\(id)"
-            case let .milestone(id): return "milestone-\(id)"
             }
         }
     }
@@ -268,12 +263,11 @@ struct TasksRootView: View {
         if let id = model.openTaskId, store.task(id) != nil { return .task(id) }
         switch model.openDetail {
         case let .project(id)? where store.project(id) != nil: return .project(id)
-        case let .milestone(id)? where store.milestone(id) != nil: return .milestone(id)
         default: return nil
         }
     }
 
-    /// Scrim plus the 860pt panel sliding in from the right. Task, project and milestone panels share
+    /// Scrim plus the 860pt panel sliding in from the right. Task and project panels share
     /// it. Closes with ×, Esc or a click on the scrim.
     private var taskPanelLayer: some View {
         let content = panelContent
@@ -307,13 +301,12 @@ struct TasksRootView: View {
         .allowsHitTesting(content != nil)
     }
 
-    /// Panel content: TaskDetailPanel.swift, ProjectPanel.swift, MilestonePanel.swift.
+    /// Panel content: TaskDetailPanel.swift, ProjectPanel.swift.
     @ViewBuilder
     private func panel(_ content: PanelContent) -> some View {
         switch content {
         case let .task(id): TaskDetailPanel(taskId: id)
         case let .project(id): ProjectPanel(projectId: id)
-        case let .milestone(id): MilestonePanel(milestoneId: id)
         }
     }
 }

@@ -72,7 +72,7 @@ struct SidebarViewsSection: View {
             .padding(.bottom, 6)
         if views.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Filter a List or Board, then Save view… Or start with:")
+                Text("Filter the List, then Save view… Or start with:")
                     .font(.system(size: 11.5))
                     .foregroundColor(Focus.text3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -217,7 +217,7 @@ private struct SidebarViewDrop: DropDelegate {
 
 // MARK: - Save view sheet
 
-/// "Save view": a name, an icon and what it keeps (where, Board or List, the filters). Renaming
+/// "Save view": a name, an icon and what it keeps (where and the filters). Renaming
 /// an existing view uses the same sheet.
 struct SaveViewSheet: View {
     @EnvironmentObject private var store: TaskStore
@@ -369,9 +369,6 @@ enum SavedViewDescription {
             + Set(f.statuses.compactMap { id in store.allProjects.lazy.compactMap { $0.status(id)?.name }.first }).sorted()
         if !statuses.isEmpty { lines.append("Status: " + statuses.joined(separator: ", ")) }
         if !f.priorities.isEmpty { lines.append("Priority: " + TaskPriority.ordered.filter(f.priorities.contains).map(\.title).joined(separator: ", ")) }
-        if !f.milestones.isEmpty {
-            lines.append("Milestone: " + f.milestones.map { $0.flatMap { store.milestone($0)?.name } ?? "None" }.sorted().joined(separator: ", "))
-        }
         if !f.sprintSlots.isEmpty {
             let names: [SprintSlot: String] = [.active: "Active", .next: "Next", .backlog: "Backlog", .closed: "Past sprints"]
             lines.append("Sprint: " + [SprintSlot.active, .next, .backlog, .closed].filter(f.sprintSlots.contains).compactMap { names[$0] }.joined(separator: ", "))
@@ -395,7 +392,6 @@ enum SavedViewDescription {
         if f.due == [.overdue] { return "Overdue" }
         if f.due.contains(.thisWeek) { return "Due this week" }
         if !f.trimmedQuery.isEmpty { return f.trimmedQuery }
-        if f.milestones.count == 1, let name = f.milestones.first.flatMap({ $0.flatMap { store.milestone($0)?.name } }) { return name }
         return ""
     }
 }

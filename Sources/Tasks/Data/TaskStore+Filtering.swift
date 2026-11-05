@@ -4,13 +4,11 @@ import Foundation
 extension TaskStore {
     // MARK: - Filtering
 
-    /// Tasks matching the filter, in the order given. Ids of deleted milestones or projects are
+    /// Tasks matching the filter, in the order given. Ids of deleted projects are
     /// ignored, so a stale chip never hides everything.
     func filtered(_ tasks: [TaskItem], by filter: TaskFilter, now: Date = Date()) -> [TaskItem] {
         guard !filter.isEmpty else { return tasks }
         let words = filter.trimmedQuery.split(whereSeparator: \.isWhitespace).map(String.init)
-        let milestoneIds = Set(workspace.milestones.map(\.id))
-        let milestones = filter.milestones.filter { $0.map(milestoneIds.contains) ?? true }
         let projectIds = filter.projectIds.intersection(workspace.projects.map(\.id))
         // Statuses of a workflow that has since changed are ignored the same way
         let statusIds = filter.statuses.intersection(workspace.projects.flatMap { $0.statuses.map(\.id) })
@@ -25,7 +23,6 @@ extension TaskStore {
             if !statusIds.isEmpty || !categories.isEmpty,
                !statusIds.contains(task.statusId), !categories.contains(task.statusCategory) { return false }
             if !filter.priorities.isEmpty, !filter.priorities.contains(task.priority) { return false }
-            if !milestones.isEmpty, !milestones.contains(task.milestoneId) { return false }
             if !filter.sprintSlots.isEmpty, !filter.sprintSlots.contains(task.sprintSlot) { return false }
             if !projectIds.isEmpty, !projectIds.contains(task.projectId) { return false }
             // Any of the labels
@@ -77,6 +74,8 @@ extension TaskStore {
                 g.statusKind = category.focusKind
                 return g
             }
+        case .none:
+            return [group(.ungrouped, "Tasks") { _ in true }]
         case .priority:
             return TaskPriority.ordered.map { p in group(.priority(p), p.title) { $0.priority == p } }
         case .project:
@@ -86,17 +85,6 @@ extension TaskStore {
                 g.icon = p.icon
                 return g
             }
-        case .milestone:
-            let inScope = milestones(in: scope)
-            var result = inScope.map { m -> TaskGroup in
-                let hint = [scope.projectId == nil ? project(m.projectId)?.name : nil,
-                            m.dueDate.map { "Due " + SprintState.shortDate($0) }]
-                    .compactMap { $0 }.joined(separator: " · ")
-                return group(.milestone(m.id), m.name, hint: hint,
-                             color: scope.projectId == nil ? project(m.projectId)?.colorHex : nil) { $0.milestoneId == m.id }
-            }
-            result.append(group(.milestone(nil), "No milestone") { $0.milestoneId == nil })
-            return result
         case .label:
             // A task with several labels is listed under each of them; labels the scope's tasks
             // use, by name, then No label
@@ -129,7 +117,6 @@ extension TaskStore {
 
     /// Drops a task on a List group: sets the group's value, then places it before `beforeTaskId`
     /// (or last). Pass `reorder: false` when the list is sorted. One undo step.
-    /// A milestone of another project moves the task to that project first.
     /// `from`: the group the task was dragged out of. Between label groups that makes the drop a
     /// move like any other grouping: the source group's label comes off, the target's goes on.
     func moveTask(_ id: UUID, to value: TaskGroupValue, before beforeTaskId: UUID? = nil,
@@ -148,11 +135,8 @@ extension TaskStore {
             case let .sprint(slot):
                 guard slot != .closed else { break }
                 setSprintSlot(id, slot)
-            case let .milestone(milestoneId):
-                if let milestoneId, let milestone = milestone(milestoneId), milestone.projectId != task.projectId {
-                    setProject(id, milestone.projectId)
-                }
-                setMilestone(id, milestoneId)
+            case .ungrouped:
+                break
             case let .label(labelId):
                 // A label group adds its label, and takes off the label of the group it was dragged
                 // from (its other labels stay); No label takes them all off

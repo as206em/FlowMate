@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// ⌘K: a field over the window that finds any project, milestone or task, Today, and commands.
+/// ⌘K: a field over the window that finds any project or task, Today, and commands.
 /// ↑/↓ move, ↵ goes (or runs), ⇧↵ opens the item's panel over the current view, ">" lists
 /// commands only, Esc or a click outside closes. Results: TasksViewModel+Palette.
 struct CommandPalette: View {
@@ -20,7 +20,7 @@ struct CommandPalette: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(Focus.text3)
-                TextField("Jump to a project, milestone or task. Type > for commands", text: $model.paletteQuery)
+                TextField("Jump to a project or task. Type > for commands", text: $model.paletteQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 17))
                     .foregroundColor(Focus.text)
@@ -161,7 +161,6 @@ private struct PaletteRow: View {
         case .add: return "Add"
         case .today: return "Today"
         case let .project(id): return store.project(id)?.name ?? ""
-        case let .milestone(id): return store.milestone(id)?.name ?? ""
         case let .task(id): return store.task(id)?.title ?? ""
         case let .command(command): return model.paletteTitle(command, store: store)
         case let .label(id): return store.label(id)?.name ?? ""
@@ -173,7 +172,6 @@ private struct PaletteRow: View {
         switch item {
         case .today: return "Overdue, due today and pinned"
         case let .project(id): return store.project(id)?.isArchived == true ? "Archived" : "\(store.openCount(id)) open"
-        case let .milestone(id): return store.milestone(id).flatMap { store.project($0.projectId)?.name } ?? ""
         case let .task(id): return store.task(id).flatMap { store.project($0.projectId)?.name } ?? ""
         case let .label(id):
             let count = store.labelUsage()[id] ?? 0
@@ -185,7 +183,7 @@ private struct PaletteRow: View {
 
     private var kind: String {
         switch item {
-        case .today, .project, .milestone: return "↵ go · ⇧↵ panel"
+        case .today, .project: return "↵ go · ⇧↵ panel"
         case .label, .savedView: return "↵ show"
         case .task: return "↵ go · ⇧↵ open here"
         case .add, .command: return "Command"
@@ -199,8 +197,6 @@ private struct PaletteRow: View {
             Image(systemName: "sun.max").font(.system(size: 13, weight: .medium)).foregroundColor(Focus.text2)
         case let .project(id):
             if let project = store.project(id) { FocusProjectTile(project: project, size: 16) }
-        case let .milestone(id):
-            if let milestone = store.milestone(id) { MilestoneIcon(milestone, size: 12) }
         case let .task(id):
             if let task = store.task(id) { WorkflowStatusIcon(status: store.status(of: task), size: 14) }
         case let .label(id):

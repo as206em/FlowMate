@@ -31,7 +31,7 @@ struct GeneralSettingsView: View {
 
             FocusSection(
                 title: "Quick add",
-                subtitle: "A shortcut that opens a small New task box over any app. The same words as everywhere work there: !high, @milestone, +project, #next, *status, due:fri and ~90m (Tab completes them)."
+                subtitle: "A shortcut that opens a small New task box over any app. The same words as everywhere work there: !high, +project, #next, *status, due:fri and ~90m (Tab completes them)."
             ) {
                 VStack(alignment: .leading, spacing: 10) {
                     ShortcutRecorder(shortcut: Binding(
@@ -74,7 +74,7 @@ struct GeneralSettingsView: View {
                     )
                     hotkey(
                         label: "Open the menu bar with search focused",
-                        hint: "Type to find a task, or add one with !high, @milestone, +project, #next and due:fri",
+                        hint: "Type to find a task, or add one with !high, +project, #next and due:fri",
                         shortcut: appState.menuSearchShortcut,
                         error: appState.menuSearchShortcutError,
                         set: { appState.updateMenuSearchShortcut($0) }

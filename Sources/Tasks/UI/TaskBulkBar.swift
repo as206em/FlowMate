@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Floating bar for two or more selected tasks (⌘-click, ⇧-click, ⌘A):
-/// "3 selected · Status · Priority · Milestone · Sprint · Due · Labels · Move to · Today · Delete · ×",
+/// "3 selected · Status · Priority · Sprint · Due · Labels · Move to · Today · Delete · ×",
 /// compacted to fit narrow windows (see Density). Every action is one undo step with an "Undo" toast.
 struct TaskBulkBar: View {
     @EnvironmentObject private var store: TaskStore
@@ -11,10 +11,10 @@ struct TaskBulkBar: View {
     /// Inside the minimal layout's "More" popover: the menu picked there
     @State private var moreMenu: Menu?
 
-    private enum Menu: Hashable { case status, priority, milestone, sprint, due, labels, project, more }
+    private enum Menu: Hashable { case status, priority, sprint, due, labels, project, more }
 
     /// Full labels when there's room; at narrow widths (the 980pt minimum window) Today and Delete
-    /// become icons and "Move to" "Move"; narrower still, Milestone…Move to go under "More".
+    /// become icons and "Move to" "Move"; narrower still, Sprint…Move to go under "More".
     private enum Density { case full, compact, minimal }
 
     var body: some View {
@@ -24,7 +24,7 @@ struct TaskBulkBar: View {
             bar(ids, .compact)
             bar(ids, .minimal)
         }
-        // Single-key pickers for the selection (S, P, M…) hang above the bar
+        // Single-key pickers for the selection (S, P, R…) hang above the bar
         .quickPickerAnchor(.bulk)
     }
 
@@ -44,9 +44,8 @@ struct TaskBulkBar: View {
             menuButton("Status", .status, help: "Change the status (S)") { statusMenu(ids) }
             menuButton("Priority", .priority, help: "Set the priority (P, or 1–3)") { priorityMenu }
             if density == .minimal {
-                menuButton("More", .more, help: "Milestone, sprint, due date, labels, project") { moreMenuContent(ids) }
+                menuButton("More", .more, help: "Sprint, due date, labels, project") { moreMenuContent(ids) }
             } else {
-                menuButton("Milestone", .milestone, help: "Set the milestone (M)") { milestoneMenu(ids) }
                 if usesSprints(ids) {
                     menuButton("Sprint", .sprint, help: "Move to a sprint (R)") { sprintMenu(ids) }
                 }
@@ -94,14 +93,12 @@ struct TaskBulkBar: View {
     @ViewBuilder
     private func moreMenuContent(_ ids: [UUID]) -> some View {
         switch moreMenu {
-        case .milestone?: milestoneMenu(ids)
         case .sprint?: sprintMenu(ids)
         case .due?: dueMenu
         case .labels?: TaskLabelsEditor(taskIds: ids, toast: true) { done() }
         case .project?: projectMenu
         default:
             FocusPopoverMenu(width: 200) {
-                moreItem("Milestone", "diamond", .milestone, key: "M")
                 if usesSprints(ids) { moreItem("Sprint", "arrow.triangle.2.circlepath", .sprint, key: "R") }
                 moreItem("Due date", "calendar", .due, key: "D")
                 moreItem("Labels", "tag", .labels, key: "L")
@@ -187,37 +184,6 @@ struct TaskBulkBar: View {
                     FocusPriorityBars(level: priority.focusLevel)
                     Text(priority.title).font(Focus.control).foregroundColor(Focus.text)
                 }
-            }
-        }
-    }
-
-    /// The shared project's milestones; with tasks from several projects only "No milestone".
-    private func milestoneMenu(_ ids: [UUID]) -> some View {
-        let projectId = store.commonProjectId(ids)
-        return FocusPopoverMenu(width: 240, maxHeight: 360) {
-            FocusMenuItem {
-                model.bulk({ "Milestone cleared on \(tasks($0))" }, store: store) { store.setMilestone($0, nil) }
-                done()
-            } label: {
-                Image(systemName: "diamond").font(.system(size: 11, weight: .semibold)).foregroundColor(Focus.text3)
-                Text("No milestone").font(Focus.control).foregroundColor(Focus.text2)
-            }
-            if let projectId {
-                ForEach(store.milestones(of: projectId).filter { !$0.isCompleted }) { milestone in
-                    FocusMenuItem {
-                        model.bulk({ "\(tasks($0)) added to \(milestone.name)" }, store: store) { store.setMilestone($0, milestone.id) }
-                        done()
-                    } label: {
-                        Image(systemName: "diamond.fill").font(.system(size: 10)).foregroundColor(Color(hex: milestone.colorHex))
-                        Text(milestone.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
-                    }
-                }
-            } else {
-                Text("Select tasks from one project to set a milestone.")
-                    .font(.system(size: 12))
-                    .foregroundColor(Focus.text3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(8)
             }
         }
     }

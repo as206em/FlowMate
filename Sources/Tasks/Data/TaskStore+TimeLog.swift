@@ -1,7 +1,7 @@
 import Foundation
 
 // The time log: each task's sessions (TimeEntry), editing them by hand, and the queries other
-// views read (time tracked in a date range, per project, milestone, task or day, today, in a sprint).
+// views read (time tracked in a date range, per project, task or day, today, in a sprint).
 // A task's total is always the sum of its entries plus its running session.
 
 /// Why a session's times were refused.
@@ -23,7 +23,6 @@ enum TimeEntryProblem: Error, Equatable, Sendable {
 enum TimeScope: Hashable, Sendable {
     case all
     case project(UUID)
-    case milestone(UUID)
     case task(UUID)
     case tasks(Set<UUID>)
 }
@@ -118,7 +117,7 @@ extension TaskStore {
 
 extension TaskStore {
     /// Every tracked stretch of the tasks in `scope`: their entries, plus running sessions up to
-    /// `now`. Project and milestone follow where each task is now (entries move with their task).
+    /// `now`. Project follows where each task is now (entries move with their task).
     func trackedSpans(_ scope: TimeScope = .all, now: Date = Date()) -> [TrackedSpan] {
         let include = taskFilter(scope)
         var spans = workspace.timeEntries.filter { include($0.taskId) }.map {
@@ -152,16 +151,6 @@ extension TaskStore {
         for (taskId, seconds) in trackedSecondsByTask(in: range, now: now) {
             guard let projectId = task(taskId)?.projectId else { continue }
             result[projectId, default: 0] += seconds
-        }
-        return result
-    }
-
-    /// Seconds tracked inside `range` per milestone (tasks without one are left out).
-    func trackedSecondsByMilestone(_ scope: TimeScope = .all, in range: DateInterval, now: Date = Date()) -> [UUID: TimeInterval] {
-        var result: [UUID: TimeInterval] = [:]
-        for (taskId, seconds) in trackedSecondsByTask(scope, in: range, now: now) {
-            guard let milestoneId = task(taskId)?.milestoneId else { continue }
-            result[milestoneId, default: 0] += seconds
         }
         return result
     }
@@ -234,9 +223,6 @@ extension TaskStore {
             return { ids.contains($0) }
         case let .project(projectId):
             let ids = Set(workspace.tasks.filter { $0.projectId == projectId }.map(\.id))
-            return { ids.contains($0) }
-        case let .milestone(milestoneId):
-            let ids = Set(workspace.tasks.filter { $0.milestoneId == milestoneId }.map(\.id))
             return { ids.contains($0) }
         }
     }

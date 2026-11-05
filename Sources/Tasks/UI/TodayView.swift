@@ -22,38 +22,38 @@ struct TodayView: View {
         let sections = TasksViewModel.todaySections(plan)
         var builder = TaskTableBuilder()
         builder.spacer("top", 8)
-        for (index, section) in sections.enumerated() {
-            let focus = section.kind == .focus
+        for section in sections {
             builder.group(
                 key: section.key,
                 title: section.title,
-                hint: hint(section, plan: plan),
-                tasks: section.tasks,
-                emptyText: "Nothing pinned for today. Press ⌘T on a selected task or right-click › Add to Today; it stays here until it's done. Or add one below with ⌘N.",
+                hint: hint(plan),
+                tasks: model.sortedForGroup(section.tasks, section.key, store: store),
+                emptyText: "Nothing for today. Press ⌘T on a selected task or right-click › Add to Today; it stays here until it's done. Or add one below with ⌘N.",
                 showProject: true,
-                drop: focus ? .focus : nil,
-                composerIsDefault: focus,
-                composerOnTop: focus && model.isComposerPinned(TasksViewModel.listComposerKey(section.key)),
+                drop: .focus,
+                composerIsDefault: true,
+                composerOnTop: model.isComposerPinned(TasksViewModel.listComposerKey(section.key)),
                 open: !model.isCollapsed(section.key),
-                gap: index == 0 ? 0 : 24,
-                actions: actions(section, hasOverdue: !plan.overdue.isEmpty),
-                liveHint: focus ? .todayPlanned : nil,
-                risk: section.kind == .due && !plan.overdue.isEmpty,
-                draggable: section.kind != .done,
-                display: RowDisplay.maker(store: store, model: model, today: true)
+                gap: 0,
+                actions: actions(hasOverdue: !plan.overdue.isEmpty, running: plan.running.count),
+                liveHint: .todayPlanned,
+                risk: !plan.overdue.isEmpty,
+                draggable: true,
+                sortable: true,
+                display: RowDisplay.maker(store: store, model: model, today: true, scores: true)
             )
         }
         // What to pick next across every project, after Today's own sections, when there is
         // anything to rank. Collapses like a group (NextBestPanel.groupKey).
         if !store.nextBestCandidates().isEmpty {
-            builder.spacer("before-next-best", sections.isEmpty ? 0 : 24)
+            builder.spacer("before-next-best", 24)
             builder.nextBest()
         }
         builder.spacer("bottom", 72)
         return TaskTable(
             showProject: true,
-            // Labels only while a task here has one
-            excluding: sections.contains { $0.tasks.contains { !$0.labelIds.isEmpty } } ? [.sprint] : [.sprint, .labels],
+            excluding: [.sprint],
+            including: [.score],
             rows: builder.rows,
             drops: builder.drops,
             draggable: builder.draggable
@@ -61,26 +61,18 @@ struct TodayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
-    private func hint(_ section: TodaySection, plan: TodayPlan) -> String {
-        switch section.kind {
-        case .focus:
-            return plan.carriedOver > 0 ? "· \(plan.carriedOver) from earlier days" : ""
-        case .done:
-            let tracked = section.tasks.reduce(0) { $0 + $1.spentSeconds }
-            return tracked >= 60 ? "\(TodayFormat.duration(tracked)) spent on them" : ""
-        case .due:
-            return plan.overdue.isEmpty ? "" : "· \(plan.overdue.count) overdue"
-        case .running:
-            return ""
-        }
+    private func hint(_ plan: TodayPlan) -> String {
+        var parts: [String] = []
+        if !plan.overdue.isEmpty { parts.append("\(plan.overdue.count) overdue") }
+        if plan.carriedOver > 0 { parts.append("\(plan.carriedOver) from earlier days") }
+        return parts.isEmpty ? "" : "· " + parts.joined(separator: " · ")
     }
 
-    private func actions(_ section: TodaySection, hasOverdue: Bool) -> [GroupHeaderAction] {
-        switch section.kind {
-        case .running: return section.tasks.count > 1 ? [.pauseAll] : []
-        case .due: return hasOverdue ? [.moveOverdueToToday, .moveOverdueToTomorrow] : []
-        case .focus, .done: return []
-        }
+    private func actions(hasOverdue: Bool, running: Int) -> [GroupHeaderAction] {
+        var result: [GroupHeaderAction] = []
+        if running > 1 { result.append(.pauseAll) }
+        if hasOverdue { result += [.moveOverdueToToday, .moveOverdueToTomorrow] }
+        return result
     }
 }
 

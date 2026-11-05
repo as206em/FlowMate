@@ -13,7 +13,6 @@ extension TaskStore {
     func addTask(
         title: String,
         projectId: UUID,
-        milestoneId: UUID? = nil,
         sprintSlot: SprintSlot? = nil,
         status: WorkflowStatus? = nil,
         atTop: Bool = false,
@@ -22,10 +21,9 @@ extension TaskStore {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, let project = project(projectId) else { return nil }
         let status = status.map { project.status($0.id) ?? WorkflowRules.remap($0, into: project.statuses) } ?? project.defaultStatus
-        let validMilestone = milestoneId.flatMap { milestone($0)?.projectId == projectId ? $0 : nil }
         // Without sprints every new task is current work; a past sprint never takes new tasks
         let slot = project.usesSprints ? Project.cleanSlot(sprintSlot ?? project.defaultSprintSlot) : .active
-        let task = TaskItem(projectId: projectId, milestoneId: validMilestone, sprintSlot: slot,
+        let task = TaskItem(projectId: projectId, sprintSlot: slot,
                             status: status, priority: .medium, title: title,
                             expectedMinutes: project.newTaskExpectedMinutes,
                             createdAt: now,
@@ -79,15 +77,7 @@ extension TaskStore {
         updateTask(id, action: "Change expected time") { $0.expectedMinutes = max(1, minutes) }
     }
 
-    /// Sets the milestone; ignores milestones from another project.
-    func setMilestone(_ id: UUID, _ milestoneId: UUID?) {
-        guard let task = task(id) else { return }
-        if let milestoneId, milestone(milestoneId)?.projectId != task.projectId { return }
-        updateTask(id, action: "Change milestone") { $0.milestoneId = milestoneId }
-    }
-
-    /// Moves a task to another project. Its milestone is cleared (milestones belong to one project)
-    /// and its status maps onto the new workflow by category: the status with the same name and
+    /// Moves a task to another project. Its status maps onto the new workflow by category: the status with the same name and
     /// category, else the first status of that category. Everything else (sprint slot, time, a
     /// running timer) comes along.
     func setProject(_ id: UUID, _ projectId: UUID) {
@@ -99,7 +89,6 @@ extension TaskStore {
             task.projectId = projectId
             task.statusId = status.id
             task.statusCategory = status.category
-            task.milestoneId = nil
             // Labels, time entries and Today pinning are workspace-wide and stay as they are.
             if task.sprintSlot == .closed {
                 // Past sprints belong to the old project; the task goes to the new one's backlog

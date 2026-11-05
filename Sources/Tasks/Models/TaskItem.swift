@@ -75,7 +75,6 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
 
     var id: UUID
     var projectId: UUID
-    var milestoneId: UUID?
     var sprintSlot: SprintSlot
     /// A status of the task's project (Project.statuses). The store keeps it valid.
     var statusId: String
@@ -115,7 +114,7 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
     /// A workspace task type (Workspace.taskTypes): its bucket counts toward the sprint's mix and
     /// its impact toward the Next best score. nil: untyped. The store keeps it existing.
     var typeId: UUID?
-    /// The task's own impact (1–10), overriding its milestone's and project's; nil inherits.
+    /// The task's own impact (1–10), overriding the project's; nil inherits.
     var impact: Int?
     /// Points added to the Next best score by Send up (+) and Send down (−). Cleared when the task
     /// closes or the sprint completes, and by Back to normal.
@@ -129,7 +128,6 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
     init(
         id: UUID = UUID(),
         projectId: UUID,
-        milestoneId: UUID? = nil,
         sprintSlot: SprintSlot = .active,
         status: WorkflowStatus = .todo,
         priority: TaskPriority = .medium,
@@ -156,7 +154,6 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
     ) {
         self.id = id
         self.projectId = projectId
-        self.milestoneId = milestoneId
         self.sprintSlot = sprintSlot
         self.statusId = status.id
         self.statusCategory = status.category
@@ -198,7 +195,7 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
     var isPinned: Bool { focusDate != nil }
 
     private enum CodingKeys: String, CodingKey {
-        case id, projectId, milestoneId, sprintSlot, statusId, statusCategory, priority, title, notes, subtasks
+        case id, projectId, sprintSlot, statusId, statusCategory, priority, title, notes, subtasks
         case dueDate, expectedMinutes, spentSeconds, createdAt, updatedAt, completedAt, sortIndex, closedSprintNumber
         case focusDate, focusIndex, labelIds, laterSprint
         case typeId, impact, nudge, nudgeRun, topPinnedAt
@@ -210,7 +207,6 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         projectId = try c.decode(UUID.self, forKey: .projectId)
-        milestoneId = c.decodeOptional(.milestoneId)
         sprintSlot = c.decode(.sprintSlot, or: .backlog)
         if let id: String = c.decodeOptional(.statusId), !id.isEmpty {
             statusId = id

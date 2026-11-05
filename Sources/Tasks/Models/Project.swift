@@ -242,17 +242,15 @@ enum ProjectIcon: Codable, Equatable, Hashable, Sendable {
 
 /// The view a project opens on when it has one set (Project.defaultView).
 enum ProjectView: String, CaseIterable, Identifiable, Sendable, TolerantStringEnum {
-    case board, list, sprints, milestones
+    case list, sprints
 
-    static var fallback: ProjectView { .board }
+    static var fallback: ProjectView { .list }
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .board: return "Board"
         case .list: return "List"
         case .sprints: return "Sprints"
-        case .milestones: return "Milestones"
         }
     }
 }

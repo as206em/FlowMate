@@ -204,12 +204,13 @@ final class TodayTests: XCTestCase {
         model.select(.today)
         XCTAssertTrue(model.tabs.isEmpty)
         XCTAssertFalse(model.showsFilterBar)
-        XCTAssertEqual(model.visibleTasks(store).map(\.id), [x, y], "Due today, then My focus")
+        XCTAssertEqual(model.visibleTasks(store).map(\.id), [x, y], "Due today, then My focus, in the one Today section")
         XCTAssertEqual(model.moveSelection(1, store: store), x)
         XCTAssertEqual(model.moveSelection(1, store: store), y)
-        XCTAssertEqual(model.defaultComposerKey(store), TasksViewModel.listComposerKey(TasksViewModel.todayFocusKey))
-        model.toggleGroup(TasksViewModel.todayDueKey)
-        XCTAssertEqual(model.visibleTasks(store).map(\.id), [y], "a folded section is skipped")
+        XCTAssertEqual(model.defaultComposerKey(store), TasksViewModel.listComposerKey(TasksViewModel.todayKey))
+        model.toggleGroup(TasksViewModel.todayKey)
+        XCTAssertTrue(model.visibleTasks(store).isEmpty, "a folded section is skipped")
+        model.toggleGroup(TasksViewModel.todayKey)
 
         // ⌘T on the selection
         model.selectedTaskId = y
@@ -308,23 +309,6 @@ final class TodayTests: XCTestCase {
         let plan = NotificationPlanner.plan(input(store), settings: NotificationSettings(dueReminders: true), now: now)
         XCTAssertEqual(plan.count, NotificationPlanner.dueReminderLimit)
         XCTAssertEqual(plan.last?.title, "3 more due today")
-    }
-
-    func testMilestoneReminderTwoDaysBefore() async {
-        let (store, a, _) = await makeStore()
-        let m = store.addMilestone(projectId: a, name: "Marketing")!
-        store.setMilestoneDue(m, to: day(4))
-        for i in 0..<9 {
-            let id = store.addTask(title: "M\(i)", projectId: a, milestoneId: m, now: now)!
-            if i < 4 { store.setCategory(id, .done, now: now) }
-        }
-        let past = store.addMilestone(projectId: a, name: "Soon")!
-        store.setMilestoneDue(past, to: day(1)) // its reminder day has passed
-        let plan = NotificationPlanner.plan(input(store), settings: NotificationSettings(milestoneReminders: true), now: now)
-        XCTAssertEqual(plan.map(\.title), ["Marketing is due in 2 days"])
-        XCTAssertEqual(plan.first?.body, "4 of 9 done · Liloix")
-        XCTAssertEqual(plan.first?.fireDate, day(2).addingTimeInterval(9 * 3600))
-        XCTAssertEqual(plan.first?.target, .milestone(m))
     }
 
     func testLongRunAndSleepPrompts() async {

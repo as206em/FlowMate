@@ -22,14 +22,13 @@ final class TaskProjectsBatch3Tests: XCTestCase {
     // MARK: - Schema (v1 files still load)
 
     func testVersion1FileLoadsAndMigrates() throws {
-        let pid = UUID(), mid = UUID(), tid = UUID()
+        let pid = UUID(), tid = UUID()
         let json = """
         {"schemaVersion": 1,
          "projects": [{"id": "\(pid)", "name": "Old", "colorHex": 4366581,
                        "sprint": {"number": 3, "startDate": "2026-10-12T00:00:00Z", "goal": "Ship"},
                        "createdAt": "2026-01-01T00:00:00Z"}],
-         "milestones": [{"id": "\(mid)", "projectId": "\(pid)", "name": "Beta"}],
-         "tasks": [{"id": "\(tid)", "projectId": "\(pid)", "milestoneId": "\(mid)", "sprintSlot": "closed",
+         "tasks": [{"id": "\(tid)", "projectId": "\(pid)", "sprintSlot": "closed",
                     "status": "done", "title": "T"}],
          "runningTimers": {}}
         """
@@ -47,9 +46,6 @@ final class TaskProjectsBatch3Tests: XCTestCase {
         XCTAssertNil(project.targetDate)
         XCTAssertFalse(project.isArchived)
         XCTAssertTrue(ws.pastSprints.isEmpty)
-        let milestone = try XCTUnwrap(ws.milestones.first)
-        XCTAssertEqual(milestone.notes, "")
-        XCTAssertFalse(milestone.isCompleted)
         XCTAssertNil(ws.tasks.first?.closedSprintNumber)
 
         // Bad values fall back instead of failing the file
@@ -71,8 +67,6 @@ final class TaskProjectsBatch3Tests: XCTestCase {
         ws.sprint.lengthWeeks = 3
         ws.pastSprints = [PastSprint(number: 1, startDate: t0, endDate: t0, goal: "G",
                                                  taskIds: [ws.tasks[0].id], doneTaskIds: [], completedAt: t0)]
-        ws.milestones[0].notes = "notes"
-        ws.milestones[0].completedAt = t0
         ws.tasks[0].closedSprintNumber = 1
 
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Batch3-\(UUID().uuidString)")
@@ -184,8 +178,7 @@ final class TaskProjectsBatch3Tests: XCTestCase {
     func testArchiveHidesProjectButKeepsData() async {
         let (store, pid) = await makeStore()
         let other = store.addProject(name: "Beta", now: t0)!
-        let m = store.addMilestone(projectId: pid, name: "M")!
-        let a = store.addTask(title: "Alpha task", projectId: pid, milestoneId: m, now: t0)!
+        let a = store.addTask(title: "Alpha task", projectId: pid, now: t0)!
         let b = store.addTask(title: "Beta task", projectId: other, now: t0)!
         store.startTimer(a, now: t0)
 
@@ -195,9 +188,7 @@ final class TaskProjectsBatch3Tests: XCTestCase {
         XCTAssertEqual(store.archivedProjects.map(\.id), [pid])
         XCTAssertEqual(store.allProjects.count, 2)
         XCTAssertEqual(store.tasks(in: .all).map(\.id), [b], "All projects leaves it out")
-        XCTAssertTrue(store.milestones(in: .all).isEmpty)
         XCTAssertEqual(store.tasks(in: .project(pid)).map(\.id), [a], "its own view still has everything")
-        XCTAssertNotNil(store.milestone(m))
         XCTAssertFalse(store.isRunning(a), "timers pause")
         XCTAssertEqual(store.task(a)?.spentSeconds ?? 0, 60, accuracy: 0.001, "time is kept")
         XCTAssertTrue(store.searchTasks("task").allSatisfy { $0.projectId == other }, "menu bar search skips it")
@@ -269,41 +260,11 @@ final class TaskProjectsBatch3Tests: XCTestCase {
         XCTAssertEqual(store.project(pid)?.name, "Alpha", "typing the name is one undo step")
     }
 
-    func testMilestoneCompleteNotesAndTasks() async {
-        let (store, pid) = await makeStore()
-        let m1 = store.addMilestone(projectId: pid, name: "Beta", dueDate: day(-3, from: Date()))!
-        let m2 = store.addMilestone(projectId: pid, name: "Launch", dueDate: day(10, from: Date()))!
-        let a = store.addTask(title: "A", projectId: pid, milestoneId: m1, now: t0)!
-        let b = store.addTask(title: "B", projectId: pid, milestoneId: m1, now: t0)!
-        store.setStatus(b, .done)
-
-        XCTAssertEqual(store.milestoneTasks(m1).map(\.id), [a, b])
-        XCTAssertEqual(store.milestoneProgress(m1).short, "1/2")
-        XCTAssertTrue(store.isOverdue(store.milestone(m1)!))
-
-        store.completeMilestone(m1, now: t0)
-        XCTAssertTrue(store.milestone(m1)!.isCompleted)
-        XCTAssertFalse(store.isOverdue(store.milestone(m1)!), "a completed milestone is never overdue")
-        XCTAssertEqual(store.task(a)?.statusId, WorkflowStatus.todo.id, "its tasks are left alone")
-        XCTAssertEqual(store.milestones(of: pid).map(\.id), [m2, m1], "completed ones sort last")
-        XCTAssertEqual(store.undoActionName, "Complete milestone")
-
-        store.reopenMilestone(m1)
-        XCTAssertFalse(store.milestone(m1)!.isCompleted)
-        XCTAssertEqual(store.milestones(of: pid).map(\.id), [m1, m2])
-
-        store.setMilestoneNotes(m1, "Scope")
-        store.setMilestoneName(m1, "Beta 1")
-        XCTAssertEqual(store.milestone(m1)?.notes, "Scope")
-        XCTAssertEqual(store.milestone(m1)?.name, "Beta 1")
-    }
-
     // MARK: - Panels and the List (#1, #18, #22, #23)
 
     func testPanelsAreExclusiveAndCloseWhenGone() async {
         let (store, pid) = await makeStore()
-        let m = store.addMilestone(projectId: pid, name: "M")!
-        let a = store.addTask(title: "A", projectId: pid, milestoneId: m, now: t0)!
+        let a = store.addTask(title: "A", projectId: pid, now: t0)!
         let model = TasksViewModel()
 
         model.openTask(a)
@@ -314,38 +275,13 @@ final class TaskProjectsBatch3Tests: XCTestCase {
         model.selectedTaskId = a
         XCTAssertNil(model.targetTaskId(store), "⌘⌫ and Space don't reach a task behind a project panel")
 
-        model.openMilestone(m)
-        XCTAssertEqual(model.openDetail, .milestone(m))
         model.openTask(a)
         XCTAssertNil(model.openDetail)
         XCTAssertEqual(model.openTaskId, a)
 
-        model.openMilestone(m)
-        model.deleteMilestone(m, store: store)
-        XCTAssertNil(model.openDetail)
-        XCTAssertNil(store.milestone(m))
-        model.undoFromToast(store)
-        XCTAssertNotNil(store.milestone(m))
-
-        model.openMilestone(m)
+        model.openProject(pid)
         model.closePanel()
         XCTAssertFalse(model.isPanelOpen)
-    }
-
-    func testShowMilestoneTasks() async {
-        let (store, pid) = await makeStore()
-        let m = store.addMilestone(projectId: pid, name: "M")!
-        let a = store.addTask(title: "A", projectId: pid, milestoneId: m, now: t0)!
-        store.addTask(title: "B", projectId: pid, now: t0)
-        let model = TasksViewModel()
-        model.openMilestone(m)
-
-        model.showTasks(ofMilestone: store.milestone(m)!)
-        XCTAssertEqual(model.scope, .milestone(m, projectId: pid), "Show tasks opens the milestone's page")
-        XCTAssertEqual(model.tab, .list)
-        XCTAssertTrue(model.filter.isEmpty, "the page needs no filter chip")
-        XCTAssertFalse(model.isPanelOpen)
-        XCTAssertEqual(model.listGroups(store).flatMap(\.tasks).map(\.id), [a])
     }
 
     func testListHidesPastSprintTasksUnlessFiltered() async {
@@ -374,15 +310,5 @@ final class TaskProjectsBatch3Tests: XCTestCase {
         XCTAssertFalse(model.isCollapsed(key))
         XCTAssertTrue(model.isCollapsed(TaskGroupValue.status(.done).key), "Done still starts collapsed")
         XCTAssertFalse(model.isCollapsed(TasksViewModel.sprintGroupKey(.active)))
-    }
-
-    func testSidebarDisclosure() {
-        let model = TasksViewModel()
-        let id = UUID()
-        XCTAssertFalse(model.isProjectExpanded(id))
-        model.toggleProjectExpanded(id)
-        XCTAssertTrue(model.isProjectExpanded(id))
-        model.toggleProjectExpanded(id)
-        XCTAssertFalse(model.isProjectExpanded(id))
     }
 }

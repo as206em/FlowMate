@@ -102,7 +102,7 @@ final class TaskAuditRound2Tests: XCTestCase {
 
     // MARK: - #40 Window state
 
-    func testWindowRestoresCollapsedGroupsAndExpandedProjects() async throws {
+    func testWindowRestoresCollapsedGroups() async throws {
         let (store, pid) = await makeStore()
         let suite = "FlowMateRound2-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -112,18 +112,10 @@ final class TaskAuditRound2Tests: XCTestCase {
         XCTAssertTrue(model.isCollapsed(TaskGroupValue.status(.done).key), "Done starts collapsed")
         model.toggleGroup(TaskGroupValue.status(.done).key)
         model.toggleGroup(TaskGroupValue.status(.todo).key)
-        model.toggleProjectExpanded(pid)
 
         let restored = TasksViewModel(defaults: defaults)
         XCTAssertFalse(restored.isCollapsed(TaskGroupValue.status(.done).key))
         XCTAssertTrue(restored.isCollapsed(TaskGroupValue.status(.todo).key))
-        XCTAssertTrue(restored.isProjectExpanded(pid))
-
-        // A deleted project is forgotten
-        store.deleteProject(pid)
-        restored.dropStaleIds(store)
-        XCTAssertFalse(restored.isProjectExpanded(pid))
-        XCTAssertFalse(TasksViewModel(defaults: defaults).isProjectExpanded(pid))
     }
 
     func testOlderWindowStateKeepsDefaultCollapsedGroups() throws {
@@ -134,7 +126,6 @@ final class TaskAuditRound2Tests: XCTestCase {
         let model = TasksViewModel(defaults: defaults)
         XCTAssertEqual(model.tab, .list)
         XCTAssertTrue(model.isCollapsed(TaskGroupValue.status(.done).key))
-        XCTAssertTrue(model.expandedProjects.isEmpty)
     }
 
     // MARK: - #1 Sidebar click

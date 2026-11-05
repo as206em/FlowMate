@@ -145,7 +145,7 @@ final class TaskMenuPolishBatch5Tests: XCTestCase {
         let pid = UUID()
         let json = """
         {"schemaVersion": 3, "projects": [{"id": "\(pid.uuidString)", "name": "Old"}],
-         "milestones": [], "tasks": [], "runningTimers": {},
+         "tasks": [], "runningTimers": {},
          "preferences": {"lastProjectId": "\(pid.uuidString)", "sampleProjectIds": ["\(UUID().uuidString)", 7, "\(pid.uuidString)"]}}
         """
         let ws = try LocalJSONWorkspaceRepository.makeDecoder().decode(Workspace.self, from: Data(json.utf8)).migrated()
@@ -174,19 +174,13 @@ final class TaskMenuPolishBatch5Tests: XCTestCase {
         let model = TasksViewModel()
         model.select(.project(pid))
         XCTAssertEqual(model.listEmptyReason(store), .noTasks)
-        XCTAssertEqual(model.boardEmptyReason(store), .noTasks)
 
-        let task = store.addTask(title: "Later", projectId: pid, sprintSlot: .backlog, now: t0)!
+        _ = store.addTask(title: "Later", projectId: pid, sprintSlot: .backlog, now: t0)!
         XCTAssertNil(model.listEmptyReason(store))
-        XCTAssertEqual(model.boardEmptyReason(store), .sprintEmpty(waiting: 1))
 
         model.filter.query = "nothing like it"
         XCTAssertEqual(model.listEmptyReason(store), .noMatches)
-        XCTAssertEqual(model.boardEmptyReason(store), .noMatches)
         model.filter = TaskFilter()
-
-        store.setSprintSlot(task, .active)
-        XCTAssertNil(model.boardEmptyReason(store))
     }
 
     // MARK: - Menu: tasks in progress and keyboard rows
@@ -245,8 +239,8 @@ final class TaskMenuPolishBatch5Tests: XCTestCase {
         XCTAssertEqual(outcome?.applied, ["High", "1h 30m"])
         XCTAssertEqual(store.menuQuickAddTarget?.id, pid, "adding remembers the project")
 
-        XCTAssertEqual(store.quickAddPreview("Fix !low ~1h @nope", projectId: pid, now: t0),
-                       ["Low", "◆ No milestone “nope”", "1h"])
+        XCTAssertEqual(store.quickAddPreview("Fix !low ~1h", projectId: pid, now: t0),
+                       ["Low", "1h"])
         XCTAssertEqual(store.quickAddPreview("Plain", projectId: pid), [])
     }
 
@@ -338,7 +332,7 @@ final class TaskMenuPolishBatch5Tests: XCTestCase {
         model.sort = TaskSort(key: .due, ascending: true)
         model.select(.all)
         XCTAssertEqual(model.tab, .list, "All projects has no Sprints tab")
-        model.tab = .milestones
+        model.tab = .overview
 
         // #41: opening a project brings back its own tab and filters
         model.select(.project(pid))
@@ -358,7 +352,7 @@ final class TaskMenuPolishBatch5Tests: XCTestCase {
         XCTAssertEqual(restored.filter.priorities, [.high])
         XCTAssertEqual(restored.filter.query, "")
         restored.select(.all)
-        XCTAssertEqual(restored.tab, .milestones)
+        XCTAssertEqual(restored.tab, .overview)
 
         // A deleted project's scope and settings are forgotten
         restored.select(.project(beta))
@@ -372,18 +366,18 @@ final class TaskMenuPolishBatch5Tests: XCTestCase {
         defaults.set(Data("nope".utf8), forKey: TasksViewModel.windowStateKey)
         let fresh = TasksViewModel(defaults: defaults)
         XCTAssertEqual(fresh.scope, .all)
-        XCTAssertEqual(fresh.tab, .board)
+        XCTAssertEqual(fresh.tab, .list)
     }
 
     func testWindowStateDecodingIsTolerant() throws {
         let pid = UUID()
         let json = """
         {"scope": "\(pid.uuidString)", "tabs": {"\(pid.uuidString)": "list", "all": "weird"},
-         "options": {"\(pid.uuidString)": {"grouping": "milestone"}, "all": 5}}
+         "options": {"\(pid.uuidString)": {"grouping": "priority"}, "all": 5}}
         """
         let state = try JSONDecoder().decode(TasksViewModel.WindowState.self, from: Data(json.utf8))
         XCTAssertEqual(state.scope, pid.uuidString)
-        XCTAssertEqual(state.options[pid.uuidString]?.grouping, .milestone)
+        XCTAssertEqual(state.options[pid.uuidString]?.grouping, .priority)
         XCTAssertNil(state.options["all"])
 
         let suite = "FlowMateTests-\(UUID().uuidString)"
@@ -393,6 +387,6 @@ final class TaskMenuPolishBatch5Tests: XCTestCase {
         let model = TasksViewModel(defaults: defaults)
         XCTAssertEqual(model.scope, .project(pid))
         XCTAssertEqual(model.tab, .list)
-        XCTAssertEqual(model.grouping, .milestone)
+        XCTAssertEqual(model.grouping, .priority)
     }
 }

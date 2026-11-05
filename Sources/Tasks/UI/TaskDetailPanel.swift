@@ -35,41 +35,19 @@ struct TaskDetailPanel: View {
         )
     }
 
-    /// Breadcrumbs: project (opens its panel) › milestone (opens its panel, or a picker when none)
+    /// Breadcrumbs: project (opens its panel)
     /// › sprint (opens the sprint picker).
     private func header(_ task: TaskItem) -> some View {
         SidePanelHeader(closeLabel: "Close task", close: { model.closePanel() }, stepper: stepper) {
             if let project = store.project(of: task) {
                 FocusProjectTile(project: project)
                 FocusCrumb(text: project.name, help: "Open project") { model.openProject(project.id) }
-                FocusCrumbSeparator()
             }
-            TaskMilestoneCrumb(task: task)
             // A project without sprints has no sprint to show (a task closed in a past one still does)
             if store.usesSprints(task.projectId) || task.sprintSlot == .closed {
                 FocusCrumbSeparator()
                 TaskSprintCrumb(task: task)
             }
-        }
-    }
-}
-
-/// Milestone crumb: opens the milestone panel, or the milestone picker when the task has none.
-private struct TaskMilestoneCrumb: View {
-    @EnvironmentObject private var store: TaskStore
-    @EnvironmentObject private var model: TasksViewModel
-    let task: TaskItem
-
-    @State private var picking = false
-
-    var body: some View {
-        if let milestone = store.milestone(of: task) {
-            FocusCrumb(text: milestone.name, help: "Open milestone") { model.openMilestone(milestone.id) }
-        } else {
-            FocusCrumb(text: "No milestone", help: "Set milestone", muted: true) { picking = true }
-                .popover(isPresented: $picking, arrowEdge: .bottom) {
-                    TaskMilestoneEditor(task: task) { picking = false }
-                }
         }
     }
 }
@@ -260,7 +238,7 @@ struct SidePanelTitleEditor: View {
     }
 }
 
-/// Description with Write / Preview tabs and the Markdown toolbar (task, project and milestone panels).
+/// Description with Write / Preview tabs and the Markdown toolbar (task and project panels).
 struct MarkdownDescriptionSection: View {
     let text: String
     let placeholder: String

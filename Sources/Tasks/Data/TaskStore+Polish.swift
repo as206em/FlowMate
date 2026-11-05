@@ -14,7 +14,7 @@ extension TaskStore {
     /// The "This is sample data · Clear sample data" banner shows while a sample project exists.
     var showsSampleDataBanner: Bool { !sampleProjects.isEmpty }
 
-    /// Deletes the sample projects with their milestones, tasks and timers. One undo step.
+    /// Deletes the sample projects with their tasks and timers. One undo step.
     /// Returns how many projects were removed.
     @discardableResult
     func clearSampleData() -> Int {
@@ -23,7 +23,6 @@ extension TaskStore {
         mutate("Clear sample data") { ws in
             let taskIds = Set(ws.tasks.filter { ids.contains($0.projectId) }.map(\.id))
             ws.projects.removeAll { ids.contains($0.id) }
-            ws.milestones.removeAll { ids.contains($0.projectId) }
             ws.tasks.removeAll { ids.contains($0.projectId) }
             ws.runningTimers = ws.runningTimers.filter { !taskIds.contains($0.key) }
             ws.preferences.sampleProjectIds = []

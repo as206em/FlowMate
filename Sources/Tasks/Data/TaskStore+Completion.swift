@@ -1,14 +1,10 @@
 import Foundation
 
-// Completion rates of a project, a milestone and the sprint, and the sprint's burnup.
+// Completion rates of a project and the sprint, and the sprint's burnup.
 
 extension TaskStore {
     func projectCompletion(_ projectId: UUID) -> Completion {
         Completion(workspace.tasks.filter { $0.projectId == projectId })
-    }
-
-    func milestoneCompletion(_ milestoneId: UUID) -> Completion {
-        Completion(workspace.tasks.filter { $0.milestoneId == milestoneId })
     }
 
     /// The active sprint's tasks in `scope` (all projects, or one).

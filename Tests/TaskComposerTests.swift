@@ -17,7 +17,6 @@ final class TaskComposerTests: XCTestCase {
         XCTAssertEqual(ComposerInput.token("#backlog"), .slot(.backlog))
         XCTAssertEqual(ComposerInput.token("!high"), .priority(.high))
         XCTAssertEqual(ComposerInput.token("!1"), .priority(.high))
-        XCTAssertEqual(ComposerInput.token("@beta"), .milestone("beta"))
         XCTAssertEqual(ComposerInput.token("+atlas"), .project("atlas"))
         XCTAssertNotNil(ComposerInput.token("due:fri", now: now))
         XCTAssertNotNil(ComposerInput.token("tomorrow", now: now))
@@ -39,47 +38,36 @@ final class TaskComposerTests: XCTestCase {
         result = ComposerInput.extract("Write #next notes !high", final: true)
         XCTAssertEqual(result.text, "Write notes")
         XCTAssertEqual(result.tokens, [.slot(.next), .priority(.high)])
-
-        result = ComposerInput.extract("Ship @nope ", accepts: { if case .milestone = $0 { return false }; return true })
-        XCTAssertEqual(result.text, "Ship @nope ", "unknown milestones stay in the title")
     }
 
     func testTriggerWordOpensItsMenu() async {
         XCTAssertEqual(ComposerInput.activeTrigger("Write #ne")?.trigger, .sprint)
         XCTAssertEqual(ComposerInput.activeTrigger("Write #ne")?.query, "ne")
-        XCTAssertEqual(ComposerInput.activeTrigger("Write @")?.trigger, .milestone)
         XCTAssertNil(ComposerInput.activeTrigger("Write #next "), "a finished word closes it")
         XCTAssertEqual(ComposerInput.removingActiveWord("Write #ne"), "Write ")
 
         let store = TaskStore(repository: InMemoryWorkspaceRepository(.empty), saveDelay: 0.05)
         await store.load()
         let pid = store.addProject(name: "Atlas", now: now)!
-        _ = store.addMilestone(projectId: pid, name: "Beta launch")
         let sprint = store.composerSuggestions(.sprint, query: "ne", projectId: pid)
         XCTAssertEqual(sprint.map(\.action), [.slot(.next)])
-        let milestones = store.composerSuggestions(.milestone, query: "be", projectId: pid)
-        XCTAssertEqual(milestones.first?.title, "◆ Beta launch")
-        XCTAssertEqual(milestones.last?.action, .newMilestone("be"), "a new name can be created")
         XCTAssertEqual(store.composerSuggestions(.priority, query: "1", projectId: pid).map(\.action), [.priority(.high)])
-        XCTAssertEqual(store.composerSuggestions(.all, query: "", projectId: pid).count, 8, "status (*) and label (%) are among them")
+        XCTAssertEqual(store.composerSuggestions(.all, query: "", projectId: pid).count, 7, "status (*) and label (%) are among them")
     }
 
     func testAddTaskAppliesTheDraftInOneUndoStep() async {
         let store = TaskStore(repository: InMemoryWorkspaceRepository(.empty), saveDelay: 0.05)
         await store.load()
         let pid = store.addProject(name: "Atlas", now: now)!
-        let mid = store.addMilestone(projectId: pid, name: "Beta")!
         store.clearUndoHistory()
         var draft = ComposerDraft()
         draft.slot = .next
-        draft.milestoneId = mid
         draft.priority = .high
         draft.dueDate = now
         draft.expectedMinutes = 120
         let id = store.addTask(title: "Ship docs", draft: draft, projectId: pid, now: now)!
         let task = store.task(id)!
         XCTAssertEqual(task.sprintSlot, .next)
-        XCTAssertEqual(task.milestoneId, mid)
         XCTAssertEqual(task.priority, .high)
         XCTAssertEqual(task.dueDate, now)
         XCTAssertEqual(task.expectedMinutes, 120)
