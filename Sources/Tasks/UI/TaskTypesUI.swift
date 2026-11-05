@@ -341,13 +341,25 @@ struct NextBestPanel: View {
 
     static let collapsedCount = 5
     static let expandedCount = 15
+    /// Its collapse state lives with Today's groups (TasksViewModel.isCollapsed)
+    static let groupKey = "today-next-best"
 
     var body: some View {
         LiveTime { now in
+            let open = !model.isCollapsed(Self.groupKey)
             let shown = expanded ? Self.expandedCount : Self.collapsedCount
             let list = store.nextBest(shown: shown, now: now)
             VStack(alignment: .leading, spacing: 0) {
-                header(list)
+                header(list, open: open)
+                if open { rows(list, shown: shown, now: now) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .focusPanel()
+        }
+    }
+
+    @ViewBuilder
+    private func rows(_ list: NextBestList, shown: Int, now: Date) -> some View {
                 ForEach(Array(list.ranked.prefix(shown).enumerated()), id: \.element.id) { index, item in
                     NextBestRow(item: item, rank: index + 1, now: now)
                         .overlay(alignment: .top) { FocusDivider() }
@@ -374,15 +386,16 @@ struct NextBestPanel: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .overlay(alignment: .top) { FocusDivider() }
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .focusPanel()
-        }
     }
 
-    private func header(_ list: NextBestList) -> some View {
+    private func header(_ list: NextBestList, open: Bool) -> some View {
         let mix = store.sprintMix()
         return HStack(spacing: 8) {
+            Image(systemName: "arrowtriangle.right.fill")
+                .font(.system(size: 8))
+                .foregroundColor(Focus.text3)
+                .rotationEffect(.degrees(open ? 90 : 0))
+                .frame(width: 8)
             Image(systemName: "scope")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(Focus.text2)
@@ -400,6 +413,12 @@ struct NextBestPanel: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 40)
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(Focus.hoverAnimation) { model.toggleGroup(Self.groupKey) } }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(open ? "Expanded" : "Collapsed")
+        .help(open ? "Collapse Next best" : "Expand Next best")
     }
 }
 

@@ -586,7 +586,10 @@ final class TasksViewModel: ObservableObject {
     /// The keys of the groups the current view can collapse (List, Sprints, Today); nil on Board
     /// and the other tabs.
     func collapsibleGroupKeys(_ store: TaskStore) -> [String]? {
-        if scope.isToday { return Self.todaySections(store.todayPlan()).map(\.key) }
+        if scope.isToday {
+            let keys = Self.todaySections(store.todayPlan()).map(\.key)
+            return store.nextBestCandidates().isEmpty ? keys : keys + [NextBestPanel.groupKey]
+        }
         switch effectiveTab {
         case .list:
             // The keys only: group without sorting

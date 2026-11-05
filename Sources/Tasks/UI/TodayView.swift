@@ -22,12 +22,6 @@ struct TodayView: View {
         let sections = TasksViewModel.todaySections(plan)
         var builder = TaskTableBuilder()
         builder.spacer("top", 8)
-        // What to pick next across every project, when there is anything to rank
-        let rankable = !store.nextBestCandidates().isEmpty
-        if rankable {
-            builder.nextBest()
-            builder.spacer("after-next-best", 24)
-        }
         for (index, section) in sections.enumerated() {
             let focus = section.kind == .focus
             builder.group(
@@ -48,6 +42,12 @@ struct TodayView: View {
                 draggable: section.kind != .done,
                 display: RowDisplay.maker(store: store, model: model, today: true)
             )
+        }
+        // What to pick next across every project, after Today's own sections, when there is
+        // anything to rank. Collapses like a group (NextBestPanel.groupKey).
+        if !store.nextBestCandidates().isEmpty {
+            builder.spacer("before-next-best", sections.isEmpty ? 0 : 24)
+            builder.nextBest()
         }
         builder.spacer("bottom", 72)
         return TaskTable(
