@@ -373,6 +373,7 @@ struct SprintMenu: View {
                     .foregroundColor(CapacityColors.color(line.level))
                     .fixedSize(horizontal: false, vertical: true)
             }
+            SprintMixSection(scope: scope)
             FocusDivider()
             HStack(spacing: 8) {
                 Button("Plan sprints") { planning = true }

@@ -13,12 +13,26 @@ struct SprintState: Codable, Equatable, Sendable {
     var goal: String
     /// 1–4 weeks
     var lengthWeeks: Int
+    /// The share of the sprint's typed time (in %) meant for Reach work: customers, sales,
+    /// marketing. nil: no target (the mix still shows, without a warning).
+    var reachTargetPercent: Int?
 
-    init(number: Int = 1, startDate: Date, goal: String = "", lengthWeeks: Int = SprintState.defaultLengthWeeks) {
+    /// Targets offered in the sprint menu
+    static let reachTargetChoices = [20, 30, 40, 50, 60, 70]
+
+    init(number: Int = 1, startDate: Date, goal: String = "", lengthWeeks: Int = SprintState.defaultLengthWeeks,
+         reachTargetPercent: Int? = nil) {
         self.number = number
         self.startDate = startDate
         self.goal = goal
         self.lengthWeeks = Self.clampedLength(lengthWeeks)
+        self.reachTargetPercent = Self.cleanTarget(reachTargetPercent)
+    }
+
+    /// 1–99%, or nil
+    static func cleanTarget(_ percent: Int?) -> Int? {
+        guard let percent else { return nil }
+        return min(max(percent, 1), 99)
     }
 
     static func clampedLength(_ weeks: Int) -> Int { min(max(weeks, 1), 4) }
@@ -78,7 +92,7 @@ struct SprintState: Codable, Equatable, Sendable {
         return calendar.date(from: comps).map { calendar.startOfDay(for: $0) } ?? Calendar.current.startOfDay(for: now)
     }
 
-    private enum CodingKeys: String, CodingKey { case number, startDate, goal, lengthWeeks }
+    private enum CodingKeys: String, CodingKey { case number, startDate, goal, lengthWeeks, reachTargetPercent }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -86,6 +100,8 @@ struct SprintState: Codable, Equatable, Sendable {
         startDate = c.decode(.startDate, or: SprintState.defaultStart())
         goal = c.decode(.goal, or: "")
         lengthWeeks = Self.clampedLength(c.decode(.lengthWeeks, or: SprintState.defaultLengthWeeks))
+        // Schema 13 and older: no mix target
+        reachTargetPercent = Self.cleanTarget(c.decodeOptional(.reachTargetPercent))
     }
 }
 
@@ -273,12 +289,17 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
     var defaultSprintSlot: SprintSlot
     /// Shown in place of the letter tile; nil keeps the letter.
     var icon: ProjectIcon?
+    /// How valuable the project's work is (1–10) for Next best; nil counts as 5. Also sets how often
+    /// Next best asks you to keep it warm (ImpactRules.cadenceDays).
+    var impact: Int?
+    /// The type new tasks of the project get when nothing else picks one; nil leaves them untyped.
+    var defaultTypeId: UUID?
 
     init(id: UUID = UUID(), name: String, colorHex: UInt32, createdAt: Date = Date(),
          notes: String = "", targetDate: Date? = nil, archivedAt: Date? = nil,
          statuses: [WorkflowStatus] = WorkflowPreset.simple.statuses, weeklyCapacityHours: Double? = nil,
          usesSprints: Bool = true, defaultView: ProjectView? = nil, defaultExpectedMinutes: Int? = nil,
-         defaultSprintSlot: SprintSlot = .active, icon: ProjectIcon? = nil) {
+         defaultSprintSlot: SprintSlot = .active, icon: ProjectIcon? = nil, impact: Int? = nil, defaultTypeId: UUID? = nil) {
         self.id = id
         self.name = name
         self.colorHex = colorHex
@@ -294,6 +315,8 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
         self.defaultExpectedMinutes = Self.cleanExpected(defaultExpectedMinutes)
         self.defaultSprintSlot = Self.cleanSlot(defaultSprintSlot)
         self.icon = icon
+        self.impact = ImpactScale.cleaned(impact)
+        self.defaultTypeId = defaultTypeId
     }
 
     var isArchived: Bool { archivedAt != nil }
@@ -325,6 +348,7 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, name, colorHex, sprint, createdAt, notes, targetDate, archivedAt, pastSprints, statuses
         case weeklyCapacityHours, usesSprints, defaultView, defaultExpectedMinutes, defaultSprintSlot, icon
+        case impact, defaultTypeId
     }
 
     func encode(to encoder: Encoder) throws {
@@ -343,6 +367,8 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
         try c.encodeIfPresent(defaultExpectedMinutes, forKey: .defaultExpectedMinutes)
         try c.encode(defaultSprintSlot, forKey: .defaultSprintSlot)
         try c.encodeIfPresent(icon, forKey: .icon)
+        try c.encodeIfPresent(impact, forKey: .impact)
+        try c.encodeIfPresent(defaultTypeId, forKey: .defaultTypeId)
     }
 
     init(from decoder: Decoder) throws {
@@ -365,5 +391,8 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
         defaultExpectedMinutes = Self.cleanExpected(c.decodeOptional(.defaultExpectedMinutes))
         defaultSprintSlot = Self.cleanSlot(c.decode(.defaultSprintSlot, or: .active))
         icon = c.decodeOptional(.icon)
+        // Schema 13 and older: neutral impact, no default type
+        impact = ImpactScale.cleaned(c.decodeOptional(.impact))
+        defaultTypeId = c.decodeOptional(.defaultTypeId)
     }
 }

@@ -143,6 +143,7 @@ struct SprintPlanView: View {
         return TaskTable(
             showProject: scope.projectId == nil,
             excluding: store.tasks(in: scope).contains { !$0.labelIds.isEmpty } ? [.sprint] : [.sprint, .labels],
+            including: [.score],
             rows: builder.rows,
             drops: builder.drops
         )
@@ -187,8 +188,23 @@ struct SprintPlanView: View {
             open: !model.isCollapsed(key),
             gap: 24,
             liveHint: .sprintLoad(scope: scope, slot: .next, ahead: later.ahead),
-            display: RowDisplay.maker(store: store, model: model)
+            display: RowDisplay.maker(store: store, model: model, scores: true)
         )
+    }
+
+    /// Backlog: Fill to capacity and Sort by score; Next: Sort by score (each needs tasks to act on).
+    private func actions(_ slot: SprintSlot) -> [GroupHeaderAction] {
+        let open = store.sprintTasks(slot: slot, in: scope).filter { !$0.isClosed }
+        guard open.count > 0 else { return [] }
+        switch slot {
+        case .backlog:
+            // Always offered: without a capacity it says how to set one
+            return [.fillToCapacity(scope: scope)] + (open.count > 1 ? [.sortByScore(scope: scope, slot: .backlog)] : [])
+        case .next:
+            return open.count > 1 ? [.sortByScore(scope: scope, slot: .next)] : []
+        default:
+            return []
+        }
     }
 
     private func group(_ builder: inout TaskTableBuilder, _ slot: SprintSlot, title: String, hint: String, empty: String, gap: CGFloat) {
@@ -205,8 +221,9 @@ struct SprintPlanView: View {
             composerOnTop: model.isComposerPinned(TasksViewModel.listComposerKey(key)),
             open: !model.isCollapsed(key),
             gap: gap,
+            actions: actions(slot),
             liveHint: .sprintLoad(scope: scope, slot: slot),
-            display: RowDisplay.maker(store: store, model: model)
+            display: RowDisplay.maker(store: store, model: model, scores: true)
         )
     }
 }
@@ -263,7 +280,8 @@ extension RowDisplay {
     /// `today`: rows of the Today page, which add "From yesterday" to pinned tasks carried over
     /// and the "→ Tomorrow" hover button to overdue, due and pinned ones.
     @MainActor
-    static func maker(store: TaskStore, model: TasksViewModel, today: Bool = false) -> (TaskItem) -> RowDisplay {
+    static func maker(store: TaskStore, model: TasksViewModel, today: Bool = false, scores: Bool = false) -> (TaskItem) -> RowDisplay {
+        let behind = scores ? store.sprintMix().behind : nil
         let projects = Dictionary(store.projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let milestones = Dictionary(store.workspace.milestones.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let workflows = Dictionary(store.allProjects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -296,7 +314,8 @@ extension RowDisplay {
                     .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending },
                 quickAction: today && !task.isClosed
                     && (store.isOverdue(task, now: now) || store.isDueToday(task, now: now) || store.isInFocus(task, now: now))
-                    ? .tomorrow : nil
+                    ? .tomorrow : nil,
+                score: scores && !task.isClosed ? store.nextBestScore(task, behind: behind, now: now) : nil
             )
         }
     }

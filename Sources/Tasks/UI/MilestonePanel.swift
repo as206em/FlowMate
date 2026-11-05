@@ -180,6 +180,13 @@ private struct MilestoneInspector: View {
                         accessibilityName: "Due date"
                     ) { store.setMilestoneDue(milestone.id, to: $0) }
                 }
+                SidePanelProperty(label: "Impact") {
+                    let projectImpact = store.project(milestone.projectId)?.impact ?? ImpactScale.neutral
+                    ImpactPicker(value: milestone.impact, unsetTitle: "Inherit · \(projectImpact) (project)") {
+                        store.setMilestoneImpact(milestone.id, $0)
+                    }
+                    .help("How valuable this milestone's tasks are, 1–10, over the project's. Used by Next best.")
+                }
             }
             .padding(.top, 16)
             .overlay(alignment: .top) { FocusDivider() }

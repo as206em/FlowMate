@@ -304,6 +304,8 @@ final class TaskStore: ObservableObject {
         copy.assignMilestoneColors()
         // Tasks carry only labels that exist; views of a deleted project or milestone go with it
         copy.normalizeLabels()
+        // Tasks carry only types that exist; closed tasks drop their Next best nudges
+        copy.normalizeTypes()
         // Preferences forget deleted projects and tasks (last project, Keep answers, sleep prompt)
         copy.normalizePreferences()
         // The sprint chart remembers what the sprint planned each day

@@ -71,12 +71,26 @@ struct GroupSummary: Equatable {
 /// A button in a group header.
 enum GroupHeaderAction: Equatable {
     case moveOverdueToToday, moveOverdueToTomorrow, pauseAll
+    /// Sprints view, Backlog: pull the best-scoring tasks into the active sprint until it's full
+    case fillToCapacity(scope: TaskScope)
+    /// Sprints view: reorder the slot's tasks by Next best score, highest first
+    case sortByScore(scope: TaskScope, slot: SprintSlot)
 
     var title: String {
         switch self {
         case .moveOverdueToToday: return "Move overdue to today"
         case .moveOverdueToTomorrow: return "Overdue to tomorrow"
         case .pauseAll: return "Pause all"
+        case .fillToCapacity: return "Fill to capacity"
+        case .sortByScore: return "Sort by score"
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .fillToCapacity: return "Move the highest-scoring backlog tasks into the active sprint until its capacity is used. Each pick rechecks the Make / Reach mix. ⌘Z undoes."
+        case .sortByScore: return "Order these tasks by their Next best score, highest first. ⌘Z undoes."
+        default: return ""
         }
     }
 }
@@ -118,6 +132,8 @@ enum TaskTableRow: Equatable, Identifiable {
     case velocity
     /// Sprints view (All projects): the sprint's progress chart
     case burnup
+    /// Today: the Next best ranking across projects
+    case nextBest
 
     var id: String {
         switch self {
@@ -130,6 +146,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case .trackedToday: return "tracked-today"
         case .velocity: return "velocity"
         case .burnup: return "burnup"
+        case .nextBest: return "next-best"
         }
     }
 
@@ -140,7 +157,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case let .task(info): return info.group
         case let .empty(group, _): return group
         case let .composer(group, _, _, _): return group
-        case .spacer, .sectionTitle, .trackedToday, .velocity, .burnup: return nil
+        case .spacer, .sectionTitle, .trackedToday, .velocity, .burnup, .nextBest: return nil
         }
     }
 
@@ -164,6 +181,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case .trackedToday: return 120
         case .velocity: return 200
         case .burnup: return 240
+        case .nextBest: return 320
         }
     }
 }
@@ -185,6 +203,10 @@ struct TaskTableBuilder {
 
     mutating func velocity() {
         rows.append(.velocity)
+    }
+
+    mutating func nextBest() {
+        rows.append(.nextBest)
     }
 
     mutating func spacer(_ id: String, _ height: CGFloat) {
@@ -355,6 +377,8 @@ struct TaskTableCell: View {
             SprintVelocityPanel()
         case .burnup:
             SprintBurnupPanel()
+        case .nextBest:
+            NextBestPanel()
         }
     }
 }
@@ -394,6 +418,7 @@ private struct GroupHeaderRow: View {
             ForEach(Array(info.actions.enumerated()), id: \.offset) { index, action in
                 if index > 0 { Text("·").font(Focus.meta).foregroundColor(Focus.text3) }
                 Button(action.title) { perform(action) }
+                    .help(action.help)
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(Focus.text2)
@@ -450,6 +475,20 @@ private struct GroupHeaderRow: View {
         case .moveOverdueToToday: model.moveAllOverdue(.today, store: store)
         case .moveOverdueToTomorrow: model.moveAllOverdue(.tomorrow, store: store)
         case .pauseAll: store.pauseAllTimers()
+        case let .fillToCapacity(scope):
+            guard store.sprintCapacityMinutes(in: scope) != nil else {
+                // Nothing changed, so no Undo button
+                model.show(.init(message: "Set Hours per week in the project's settings first: the sprint fills up to that capacity"))
+                return
+            }
+            let moved = store.fillSprintToCapacity(scope: scope)
+            if moved.isEmpty {
+                model.show(.init(message: "Nothing in the backlog fits what's left of the capacity"))
+            } else {
+                model.showUndoToast("\(TaskStore.taskCount(moved.count)) added to \(store.sprintName())", store: store)
+            }
+        case let .sortByScore(scope, slot):
+            store.sortByScore(scope: scope, slot: slot)
         }
     }
 
@@ -473,6 +512,9 @@ private struct GroupHeaderRow: View {
                     .lineLimit(1)
                     .help(Self.help(load))
                     .accessibilityLabel(load.label + (load.level == .over ? ", over capacity" : ""))
+                if slot != .backlog {
+                    SprintMixHint(mix: store.sprintMix(scope: scope, slot: slot, ahead: ahead))
+                }
             }
         case nil:
             EmptyView()
@@ -960,7 +1002,7 @@ struct NativeTaskTable: NSViewRepresentable {
                 return header(info.key)
             case let .empty(group, _), let .composer(group, _, _, _):
                 return header(group)
-            case .spacer, .sectionTitle, .trackedToday, .velocity, .burnup:
+            case .spacer, .sectionTitle, .trackedToday, .velocity, .burnup, .nextBest:
                 // Gap between groups: the group just above it
                 guard let group = rows[..<proposed].last(where: { $0.group != nil })?.group else { return nil }
                 return header(group)

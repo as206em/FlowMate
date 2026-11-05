@@ -14,11 +14,14 @@ struct Milestone: Identifiable, Codable, Equatable, Sendable {
     /// Its diamond and chips. 0 (`Milestone.unsetColor`) until one is given: files from before
     /// schema 8 and hand-built milestones get one from `Workspace.assignMilestoneColors()`.
     var colorHex: UInt32
+    /// Impact (1–10) of the milestone's tasks in Next best, over the project's; nil inherits.
+    var impact: Int?
 
     static let unsetColor: UInt32 = 0
 
     init(id: UUID = UUID(), projectId: UUID, name: String, dueDate: Date? = nil,
-         startDate: Date? = nil, notes: String = "", completedAt: Date? = nil, colorHex: UInt32 = Milestone.unsetColor) {
+         startDate: Date? = nil, notes: String = "", completedAt: Date? = nil, colorHex: UInt32 = Milestone.unsetColor,
+         impact: Int? = nil) {
         self.id = id
         self.projectId = projectId
         self.name = name
@@ -27,6 +30,7 @@ struct Milestone: Identifiable, Codable, Equatable, Sendable {
         self.notes = notes
         self.completedAt = completedAt
         self.colorHex = colorHex
+        self.impact = ImpactScale.cleaned(impact)
     }
 
     var isCompleted: Bool { completedAt != nil }
@@ -59,7 +63,7 @@ struct Milestone: Identifiable, Codable, Equatable, Sendable {
         return choices.first { (counts[$0] ?? 0) == fewest } ?? choices[0]
     }
 
-    private enum CodingKeys: String, CodingKey { case id, projectId, name, dueDate, startDate, notes, completedAt, colorHex }
+    private enum CodingKeys: String, CodingKey { case id, projectId, name, dueDate, startDate, notes, completedAt, colorHex, impact }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -72,6 +76,8 @@ struct Milestone: Identifiable, Codable, Equatable, Sendable {
         completedAt = c.decodeOptional(.completedAt)
         // Before schema 8: none stored; migration picks one
         colorHex = c.decode(.colorHex, or: Milestone.unsetColor)
+        // Schema 13 and older: inherits the project's
+        impact = ImpactScale.cleaned(c.decodeOptional(.impact))
     }
 }
 

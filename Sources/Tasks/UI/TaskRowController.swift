@@ -21,6 +21,8 @@ final class TaskRowController: NSObject {
         case .timer? where !task.isClosed:
             // ⌥-click: this timer runs, every other one pauses
             if modifiers.contains(.option) { store.startTimerExclusively(id) } else { store.toggleTimer(id) }
+        case .score? where !task.isClosed:
+            showEditor(.score, taskId: id, rect: rect, in: view)
         case .milestone?, .due?, .priority?, .time?, .labels?:
             showEditor(column!, taskId: id, rect: rect, in: view)
         case .sprint? where task.sprintSlot != .closed:
@@ -56,6 +58,7 @@ final class TaskRowController: NSObject {
             case .due: AnyView(TaskDueEditor(task: task, close: close))
             case .priority: AnyView(TaskPriorityEditor(task: task, close: close))
             case .labels: AnyView(TaskLabelsEditor(taskIds: [task.id], close: close))
+            case .score: AnyView(TaskScoreEditor(task: task, close: close))
             default: AnyView(TaskTimeEditor(task: task, close: close))
             }
         }
@@ -121,6 +124,17 @@ final class TaskRowController: NSObject {
                     })
                 }
             }
+        }
+        if !selection, !task.isClosed {
+            // Next best: the same nudges as the Score popover and Today's rows
+            let next = NSMenu()
+            next.addItem(item("Send up") { [weak store] in store?.sendNextBest(id, up: true) })
+            next.addItem(item("Send down") { [weak store] in store?.sendNextBest(id, up: false) })
+            next.addItem(item("Send to top") { [weak store] in store?.sendToTop(id) })
+            next.addItem(item("Back to normal", enabled: task.isNudged) { [weak store] in store?.resetNextBest(id) })
+            let parent = NSMenuItem(title: "Next best", action: nil, keyEquivalent: "")
+            parent.submenu = next
+            menu.addItem(parent)
         }
         let sprintTasks = ids.compactMap { store.task($0) }.filter { store.usesSprints($0.projectId) && $0.sprintSlot != .closed }
         if !sprintTasks.isEmpty {

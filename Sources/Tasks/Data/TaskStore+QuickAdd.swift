@@ -86,6 +86,10 @@ extension TaskStore {
         }
         let labelNames = draft.labelIds.compactMap { label($0)?.name } + draft.newLabelNames
         applied += labelNames.map { "%" + $0 }
+        if let query = input.typeQuery, let type = matchTaskType(query) {
+            draft.typeId = type.id
+            applied.append("^" + type.name)
+        }
         if let due = input.dueDate { applied.append("Due " + TaskDates.dueLabel(due, now: now)) }
         if let minutes = input.expectedMinutes { applied.append(TaskDurationParser.format(seconds: TimeInterval(minutes * 60))) }
 
@@ -93,6 +97,10 @@ extension TaskStore {
         var title = input.title
         if let query = input.statusQuery, draft.status == nil {
             title = ([title, "*" + query.replacingOccurrences(of: " ", with: "_")]).filter { !$0.isEmpty }.joined(separator: " ")
+        }
+        // A ^word that names no type stays in the title too
+        if let query = input.typeQuery, draft.typeId == nil {
+            title = ([title, "^" + query.replacingOccurrences(of: " ", with: "_")]).filter { !$0.isEmpty }.joined(separator: " ")
         }
         if let word = keptSlotWord {
             title = [title, word].filter { !$0.isEmpty }.joined(separator: " ")
@@ -139,6 +147,7 @@ extension TaskStore {
         }
         if let slot = input.slot { parts.append(sprintLabel(slot)) }
         parts += plan.draft.labelIds.compactMap { label($0).map { "%" + $0.name } }
+        if let type = taskType(plan.draft.typeId) { parts.append("^" + type.name) }
         parts += plan.draft.newLabelNames.map { "New label %\($0)" }
         if let due = input.dueDate { parts.append("Due " + TaskDates.dueLabel(due, now: now)) }
         if let minutes = input.expectedMinutes { parts.append(Focus.durationString(minutes: minutes)) }

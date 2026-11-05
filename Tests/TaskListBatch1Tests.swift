@@ -106,7 +106,10 @@ final class TaskListBatch1Tests: XCTestCase {
 
     func testColumnLayoutKeepsTitleRoom() {
         let wide = TaskColumnLayout.make(showProject: true, width: 1200)
-        XCTAssertEqual(wide.columns, TaskColumn.allCases)
+        XCTAssertEqual(wide.columns, TaskColumn.allCases.filter { !TaskColumnLayout.optIn.contains($0) })
+        // Score shows only where a table asks for it (the Sprints view)
+        let scored = TaskColumnLayout.make(showProject: true, including: [.score], width: 1300)
+        XCTAssertEqual(scored.columns, TaskColumn.allCases)
 
         let project = TaskColumnLayout.make(showProject: false, width: 1000)
         XCTAssertFalse(project.contains(.project))

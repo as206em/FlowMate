@@ -32,7 +32,11 @@ struct Workspace: Codable, Equatable, Sendable {
     /// 13: one sprint for the whole workspace (Workspace.sprint, Workspace.pastSprints) instead of
     ///     one per project. The sprint with the highest number becomes the workspace's; every
     ///     project's past sprints are kept, oldest first. Tasks keep their slot.
-    static let currentSchemaVersion = 13
+    /// 14: task types (Workspace.taskTypes, TaskItem.typeId, Project.defaultTypeId), impact on
+    ///     projects, milestones and tasks, Next best nudges (TaskItem.nudge, nudgeRun, topPinnedAt)
+    ///     and the sprint's mix target (SprintState.reachTargetPercent). Older files get the
+    ///     default types; nothing else to convert.
+    static let currentSchemaVersion = 14
 
     var schemaVersion: Int
     var projects: [Project]
@@ -60,6 +64,8 @@ struct Workspace: Codable, Equatable, Sendable {
     var labels: [TaskLabel]
     /// The sidebar's Views, in sidebar order
     var savedViews: [SavedView]
+    /// Kinds of task every project shares (Build, Customers, Sales…), in the Types sheet's order
+    var taskTypes: [TaskType]
 
     init(
         schemaVersion: Int = Workspace.currentSchemaVersion,
@@ -75,7 +81,8 @@ struct Workspace: Codable, Equatable, Sendable {
         sprintScope: [SprintScopePoint] = [],
         upcomingGoals: [Int: String] = [:],
         labels: [TaskLabel] = [],
-        savedViews: [SavedView] = []
+        savedViews: [SavedView] = [],
+        taskTypes: [TaskType] = TaskType.defaults
     ) {
         self.schemaVersion = schemaVersion
         self.projects = projects
@@ -91,6 +98,7 @@ struct Workspace: Codable, Equatable, Sendable {
         self.upcomingGoals = upcomingGoals
         self.labels = labels
         self.savedViews = savedViews
+        self.taskTypes = taskTypes
     }
 
     static let empty = Workspace()
@@ -122,6 +130,8 @@ struct Workspace: Codable, Equatable, Sendable {
         // 13: the per-project sprints become the workspace's (liftSprints, below).
         let addStats = ws.schemaVersion < 10
         let liftSprints = ws.schemaVersion < 13
+        // 14: the default task types, once (a newer file with none left had them deleted)
+        if ws.schemaVersion < 14, ws.taskTypes.isEmpty { ws.taskTypes = TaskType.defaults }
         ws.schemaVersion = Workspace.currentSchemaVersion
 
         let projectIds = Set(ws.projects.map(\.id))
@@ -142,6 +152,7 @@ struct Workspace: Codable, Equatable, Sendable {
         ws.reconcileTrackedTime(now: now)
         ws.assignMilestoneColors()
         ws.normalizeLabels()
+        ws.normalizeTypes()
         if addStats { ws.addPastSprintStats() }
         if liftSprints { ws.liftProjectSprints() }
         return ws
@@ -276,9 +287,30 @@ struct Workspace: Codable, Equatable, Sendable {
         if views != savedViews { savedViews = views }
     }
 
+    /// Keeps task types and Next best state consistent: one type per id and name (the first wins),
+    /// tasks and projects only point at types that exist, and closed tasks carry no nudge or pin.
+    mutating func normalizeTypes() {
+        var seenIds = Set<UUID>()
+        var seenNames = Set<String>()
+        let kept = taskTypes.filter { seenIds.insert($0.id).inserted && seenNames.insert($0.name.lowercased()).inserted }
+        if kept != taskTypes { taskTypes = kept }
+        let valid = Set(taskTypes.map(\.id))
+        for i in tasks.indices {
+            if let id = tasks[i].typeId, !valid.contains(id) { tasks[i].typeId = nil }
+            if tasks[i].isClosed, tasks[i].isNudged || tasks[i].nudgeRun != 0 {
+                tasks[i].nudge = 0
+                tasks[i].nudgeRun = 0
+                tasks[i].topPinnedAt = nil
+            }
+        }
+        for i in projects.indices {
+            if let id = projects[i].defaultTypeId, !valid.contains(id) { projects[i].defaultTypeId = nil }
+        }
+    }
+
     // Running timers are stored as {"<uuid>": "<date>"} so the JSON stays readable.
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, projects, milestones, tasks, runningTimers, timeEntries, preferences, sprint, pastSprints, upcomingCount, sprintScope, upcomingGoals, labels, savedViews
+        case schemaVersion, projects, milestones, tasks, runningTimers, timeEntries, preferences, sprint, pastSprints, upcomingCount, sprintScope, upcomingGoals, labels, savedViews, taskTypes
     }
 
     init(from decoder: Decoder) throws {
@@ -303,6 +335,8 @@ struct Workspace: Codable, Equatable, Sendable {
         // Schema 10 and older: no labels or views
         labels = c.decodeLossyArray(.labels)
         savedViews = c.decodeLossyArray(.savedViews)
+        // Schema 13 and older: none (migrated() adds the defaults)
+        taskTypes = c.decodeLossyArray(.taskTypes)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -322,6 +356,7 @@ struct Workspace: Codable, Equatable, Sendable {
         try c.encode(Dictionary(upcomingGoals.map { (String($0.key), $0.value) }, uniquingKeysWith: { a, _ in a }), forKey: .upcomingGoals)
         try c.encode(labels, forKey: .labels)
         try c.encode(savedViews, forKey: .savedViews)
+        try c.encode(taskTypes, forKey: .taskTypes)
     }
 }
 

@@ -78,6 +78,8 @@ final class TasksViewModel: ObservableObject {
     }
     /// The Labels sheet (add, rename, recolor, delete)
     @Published var showingLabelsManager = false
+    /// The Task types sheet (Edit types… in the type field and the sprint menu)
+    @Published var showingTypesManager = false
     /// The Save view sheet (new, or renaming one)
     @Published var savingView: SaveViewRequest?
     /// The tab on screen. Each scope remembers its own (`tabByScope`), so a project opens on its last tab.
@@ -584,7 +586,10 @@ final class TasksViewModel: ObservableObject {
     /// The keys of the groups the current view can collapse (List, Sprints, Today); nil on Board
     /// and the other tabs.
     func collapsibleGroupKeys(_ store: TaskStore) -> [String]? {
-        if scope.isToday { return Self.todaySections(store.todayPlan()).map(\.key) }
+        if scope.isToday {
+            let keys = Self.todaySections(store.todayPlan()).map(\.key)
+            return store.nextBestCandidates().isEmpty ? keys : keys + [NextBestPanel.groupKey]
+        }
         switch effectiveTab {
         case .list:
             // The keys only: group without sorting

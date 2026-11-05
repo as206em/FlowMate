@@ -43,6 +43,12 @@ struct TodayView: View {
                 display: RowDisplay.maker(store: store, model: model, today: true)
             )
         }
+        // What to pick next across every project, after Today's own sections, when there is
+        // anything to rank. Collapses like a group (NextBestPanel.groupKey).
+        if !store.nextBestCandidates().isEmpty {
+            builder.spacer("before-next-best", sections.isEmpty ? 0 : 24)
+            builder.nextBest()
+        }
         builder.spacer("bottom", 72)
         return TaskTable(
             showProject: true,
