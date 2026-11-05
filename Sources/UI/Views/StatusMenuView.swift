@@ -193,8 +193,6 @@ struct StatusMenuView: View {
             addTask()
         case .project(let id):
             MenuNavigation.openProject(id)
-        case .milestone(let id):
-            MenuNavigation.openMilestone(id)
         case .task(let id):
             MenuNavigation.openTask(id)
         case .today:
@@ -204,7 +202,7 @@ struct StatusMenuView: View {
         }
     }
 
-    /// Adds with the New task tokens (!high @milestone due:fri ~90m) and remembers the project.
+    /// Adds with the New task tokens (!high +project due:fri ~90m) and remembers the project.
     private func addTask() {
         guard let target, let outcome = store.quickAddTask(query, projectId: target.id) else { return }
         query = ""

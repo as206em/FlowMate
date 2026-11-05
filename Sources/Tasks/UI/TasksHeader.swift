@@ -2,10 +2,10 @@ import AppKit
 import SwiftUI
 
 /// The header, two lines on every screen so they all read the same:
-///   1 (52pt)  the title (project, All projects, Today, a milestone or a saved view), the numbers
+///   1 (52pt)  the title (project, All projects, Today or a saved view), the numbers
 ///             of the active sprint, and the Sprint menu on the right
-///   2 (42pt)  the tabs (Board · List · Sprints · Milestones), underlined, with the tools of the
-///             tab after them: search and filters, Group and Sort, the milestones layout, Sort
+///   2 (42pt)  the tabs (List · Sprints), underlined, with the tools of the
+///             tab after them: search and filters, Group and Sort
 /// Today has no tabs, so it has the first line only. The New task composer lives in the groups.
 struct TasksHeader: View {
     @EnvironmentObject private var store: TaskStore
@@ -15,7 +15,7 @@ struct TasksHeader: View {
 
     /// The active sprint's menu, where the project (or every project) plans in sprints.
     private var showsSprint: Bool {
-        model.scopeUsesSprints && !model.scope.isMilestone && !model.scope.isToday
+        model.scopeUsesSprints && !model.scope.isToday
     }
 
     var body: some View {
@@ -33,14 +33,11 @@ struct TasksHeader: View {
 
     private var titleLine: some View {
         let project = model.scope.projectId.flatMap { store.project($0) }
-        let milestone = model.scope.milestoneId.flatMap { store.milestone($0) }
         return HStack(spacing: 14) {
             if model.scope.isToday {
                 TodayHeaderTitle()
             } else if let view = model.activeView(store) {
                 SavedViewHeaderTitle(view: view)
-            } else if let milestone {
-                MilestoneHeaderTitle(milestone: milestone)
             } else if let project {
                 ProjectTitleButton(project: project)
                 if project.isArchived {
@@ -83,7 +80,7 @@ struct TasksHeader: View {
     private var tools: some View {
         let keys = model.collapsibleGroupKeys(store)
         switch model.effectiveTab {
-        case .board, .list:
+        case .list:
             if model.showsFilterBar, !(store.isLoaded && store.projects.isEmpty && model.scope.projectId == nil) {
                 TaskFilterBar().frame(maxWidth: .infinity)
             } else {
@@ -94,15 +91,13 @@ struct TasksHeader: View {
             Spacer(minLength: 12)
             if let keys { CollapseAllButton(keys: keys) }
             SprintHeaderItems(scope: model.scope, showsChip: false, showsActions: true)
-        case .milestones:
-            MilestonesHeaderTools()
         case .overview:
             OverviewHeaderTools()
         }
     }
 }
 
-/// Board · List · Sprints · Milestones as underlined tabs.
+/// List · Sprints as underlined tabs.
 private struct HeaderTabs: View {
     @EnvironmentObject private var model: TasksViewModel
 
@@ -192,28 +187,6 @@ private struct HeaderStats: View {
         .padding(.trailing, 2)
         .overlay(alignment: .leading) { Rectangle().fill(Focus.hairline).frame(width: 1, height: 14) }
         .padding(.leading, 14)
-    }
-}
-
-/// Milestones: List or Timeline, and the timeline's Today and zoom.
-private struct MilestonesHeaderTools: View {
-    @EnvironmentObject private var model: TasksViewModel
-
-    var body: some View {
-        FocusTabs(options: MilestonesLayout.allCases.map { (value: $0, label: $0.title) }, selection: $model.milestonesLayout)
-            .fixedSize()
-            .accessibilityLabel("Milestones layout")
-        Spacer(minLength: 12)
-        if model.milestonesLayout == .timeline {
-            Button("Today") {
-                NotificationCenter.default.post(name: RoadmapTimeline.scrollToTodayNotification, object: nil)
-            }
-            .buttonStyle(.focus(.ghost))
-            .help("Scroll back to today")
-            FocusTabs(options: TimelineZoom.allCases.map { (value: $0, label: $0.title) }, selection: $model.timelineZoom)
-                .fixedSize()
-                .accessibilityLabel("Timeline zoom")
-        }
     }
 }
 

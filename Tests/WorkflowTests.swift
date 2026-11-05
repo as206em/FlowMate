@@ -271,19 +271,15 @@ final class WorkflowTests: XCTestCase {
         XCTAssertEqual(store.task(canceled)?.sprintSlot, .backlog)
     }
 
-    func testOverdueAndProgressIgnoreCanceled() async {
+    func testOverdueAndOpenCountIgnoreCanceled() async {
         let (store, pid) = await makeStore(.dev)
-        let m = store.addMilestone(projectId: pid, name: "M")!
-        let a = store.addTask(title: "A", projectId: pid, milestoneId: m, now: t0)!
-        let b = store.addTask(title: "B", projectId: pid, milestoneId: m, now: t0)!
+        let a = store.addTask(title: "A", projectId: pid, now: t0)!
+        let b = store.addTask(title: "B", projectId: pid, now: t0)!
         store.setDueDate(a, t0.addingTimeInterval(-3 * 86_400))
         XCTAssertTrue(store.isOverdue(store.task(a)!, now: t0))
         store.setStatus(a, .canceled, now: t0)
         XCTAssertFalse(store.isOverdue(store.task(a)!, now: t0), "canceled tasks aren't overdue")
         store.setStatus(b, .done, now: t0)
-        let progress = store.milestoneProgress(m)
-        XCTAssertEqual(progress.done, 1)
-        XCTAssertEqual(progress.total, 1, "canceled work leaves the total")
         XCTAssertEqual(store.openCount(pid), 0)
     }
 
@@ -317,7 +313,7 @@ final class WorkflowTests: XCTestCase {
 
     // MARK: - Views
 
-    func testBoardColumnsFollowTheWorkflowOrCategories() async throws {
+    func testGroupsFollowTheWorkflowOrCategories() async throws {
         let (store, dev) = await makeStore(.dev)
         let simple = store.addProject(name: "Simple", now: t0)!
         let a = store.addTask(title: "A", projectId: dev, now: t0)!
@@ -327,16 +323,9 @@ final class WorkflowTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "WorkflowTests-\(UUID().uuidString)"))
         let model = TasksViewModel(defaults: defaults)
 
-        model.select(.project(dev))
-        XCTAssertEqual(model.boardColumns(store).map(\.statusTitle), ["Backlog", "To do", "In progress", "Review", "Done", "Canceled"])
-
         model.select(.all)
-        XCTAssertEqual(model.boardColumns(store).map(\.statusTitle), ["Not started", "Started", "Done"],
-                       "All projects groups by category; Canceled hides while empty")
-        XCTAssertEqual(Set(model.boardTasks(store, column: .category(.started)).map(\.id)), [a, b])
         store.moveTask(a, toCategory: .canceled)
         XCTAssertEqual(store.task(a)?.statusId, "canceled")
-        XCTAssertEqual(model.boardColumns(store).last?.statusTitle, "Canceled")
         store.moveTask(b, toCategory: .done)
         XCTAssertEqual(store.task(b)?.statusId, "done")
 

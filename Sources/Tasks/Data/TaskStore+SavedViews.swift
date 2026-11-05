@@ -87,13 +87,11 @@ extension TaskStore {
         return shown.count
     }
 
-    /// Where a view looks, in words: "All projects", "Atlas", "Atlas › Beta".
+    /// Where a view looks, in words: "All projects", "Atlas".
     func savedViewPlace(_ view: SavedView) -> String {
         switch view.scope {
         case .today, .all: return "All projects"
         case let .project(id): return project(id)?.name ?? "Project"
-        case let .milestone(id, projectId):
-            return [project(projectId)?.name, milestone(id)?.name].compactMap { $0 }.joined(separator: " › ")
         }
     }
 }

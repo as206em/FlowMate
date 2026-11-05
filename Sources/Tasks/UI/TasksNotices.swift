@@ -84,7 +84,7 @@ struct FirstProjectEmptyState: View {
             title: "Create your first project",
             message: archived > 0
                 ? "Every project is archived. Start a new one, or unarchive one from the sidebar."
-                : "A project holds its tasks, milestones and sprints. Name one to start; you can add tasks right after.",
+                : "A project holds its tasks and sprints. Name one to start; you can add tasks right after.",
             secondaryTitle: archived > 0 ? "Show archived (\(archived))" : nil,
             secondaryAction: { model.showingArchived = true }
         ) {
@@ -114,13 +114,12 @@ struct FirstProjectEmptyState: View {
     }
 }
 
-/// A List or Board with nothing to show: says why (no tasks yet, filters hide them, the sprint is
+/// A List with nothing to show: says why (no tasks yet, filters hide them, the sprint is
 /// empty) and offers the step that fixes it.
 struct TasksEmptyStateView: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
     let reason: TasksViewModel.EmptyReason
-    var board = false
 
     var body: some View {
         content
@@ -132,13 +131,12 @@ struct TasksEmptyStateView: View {
     @ViewBuilder
     private var content: some View {
         let project = model.scope.projectId.flatMap { store.project($0) }
-        let milestone = model.scope.milestoneId.flatMap { store.milestone($0) }
         switch reason {
         case .noTasks:
-            let hidden = board ? 0 : model.hiddenClosedCount(store)
+            let hidden = model.hiddenClosedCount(store)
             FocusEmptyState(
                 systemImage: "checklist",
-                title: (milestone?.name ?? project?.name).map { "No tasks in \($0) yet" } ?? "No tasks yet",
+                title: project.map { "No tasks in \($0.name) yet" } ?? "No tasks yet",
                 message: hidden > 0
                     ? "\(TaskStore.taskCount(hidden)) from past sprints are hidden. Add a new task with the field above, or show the past ones."
                     : "Add one with the New task field above. Tokens like !high, due:fri and ~90m set the details as you type.",
@@ -159,31 +157,6 @@ struct TasksEmptyStateView: View {
                 secondaryTitle: !query.isEmpty && chips > 0 ? "Clear search only" : nil,
                 secondaryAction: { model.filter.query = "" }
             )
-        case let .sprintEmpty(waiting):
-            let waitingText = waiting > 0
-                ? " \(TaskStore.taskCount(waiting)) \(waiting == 1 ? "waits" : "wait") in Next and Backlog."
-                : ""
-            if let project {
-                FocusEmptyState(
-                    systemImage: "rectangle.split.3x1",
-                    title: "Nothing in \(store.sprintName()) yet",
-                    message: "The board shows the active sprint." + waitingText + " Plan tasks into it in Sprints, or add a new one.",
-                    actionTitle: "Plan in Sprints",
-                    action: { model.tab = .sprints },
-                    secondaryTitle: "New task",
-                    secondaryAction: { model.startNewTask(store) }
-                )
-            } else {
-                FocusEmptyState(
-                    systemImage: "rectangle.split.3x1",
-                    title: "No tasks in any active sprint",
-                    message: "The board shows the active sprint." + waitingText + " List shows every task.",
-                    actionTitle: "Open List",
-                    action: { model.tab = .list },
-                    secondaryTitle: "New task",
-                    secondaryAction: { model.startNewTask(store) }
-                )
-            }
         }
     }
 

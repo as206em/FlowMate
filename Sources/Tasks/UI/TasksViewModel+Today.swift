@@ -3,33 +3,20 @@ import Foundation
 // The Today page's sections and the actions it adds (Add to Today, → Tomorrow, Move all overdue),
 // each with its toast. The data comes from TaskStore.todayPlan.
 
-/// One section of the Today page.
+/// The Today page's one section: running, due, pinned and finished-today tasks together.
 struct TodaySection: Equatable {
-    /// `due`: overdue tasks first, then the ones due today
-    enum Kind: Equatable { case running, due, focus, done }
-
-    let kind: Kind
     let key: String
     let title: String
     let tasks: [TaskItem]
 }
 
 extension TasksViewModel {
-    static let todayRunningKey = "today-running"
-    static let todayDueKey = "today-due"
-    static let todayFocusKey = "today-focus"
-    static let todayDoneKey = "today-done"
+    static let todayKey = "today"
 
-    /// The sections in page order. Running, Due and Done today only show with
-    /// tasks in them; My focus always shows (its empty state says how to pin tasks).
+    /// Today is a single group (running, overdue, due today, pinned, then done today); it always shows,
+    /// its empty state says how to pin tasks.
     static func todaySections(_ plan: TodayPlan) -> [TodaySection] {
-        var sections: [TodaySection] = []
-        if !plan.running.isEmpty { sections.append(TodaySection(kind: .running, key: todayRunningKey, title: "Running", tasks: plan.running)) }
-        let due = plan.overdue + plan.dueToday
-        if !due.isEmpty { sections.append(TodaySection(kind: .due, key: todayDueKey, title: "Due", tasks: due)) }
-        sections.append(TodaySection(kind: .focus, key: todayFocusKey, title: "My focus", tasks: plan.focus))
-        if !plan.doneToday.isEmpty { sections.append(TodaySection(kind: .done, key: todayDoneKey, title: "Done today", tasks: plan.doneToday)) }
-        return sections
+        [TodaySection(key: todayKey, title: "Today", tasks: plan.allTasks)]
     }
 
     /// The tasks ⌘T and the bulk bar's Today button act on: the selection (or the open task).

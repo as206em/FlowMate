@@ -1,7 +1,7 @@
 import Foundation
 
 // One-line quick add (the menu bar search, the global New task box, the view model's field):
-// the same words as the composer (ComposerInput), resolved against the projects, milestones and
+// the same words as the composer (ComposerInput), resolved against the projects and
 // statuses that exist, then added through the composer's own `addTask(title:draft:projectId:)`.
 
 /// What a one-line quick add will do once resolved against the workspace.
@@ -12,8 +12,6 @@ struct QuickAddPlan: Equatable {
     let draft: ComposerDraft
     /// The tokens in words, for the preview and the "Added to X · High · Due Fri" note
     let applied: [String]
-    /// A milestone token that matched nothing: "@betaa"
-    let unmatchedMilestone: String?
     /// A `+project` that matched nothing: "+atlsa"
     let unmatchedProject: String?
 }
@@ -40,11 +38,11 @@ extension TaskStore {
 
     static func matchKey(_ text: String) -> String { text.lowercased().filter { $0.isLetter || $0.isNumber } }
 
-    /// Reads a quick-add line against the workspace. Tokens beat the box's own values
-    /// (`milestoneId`, `sprintSlot`); `+project` moves the task (and drops a milestone given by the box).
+    /// Reads a quick-add line against the workspace. Tokens beat the box's own value
+    /// (`sprintSlot`); `+project` moves the task.
     /// A project without sprints ignores sprint words (#next stays in the title, like any word it
     /// doesn't know). Without a sprint the task goes to the project's default one.
-    func planQuickAdd(_ text: String, projectId: UUID, milestoneId: UUID? = nil, sprintSlot: SprintSlot? = nil,
+    func planQuickAdd(_ text: String, projectId: UUID, sprintSlot: SprintSlot? = nil,
                       now: Date = Date()) -> QuickAddPlan {
         var input = QuickAddInput.parse(text, now: now)
         var target = projectId
@@ -60,7 +58,6 @@ extension TaskStore {
         var draft = ComposerDraft()
         draft.projectId = target
         draft.slot = input.slot ?? sprintSlot
-        if let milestoneId, milestone(milestoneId)?.projectId == target { draft.milestoneId = milestoneId }
         draft.priority = input.priority
         draft.dueDate = input.dueDate
         draft.expectedMinutes = input.expectedMinutes
@@ -70,15 +67,6 @@ extension TaskStore {
         if let query = input.statusQuery, let status = matchStatus(query, projectId: target) {
             draft.status = status
             applied.append(status.name)
-        }
-        var unmatchedMilestone: String?
-        if let query = input.milestoneQuery {
-            if let found = matchMilestone(query, projectId: target) {
-                draft.milestoneId = found.id
-                applied.append(found.name)
-            } else {
-                unmatchedMilestone = "@" + query
-            }
         }
         if let slot = input.slot { applied.append(sprintLabel(slot)) }
         for query in input.labelQueries {
@@ -111,7 +99,7 @@ extension TaskStore {
         // A title made only of tokens keeps the text, so it's never lost
         if title.trimmingCharacters(in: .whitespaces).isEmpty { title = text.trimmingCharacters(in: .whitespaces) }
         return QuickAddPlan(projectId: target, title: title, draft: draft, applied: applied,
-                            unmatchedMilestone: unmatchedMilestone, unmatchedProject: unmatchedProject)
+                            unmatchedProject: unmatchedProject)
     }
 
     /// Adds a task from a one-line New task box: reads its tokens, applies them (tokens beat the
@@ -120,18 +108,16 @@ extension TaskStore {
     func quickAddTask(
         _ text: String,
         projectId: UUID,
-        milestoneId: UUID? = nil,
         sprintSlot: SprintSlot? = nil,
         now: Date = Date()
     ) -> QuickAddOutcome? {
         guard project(projectId) != nil else { return nil }
-        let plan = planQuickAdd(text, projectId: projectId, milestoneId: milestoneId, sprintSlot: sprintSlot, now: now)
+        let plan = planQuickAdd(text, projectId: projectId, sprintSlot: sprintSlot, now: now)
         guard let id = addTask(title: plan.title, draft: plan.draft, projectId: plan.projectId, now: now) else { return nil }
-        return QuickAddOutcome(taskId: id, projectId: plan.projectId, applied: plan.applied,
-                               unmatchedMilestone: plan.unmatchedMilestone)
+        return QuickAddOutcome(taskId: id, projectId: plan.projectId, applied: plan.applied)
     }
 
-    /// What a quick-add line will do, in words: ["High", "◆ Beta", "Due Fri", "1h 30m"], with
+    /// What a quick-add line will do, in words: ["High", "Due Fri", "1h 30m"], with
     /// "→ Atlas" first when `+project` sends it elsewhere.
     func quickAddPreview(_ text: String, projectId: UUID, now: Date = Date()) -> [String] {
         let plan = planQuickAdd(text, projectId: projectId, now: now)
@@ -142,9 +128,6 @@ extension TaskStore {
         if let unmatched = plan.unmatchedProject { parts.append("No project “\(unmatched.dropFirst())”") }
         if let priority = input.priority { parts.append(priority.title) }
         if let status = plan.draft.status { parts.append(status.name) }
-        if let query = input.milestoneQuery {
-            parts.append("◆ " + (plan.draft.milestoneId.flatMap { milestone($0)?.name } ?? "No milestone “\(query)”"))
-        }
         if let slot = input.slot { parts.append(sprintLabel(slot)) }
         parts += plan.draft.labelIds.compactMap { label($0).map { "%" + $0.name } }
         if let type = taskType(plan.draft.typeId) { parts.append("^" + type.name) }
@@ -161,8 +144,8 @@ extension TaskStore {
         return project(projectId)
     }
 
-    /// Tab in a one-line box: completes the word being typed after # @ ! + * or % with the first
-    /// match, written as a token ("@beta_launch "). nil when there's nothing to complete.
+    /// Tab in a one-line box: completes the word being typed after # ! + * or % with the first
+    /// match, written as a token ("+beta_launch "). nil when there's nothing to complete.
     func completeQuickAdd(_ text: String, projectId: UUID?) -> String? {
         guard let active = ComposerInput.activeTrigger(text), active.trigger != .all else { return nil }
         let earlier = ComposerInput.removingActiveWord(text)
@@ -179,13 +162,12 @@ extension TaskStore {
             let word: String
             switch row.action {
             case let .slot(slot): word = ["active": "#now", "next": "#next", "backlog": "#backlog"][slot.rawValue] ?? "#now"
-            case let .milestone(id): word = ComposerInput.word(.milestone, milestone(id)?.name ?? "")
             case let .priority(priority): word = "!" + priority.title.lowercased()
             case let .project(id): word = ComposerInput.word(.project, project(id)?.name ?? "")
             case let .status(status): word = ComposerInput.word(.status, status.name)
             case let .label(id): word = ComposerInput.word(.label, label(id)?.name ?? "")
             // A new name is complete as typed; it's made when the task is added
-            case .newLabel, .newMilestone, .trigger, .pickDue, .pickTime: continue
+            case .newLabel, .trigger, .pickDue, .pickTime: continue
             }
             return earlier + word + " "
         }

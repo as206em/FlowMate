@@ -1,7 +1,7 @@
 import SwiftUI
 
 // Small editors that open from a list cell or a card chip, so quick changes don't need the panel:
-// due date (with presets), priority, expected time, milestone and sprint.
+// due date (with presets), priority, expected time and sprint.
 
 /// Today, Tomorrow, Next week and Clear above a calendar.
 struct TaskDueEditor: View {
@@ -15,7 +15,7 @@ struct TaskDueEditor: View {
 }
 
 /// A date popover: presets (Today, Tomorrow, Next week) and Clear above a calendar. Used for task
-/// due dates, milestone due dates, project target dates and the sprint start.
+/// due dates, project target dates and the sprint start.
 struct DateEditor: View {
     let date: Date?
     var showsPresets = true
@@ -274,135 +274,6 @@ struct TaskSprintEditor: View {
                     Text(store.sprintTag(choice)).font(Focus.meta).foregroundColor(Focus.text3)
                 }
             }
-        }
-    }
-}
-
-/// The task's project milestones, None, and a field that adds a milestone and assigns it.
-struct TaskMilestoneEditor: View {
-    @EnvironmentObject private var store: TaskStore
-    let task: TaskItem
-    let close: () -> Void
-
-    @State private var newName = ""
-
-    var body: some View {
-        FocusMilestoneChoices(
-            projectId: task.projectId,
-            selection: task.milestoneId,
-            newName: $newName
-        ) { id in
-            store.setMilestone(task.id, id)
-            close()
-        } create: { name in
-            store.undoGroup("Add milestone") {
-                if let id = store.addMilestone(projectId: task.projectId, name: name) {
-                    store.setMilestone(task.id, id)
-                }
-            }
-            close()
-        }
-    }
-}
-
-/// Milestone menu shared by the task cell editor and the New task field's milestone chip.
-struct FocusMilestoneChoices: View {
-    @EnvironmentObject private var store: TaskStore
-    let projectId: UUID
-    let selection: UUID?
-    @Binding var newName: String
-    let choose: (UUID?) -> Void
-    let create: (String) -> Void
-
-    var body: some View {
-        FocusPopoverMenu(width: 240, maxHeight: 360) {
-            FocusMenuItem(isSelected: selection == nil) { choose(nil) } label: {
-                Image(systemName: "diamond").font(.system(size: 11, weight: .semibold)).foregroundColor(Focus.text3)
-                Text("No milestone").font(Focus.control).foregroundColor(Focus.text2)
-            }
-            ForEach(store.milestones(of: projectId).filter { !$0.isCompleted || $0.id == selection }) { milestone in
-                FocusMenuItem(isSelected: milestone.id == selection) { choose(milestone.id) } label: {
-                    Image(systemName: "diamond.fill").font(.system(size: 10)).foregroundColor(Color(hex: milestone.colorHex))
-                    Text(milestone.name).font(Focus.control).foregroundColor(Focus.text).lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if let due = milestone.dueDate {
-                        Text(SprintState.shortDate(due)).font(Focus.meta).foregroundColor(Focus.text3)
-                    }
-                }
-            }
-            FocusDivider().padding(.vertical, 4)
-            HStack(spacing: 9) {
-                Image(systemName: "plus").font(.system(size: 11, weight: .bold)).foregroundColor(Focus.text3)
-                TextField("New milestone", text: $newName)
-                    .textFieldStyle(.plain)
-                    .font(Focus.control)
-                    .onSubmit {
-                        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !name.isEmpty else { return }
-                        newName = ""
-                        create(name)
-                    }
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 30)
-        }
-    }
-}
-
-/// Context menu items: None plus the task's project milestones, with a check on the current one.
-struct TaskMilestoneMenuItems: View {
-    @EnvironmentObject private var store: TaskStore
-    let task: TaskItem
-
-    var body: some View {
-        checked("No milestone", task.milestoneId == nil) { store.setMilestone(task.id, nil) }
-        let milestones = store.milestones(of: task.projectId).filter { !$0.isCompleted || $0.id == task.milestoneId }
-        if !milestones.isEmpty { Divider() }
-        ForEach(milestones) { milestone in
-            checked(milestone.name, milestone.id == task.milestoneId) { store.setMilestone(task.id, milestone.id) }
-        }
-    }
-
-    @ViewBuilder
-    private func checked(_ title: String, _ on: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            if on { Label(title, systemImage: "checkmark") } else { Text(title) }
-        }
-    }
-}
-
-/// A board card chip that shows the task's milestone and opens the milestone menu.
-struct TaskMilestoneChip: View {
-    @EnvironmentObject private var store: TaskStore
-    let task: TaskItem
-
-    @State private var open = false
-    @State private var hovering = false
-
-    var body: some View {
-        let milestone = store.milestone(of: task)
-        let tint = milestone.map { Focus.colorTint($0.colorHex) }
-        Button { open = true } label: {
-            HStack(spacing: 4) {
-                Image(systemName: milestone == nil ? "diamond" : "diamond.fill")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(tint?.icon ?? Focus.text3)
-                Text(milestone?.name ?? "Milestone").lineLimit(1)
-            }
-            .font(.system(size: 12))
-            .foregroundColor(tint?.text ?? Focus.text3)
-            .padding(.horizontal, 6)
-            .frame(height: 20)
-            .background(RoundedRectangle(cornerRadius: Focus.radiusTag).fill(tint.map { hovering ? $0.border : $0.fill } ?? (hovering ? Focus.hover : .clear)))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .opacity(milestone == nil && !hovering ? 0.75 : 1)
-        .onHover { hovering = $0 }
-        .help(milestone == nil ? "Set milestone" : "Milestone: \(milestone!.name)")
-        .accessibilityLabel(milestone.map { "Milestone: \($0.name)" } ?? "Set milestone")
-        .popover(isPresented: $open, arrowEdge: .bottom) {
-            TaskMilestoneEditor(task: task) { open = false }
         }
     }
 }

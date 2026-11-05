@@ -95,16 +95,14 @@ final class TaskPowerBatch4Tests: XCTestCase {
     // MARK: - #19 Quick add
 
     func testQuickAddTokens() {
-        let input = QuickAddInput.parse("Fix login !high @beta due:fri ~1h30m", now: thursday, calendar: utc)
+        let input = QuickAddInput.parse("Fix login !high due:fri ~1h30m", now: thursday, calendar: utc)
         XCTAssertEqual(input.title, "Fix login")
         XCTAssertEqual(input.priority, .high)
-        XCTAssertEqual(input.milestoneQuery, "beta")
         XCTAssertEqual(input.dueDate, day(10, 30))
         XCTAssertEqual(input.expectedMinutes, 90)
 
-        let quoted = QuickAddInput.parse("Ship @\"Beta launch\" due:\"nov 18\" !low", now: thursday, calendar: utc)
+        let quoted = QuickAddInput.parse("Ship due:\"nov 18\" !low", now: thursday, calendar: utc)
         XCTAssertEqual(quoted.title, "Ship")
-        XCTAssertEqual(quoted.milestoneQuery, "Beta launch")
         XCTAssertEqual(quoted.dueDate, day(11, 18))
         XCTAssertEqual(quoted.priority, .low)
 
@@ -116,29 +114,23 @@ final class TaskPowerBatch4Tests: XCTestCase {
     func testQuickAddTaskAppliesTokensAsOneStepAndRemembersProject() async {
         let (store, pid) = await makeStore()
         let other = store.addProject(name: "Beta", now: t0)!
-        let mid = store.addMilestone(projectId: other, name: "Beta launch")!
         store.clearUndoHistory()
         XCTAssertEqual(store.defaultProject?.id, pid, "first project until one is used")
 
-        let outcome = store.quickAddTask("Write post !h @beta-launch ~45m due:tomorrow", projectId: other, now: t0)
+        let outcome = store.quickAddTask("Write post !h ~45m due:tomorrow", projectId: other, now: t0)
         let task = store.task(outcome!.taskId)!
         XCTAssertEqual(task.title, "Write post")
         XCTAssertEqual(task.priority, .high)
-        XCTAssertEqual(task.milestoneId, mid)
         XCTAssertEqual(task.expectedMinutes, 45)
         XCTAssertNotNil(task.dueDate)
         XCTAssertEqual(outcome?.applied.first, "High")
-        XCTAssertTrue(outcome!.applied.contains("Beta launch"))
+        XCTAssertGreaterThanOrEqual(outcome!.applied.count, 3, "priority, time and due date")
         XCTAssertEqual(store.undoStack.count, 1, "the add and its tokens are one step")
         XCTAssertEqual(store.defaultProject?.id, other, "the last project used is remembered")
 
         store.undo()
         XCTAssertNil(store.task(outcome!.taskId))
         XCTAssertEqual(store.preferences.lastProjectId, other, "undo doesn't touch preferences")
-
-        let miss = store.quickAddTask("Thing @nope", projectId: other, now: t0)
-        XCTAssertEqual(miss?.unmatchedMilestone, "@nope")
-        XCTAssertNil(store.task(miss!.taskId)?.milestoneId)
 
         let onlyTokens = store.quickAddTask("!high", projectId: other, now: t0)
         XCTAssertEqual(store.task(onlyTokens!.taskId)?.title, "!high", "a title of only tokens is kept as typed")
@@ -147,7 +139,7 @@ final class TaskPowerBatch4Tests: XCTestCase {
     func testQuickAddFromViewModelShowsOpenToastOrOpens() async {
         let (store, pid) = await makeStore()
         let model = TasksViewModel()
-        XCTAssertTrue(model.quickAdd("A", projectId: pid, milestoneId: nil, slot: .backlog, open: false, store: store))
+        XCTAssertTrue(model.quickAdd("A", projectId: pid, slot: .backlog, open: false, store: store))
         let id = model.selectedTaskId!
         XCTAssertEqual(store.task(id)?.sprintSlot, .backlog)
         XCTAssertEqual(model.toast?.openTaskId, id)
@@ -156,9 +148,9 @@ final class TaskPowerBatch4Tests: XCTestCase {
         XCTAssertEqual(model.openTaskId, id)
 
         model.closePanel()
-        XCTAssertTrue(model.quickAdd("B", projectId: pid, milestoneId: nil, slot: .active, open: true, store: store))
+        XCTAssertTrue(model.quickAdd("B", projectId: pid, slot: .active, open: true, store: store))
         XCTAssertEqual(model.openTaskId, model.selectedTaskId, "⇧↵ opens the new task")
-        XCTAssertFalse(model.quickAdd("   ", projectId: pid, milestoneId: nil, slot: .active, open: false, store: store))
+        XCTAssertFalse(model.quickAdd("   ", projectId: pid, slot: .active, open: false, store: store))
     }
 
     // MARK: - #16 Bulk selection and edits
@@ -207,7 +199,6 @@ final class TaskPowerBatch4Tests: XCTestCase {
     func testBulkEditsAreOneUndoStepEach() async {
         let (store, pid) = await makeStore()
         let other = store.addProject(name: "Other", now: t0)!
-        let mid = store.addMilestone(projectId: pid, name: "M1")!
         let a = store.addTask(title: "A", projectId: pid, now: t0)!
         let b = store.addTask(title: "B", projectId: pid, now: t0)!
         let c = store.addTask(title: "C", projectId: other, now: t0)!
@@ -224,14 +215,11 @@ final class TaskPowerBatch4Tests: XCTestCase {
         store.setDueDate([a, b], t0)
         XCTAssertEqual(store.undoStack.count, 3)
 
-        XCTAssertEqual(store.setMilestone([a, b, c], mid), 2, "tasks of other projects are skipped")
-        XCTAssertNil(store.task(c)?.milestoneId)
         XCTAssertEqual(store.commonProjectId([a, b]), pid)
         XCTAssertNil(store.commonProjectId([a, c]))
 
         store.setProject([a, c], other)
         XCTAssertEqual(store.task(a)?.projectId, other)
-        XCTAssertNil(store.task(a)?.milestoneId)
 
         store.undo()
         XCTAssertEqual(store.task(a)?.projectId, pid)
@@ -429,8 +417,7 @@ final class TaskPowerBatch4Tests: XCTestCase {
 
     func testSubtaskReorderAndConvert() async {
         let (store, pid) = await makeStore()
-        let mid = store.addMilestone(projectId: pid, name: "M")!
-        let id = store.addTask(title: "Parent", projectId: pid, milestoneId: mid, sprintSlot: .next, now: t0)!
+        let id = store.addTask(title: "Parent", projectId: pid, sprintSlot: .next, now: t0)!
         let next = store.addTask(title: "Next", projectId: pid, now: t0)!
         store.setPriority(id, .high)
         let s1 = store.addSubtask(id, title: "One")!
@@ -448,7 +435,6 @@ final class TaskPowerBatch4Tests: XCTestCase {
         let converted = store.task(newId)!
         XCTAssertEqual(converted.title, "Three")
         XCTAssertEqual(converted.statusId, WorkflowStatus.done.id, "a checked subtask becomes a done task")
-        XCTAssertEqual(converted.milestoneId, mid)
         XCTAssertEqual(converted.sprintSlot, .next)
         XCTAssertEqual(converted.priority, .high)
         XCTAssertEqual(store.task(id)?.subtasks.map(\.id), [s1, s2])

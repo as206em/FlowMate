@@ -1,13 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// The New task composer at the end of each list group and board column. At rest it's a light
+/// The New task composer at the end of each list group. At rest it's a light
 /// "＋ New task" button; a click (or ⌘N for the first group) opens it into the title, a row of
 /// property buttons and a footer with the keys. A click outside or Esc closes it again.
-/// Tasks added here take the group's value (its status, sprint, milestone, priority or project).
+/// Tasks added here take the group's value (its status, sprint, priority or project).
 ///
 /// Recognised words (see ComposerInput) leave the title and fill their button as soon as a space
-/// follows them. A word starting with # @ ! + * % or / opens a menu: ↑/↓ choose, ↵ or Tab pick,
+/// follows them. A word starting with # ! + * % or / opens a menu: ↑/↓ choose, ↵ or Tab pick,
 /// Esc closes it, typing filters it. ↵ adds, ⇧↵ adds and opens. ⌘N focuses it.
 struct TaskComposer: View {
     @EnvironmentObject private var store: TaskStore
@@ -21,9 +21,6 @@ struct TaskComposer: View {
     var isDefault = false
     /// "New task in To do"
     var groupName = ""
-    /// A Board column: tasks go to the active sprint (the board shows it) unless a word or the
-    /// chip says otherwise, whatever the project's default sprint
-    var onBoard = false
 
     @State private var title = ""
     @State private var draft = ComposerDraft()
@@ -31,11 +28,10 @@ struct TaskComposer: View {
     /// The text the menu was closed for with Esc; it stays closed until the text changes
     @State private var dismissedFor: String?
     @State private var picking: Picker?
-    @State private var newMilestoneName = ""
     @State private var added: Added?
     @FocusState private var focused: Bool
 
-    enum Picker: Hashable { case project, status, sprint, milestone, priority, due, time, labels }
+    enum Picker: Hashable { case project, status, sprint, priority, due, time, labels }
 
     struct Added: Equatable {
         let title: String
@@ -104,12 +100,11 @@ struct TaskComposer: View {
 
     private func applyPreset() {
         draft.apply(preset: preset, in: model.scope)
-        if onBoard, draft.slot == nil, !model.scope.isMilestone { draft.slot = .active }
     }
 
     // MARK: - State
 
-    /// The draft's project, else the project on screen (a milestone page's project), else the last one used
+    /// The draft's project, else the project on screen , else the last one used
     private var targetProject: Project? {
         if let id = draft.projectId, let project = store.project(id), !project.isArchived { return project }
         if let id = model.scope.projectId { return store.project(id) }
@@ -142,7 +137,7 @@ struct TaskComposer: View {
                 .disabled(target == nil)
                 .onSubmit(submit)
                 .accessibilityLabel("New task title")
-                .accessibilityHint("Type 2h, #next, @milestone, !high, *status, %label, +project or due:fri to set them. Return adds.")
+                .accessibilityHint("Type 2h, #next, !high, *status, %label, +project or due:fri to set them. Return adds.")
         }
         .padding(.horizontal, 12)
         .frame(height: Self.fieldHeight)
@@ -214,22 +209,6 @@ struct TaskComposer: View {
                     }
                 }
             }
-            }
-
-            let milestone = draft.milestoneId.flatMap { store.milestone($0) }
-            ComposerPropertyButton(tint: .milestone, isSet: milestone != nil, isOpen: binding(.milestone)) {
-                Image(systemName: milestone == nil ? "diamond" : "diamond.fill").font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(milestone.map { Color(hex: $0.colorHex) })
-                Text(milestone?.name ?? "Milestone")
-            } popover: {
-                FocusMilestoneChoices(projectId: target.id, selection: draft.milestoneId, newName: $newMilestoneName) { id in
-                    draft.milestoneId = id
-                    closePicker()
-                } create: { name in
-                    draft.milestoneId = store.addMilestone(projectId: target.id, name: name)
-                    newMilestoneName = ""
-                    closePicker()
-                }
             }
 
             ComposerPropertyButton(tint: .priority, isSet: draft.priority != nil, isOpen: binding(.priority)) {
@@ -322,7 +301,7 @@ struct TaskComposer: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(Focus.text)
             } else {
-                Text("Type 2h, #next, @milestone, !high, %label, *status, +project or due:fri. / lists everything.")
+                Text("Type 2h, #next, !high, %label, *status, +project or due:fri. / lists everything.")
                     .font(.system(size: 12))
                     .foregroundColor(Focus.text3)
                     .lineLimit(1)
@@ -399,9 +378,6 @@ struct TaskComposer: View {
         let rest = ComposerInput.removingActiveWord(title)
         switch row.action {
         case let .slot(slot): draft.slot = slot
-        case let .milestone(id): draft.milestoneId = id
-        case let .newMilestone(name):
-            if let projectId = targetProject?.id { draft.milestoneId = store.addMilestone(projectId: projectId, name: name) }
         case let .priority(priority): draft.priority = priority
         case let .project(id): setProject(id)
         case let .status(status): draft.status = status
@@ -430,10 +406,9 @@ struct TaskComposer: View {
         title = result.text
     }
 
-    /// A milestone or project word is used only when it names one that exists
+    /// A project word is used only when it names one that exists
     private func accepts(_ token: ComposerToken, target: Project) -> Bool {
         switch token {
-        case let .milestone(name): return store.matchMilestone(name, projectId: target.id) != nil
         case let .project(name): return store.matchProject(name) != nil
         case let .status(name): return store.matchStatus(name, projectId: (targetProject ?? target).id) != nil
         // A ^word naming no type stays in the title
@@ -448,7 +423,6 @@ struct TaskComposer: View {
         switch token {
         case let .minutes(minutes): draft.expectedMinutes = minutes
         case let .slot(slot): draft.slot = slot
-        case let .milestone(name): draft.milestoneId = store.matchMilestone(name, projectId: target.id)?.id
         case let .priority(priority): draft.priority = priority
         case let .due(date): draft.dueDate = date
         case let .project(name): if let id = store.matchProject(name)?.id { setProject(id) }
@@ -461,7 +435,6 @@ struct TaskComposer: View {
     private func setProject(_ id: UUID) {
         guard id != targetProject?.id else { return }
         draft.projectId = id
-        draft.milestoneId = nil
     }
 
     /// ↵ adds (the last word is read too) and stays ready for the next one; ⇧↵ adds and opens.
@@ -480,7 +453,7 @@ struct TaskComposer: View {
             return
         }
         title = ""
-        // Sprint, milestone and project stay for the next task; the rest starts over
+        // Sprint and project stay for the next task; the rest starts over
         draft.priority = nil
         draft.dueDate = nil
         draft.expectedMinutes = nil
@@ -580,7 +553,7 @@ private struct ComposerPropertyButton<Label: View, Popover: View>: View {
 
 /// Colours of the property buttons; each kind differs in lightness as well as hue.
 private enum ComposerTint {
-    case neutral, sprint, milestone, priority, due, time
+    case neutral, sprint, priority, due, time
     /// The first label's color (gray without one)
     case label(UInt32?)
 
@@ -589,7 +562,6 @@ private enum ComposerTint {
         case let .label(hex): return hex.map { Color(hex: $0) } ?? Focus.text3
         case .neutral: return Focus.text
         case .sprint: return Focus.done
-        case .milestone: return Color(hex: 0x14B8A6)
         case .priority: return Focus.risk
         case .due: return Color(hex: 0x4EA1F5)
         case .time: return Focus.progress
@@ -600,7 +572,6 @@ private enum ComposerTint {
         switch self {
         case .neutral: return Focus.text
         case .sprint: return Color(hex: 0x4B3BC4)
-        case .milestone: return Color(hex: 0x0F6B60)
         case .priority: return Color(hex: 0xB42318)
         case .due: return Color(hex: 0x1D5FB0)
         case .time: return Color(hex: 0x8A5300)

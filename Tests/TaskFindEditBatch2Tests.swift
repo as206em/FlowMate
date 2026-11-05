@@ -173,8 +173,7 @@ final class TaskFindEditBatch2Tests: XCTestCase {
     func testChipsCombine() async {
         let (store, pid) = await makeStore()
         let other = store.addProject(name: "Beta", now: t0)!
-        let m = store.addMilestone(projectId: pid, name: "M1")!
-        let a = store.addTask(title: "A", projectId: pid, milestoneId: m, now: t0)!
+        let a = store.addTask(title: "A", projectId: pid, now: t0)!
         let b = store.addTask(title: "B", projectId: pid, now: t0)!
         let c = store.addTask(title: "C", projectId: other, now: t0)!
         store.setPriority(a, .high)
@@ -190,17 +189,12 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         f.projectIds = [pid]
         XCTAssertEqual(store.filtered(all, by: f).map(\.id), [a])
         f = TaskFilter()
-        f.milestones = [nil]
-        XCTAssertEqual(store.filtered(all, by: f).map(\.id), [b, c])
-        f.milestones = [m, nil]
-        XCTAssertEqual(store.filtered(all, by: f).count, 3)
-        f = TaskFilter()
         f.sprintSlots = [.backlog]
         XCTAssertEqual(store.filtered(all, by: f).map(\.id), [c])
 
-        // A deleted milestone in the filter is ignored rather than hiding everything
+        // A deleted project in the filter is ignored rather than hiding everything
         f = TaskFilter()
-        f.milestones = [UUID()]
+        f.projectIds = [UUID()]
         XCTAssertEqual(store.filtered(all, by: f).count, 3)
         XCTAssertEqual(f.chipCount, 1)
         XCTAssertFalse(f.isEmpty)
@@ -242,9 +236,9 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         XCTAssertEqual(options.grouping, .status)
         let empty = try JSONDecoder().decode(TaskViewOptions.self, from: Data("{}".utf8))
         XCTAssertEqual(empty, .standard)
-        // Round trip, including "No milestone"
+        // Round trip
         var custom = TaskViewOptions()
-        custom.filter.milestones = [nil, UUID()]
+        custom.filter.projectIds = [UUID()]
         let back = try JSONDecoder().decode(TaskViewOptions.self, from: JSONEncoder().encode(custom))
         XCTAssertEqual(back, custom)
     }
@@ -270,17 +264,10 @@ final class TaskFindEditBatch2Tests: XCTestCase {
 
     // MARK: - Grouping and moving between groups (#4, #5)
 
-    func testGroupsByMilestoneAndSprint() async {
+    func testGroupsBySprintAndStatus() async {
         let (store, pid) = await makeStore()
-        let m1 = store.addMilestone(projectId: pid, name: "Beta", dueDate: t0)!
-        let m2 = store.addMilestone(projectId: pid, name: "Launch")!
-        let a = store.addTask(title: "A", projectId: pid, milestoneId: m1, now: t0)!
-        let b = store.addTask(title: "B", projectId: pid, now: t0)!
-
-        let byMilestone = store.groups(store.tasks(of: pid), by: .milestone, in: .project(pid))
-        XCTAssertEqual(byMilestone.map(\.value), [.milestone(m1), .milestone(m2), .milestone(nil)])
-        XCTAssertEqual(byMilestone.map { $0.tasks.map(\.id) }, [[a], [], [b]])
-        XCTAssertEqual(byMilestone.last?.title, "No milestone")
+        let a = store.addTask(title: "A", projectId: pid, now: t0)!
+        _ = store.addTask(title: "B", projectId: pid, now: t0)!
 
         let bySprint = store.groups(store.tasks(of: pid), by: .sprint, in: .project(pid))
         XCTAssertEqual(bySprint.map(\.value), [.sprint(.active), .sprint(.next), .sprint(.backlog)], "closed shows only when used")
@@ -297,22 +284,15 @@ final class TaskFindEditBatch2Tests: XCTestCase {
     func testDropOnGroupSetsValueAndReorders() async {
         let (store, pid) = await makeStore()
         let other = store.addProject(name: "Beta", now: t0)!
-        let m = store.addMilestone(projectId: pid, name: "M")!
-        let foreign = store.addMilestone(projectId: other, name: "Theirs")!
         let a = store.addTask(title: "A", projectId: pid, now: t0)!
         let b = store.addTask(title: "B", projectId: pid, now: t0)!
 
-        store.moveTask(b, to: .milestone(m), before: a)
-        XCTAssertEqual(store.task(b)?.milestoneId, m)
+        store.moveTask(b, to: .priority(.high), before: a)
+        XCTAssertEqual(store.task(b)?.priority, .high)
         XCTAssertEqual(store.tasks(of: pid).map(\.id), [b, a])
         store.undo()
-        XCTAssertNil(store.task(b)?.milestoneId)
+        XCTAssertEqual(store.task(b)?.priority, .medium)
         XCTAssertEqual(store.tasks(of: pid).map(\.id), [a, b], "one undo step reverts value and order")
-
-        // A milestone of another project brings the task along
-        store.moveTask(a, to: .milestone(foreign))
-        XCTAssertEqual(store.task(a)?.projectId, other)
-        XCTAssertEqual(store.task(a)?.milestoneId, foreign)
 
         store.startTimer(b, now: t0)
         store.moveTask(b, to: .status(.done), reorder: false, now: t0.addingTimeInterval(60))
@@ -469,18 +449,18 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         XCTAssertEqual(store.tasks(of: pid).count, 3)
 
         XCTAssertTrue(model.perform(.tab1, store: store))
-        XCTAssertEqual(model.tab, .board)
+        XCTAssertEqual(model.tab, .list)
         XCTAssertTrue(model.perform(.find, store: store))
-        XCTAssertEqual(model.tab, .board, "Board has the filter bar")
+        XCTAssertEqual(model.tab, .list, "List has the filter bar")
         XCTAssertEqual(model.focusRequest?.field, .search)
-        model.tab = .milestones
+        model.tab = .sprints
         model.perform(.find, store: store)
         XCTAssertEqual(model.tab, .list)
 
         model.select(.all)
         XCTAssertTrue(model.perform(.tab1, store: store))
         XCTAssertEqual(model.tab, .overview, "All projects opens Overview with ⌘1")
-        XCTAssertTrue(model.perform(.tab5, store: store))
-        XCTAssertEqual(model.tab, .milestones)
+        XCTAssertTrue(model.perform(.tab3, store: store))
+        XCTAssertEqual(model.tab, .sprints)
     }
 }

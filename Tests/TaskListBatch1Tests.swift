@@ -39,18 +39,16 @@ final class TaskListBatch1Tests: XCTestCase {
 
     // MARK: - Move to project (#7)
 
-    func testMoveToProjectKeepsTimerAndClearsMilestone() async {
+    func testMoveToProjectKeepsTimer() async {
         let (store, pid) = await makeStore()
         let other = store.addProject(name: "Beta", now: t0)!
-        let m = store.addMilestone(projectId: pid, name: "M")!
-        let a = store.addTask(title: "A", projectId: pid, milestoneId: m, now: t0)!
+        let a = store.addTask(title: "A", projectId: pid, now: t0)!
         store.setSprintSlot(a, .next)
         store.startTimer(a, now: t0)
 
         store.setProject(a, other)
         let moved = store.task(a)!
         XCTAssertEqual(moved.projectId, other)
-        XCTAssertNil(moved.milestoneId)
         XCTAssertEqual(moved.sprintSlot, .next)
         XCTAssertTrue(store.isRunning(a), "moving never stops a timer")
         XCTAssertEqual(store.tasks(of: other).map(\.id), [a])
@@ -92,7 +90,7 @@ final class TaskListBatch1Tests: XCTestCase {
         XCTAssertEqual(store.sorted(tasks, by: TaskSort(key: .due, ascending: false)).map(\.id), [a, c, b],
                        "no date stays last when descending")
         // Ties keep the manual order
-        XCTAssertEqual(store.sorted(tasks, by: TaskSort(key: .milestone)).map(\.id), [a, b, c])
+        XCTAssertEqual(store.sorted(tasks, by: TaskSort(key: .sprint)).map(\.id), [a, b, c])
     }
 
     func testSortDecodingIsTolerant() throws {

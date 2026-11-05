@@ -36,24 +36,6 @@ extension TaskStore {
         }
     }
 
-    /// Sets the milestone of several tasks. With a milestone, only tasks of its project change;
-    /// nil clears the milestone of all of them. Returns how many changed.
-    @discardableResult
-    func setMilestone(_ ids: [UUID], _ milestoneId: UUID?) -> Int {
-        let projectId = milestoneId.flatMap { milestone($0)?.projectId }
-        if milestoneId != nil, projectId == nil { return 0 }
-        var changed = 0
-        undoGroup("Change milestone") {
-            for id in existing(ids) {
-                guard let task = task(id), task.milestoneId != milestoneId else { continue }
-                if let projectId, task.projectId != projectId { continue }
-                setMilestone(id, milestoneId)
-                changed += 1
-            }
-        }
-        return changed
-    }
-
     func setProject(_ ids: [UUID], _ projectId: UUID) {
         undoGroup("Move to project") {
             for id in existing(ids) { setProject(id, projectId) }
@@ -77,7 +59,7 @@ extension TaskStore {
         }
     }
 
-    /// The project all the tasks share, if they share one (for the bulk Milestone menu).
+    /// The project all the tasks share, if they share one (for the bulk menus).
     func commonProjectId(_ ids: [UUID]) -> UUID? {
         let projects = Set(existing(ids).compactMap { task($0)?.projectId })
         return projects.count == 1 ? projects.first : nil
@@ -92,23 +74,6 @@ struct QuickAddOutcome: Equatable {
     let projectId: UUID
     /// Tokens applied, in words: ["High", "Beta launch", "Due Fri", "1h 30m"]
     let applied: [String]
-    /// A milestone token that matched nothing: "@betaa"
-    let unmatchedMilestone: String?
-}
-
-extension TaskStore {
-    /// The milestone a `@query` means: an exact name (ignoring case, spaces and punctuation),
-    /// then a name starting with it, then one containing it. Open milestones win over completed ones.
-    func matchMilestone(_ query: String, projectId: UUID) -> Milestone? {
-        func key(_ s: String) -> String { s.lowercased().filter { $0.isLetter || $0.isNumber } }
-        let q = key(query)
-        guard !q.isEmpty else { return nil }
-        let all = milestones(of: projectId)
-        let ordered = all.filter { !$0.isCompleted } + all.filter(\.isCompleted)
-        return ordered.first { key($0.name) == q }
-            ?? ordered.first { key($0.name).hasPrefix(q) }
-            ?? ordered.first { key($0.name).contains(q) }
-    }
 }
 
 // MARK: - Preferences
@@ -233,7 +198,7 @@ extension TaskStore {
         }
     }
 
-    /// Turns a subtask into its own task just below the parent: same project, milestone and sprint,
+    /// Turns a subtask into its own task just below the parent: same project and sprint,
     /// in the project's first Done status if it was checked (else its first Not started one).
     /// One undo step. Returns the new task's id.
     @discardableResult
@@ -242,7 +207,6 @@ extension TaskStore {
         let workflow = project(parent.projectId)
         let task = TaskItem(
             projectId: parent.projectId,
-            milestoneId: parent.milestoneId,
             sprintSlot: parent.sprintSlot == .closed ? .backlog : parent.sprintSlot,
             status: workflow?.firstStatus(subtask.isDone ? .done : .notStarted) ?? (subtask.isDone ? .done : .todo),
             priority: parent.priority,

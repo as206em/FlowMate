@@ -39,19 +39,20 @@ struct TaskListView: View {
                 tasks: group.tasks,
                 emptyText: emptyText(group, filtering: filtering),
                 showProject: showProject,
-                drop: group.acceptsDrop ? .group(group.value, reorder: model.sort.isManual) : nil,
+                drop: group.acceptsDrop ? .group(group.value, reorder: model.groupSort(group.id).isManual) : nil,
                 composerIsDefault: group.id == firstOpen,
                 composerOnTop: model.isComposerPinned(TasksViewModel.listComposerKey(group.id)),
                 open: !model.isCollapsed(group.id),
                 gap: index == 0 ? 0 : 24,
                 sortable: true,
-                display: RowDisplay.maker(store: store, model: model)
+                display: RowDisplay.maker(store: store, model: model, scores: true)
             )
         }
         builder.spacer("bottom", 72)
         return TaskTable(
             showProject: showProject,
             excluding: excluded(groups),
+            including: [.score],
             caption: hidden > 0 ? "\(hidden) \(hidden == 1 ? "task" : "tasks") from past sprints hidden. Filter by Sprint › Past sprints to show them." : "",
             rows: builder.rows,
             drops: builder.drops
@@ -63,23 +64,19 @@ struct TaskListView: View {
     private func excluded(_ groups: [TaskGroup]) -> Set<TaskColumn> {
         var columns: Set<TaskColumn>
         switch model.grouping {
-        case .milestone: columns = [.milestone]
         case .sprint: columns = [.sprint]
         case .priority: columns = [.priority]
         case .project: columns = [.project]
-        case .label: columns = []
+        case .label, .none: columns = []
         case .status: columns = []
         }
-        // Labels only while a task on screen has one
-        if !groups.contains(where: { $0.tasks.contains { !$0.labelIds.isEmpty } }) { columns.insert(.labels) }
-        // On a milestone's page every row has the same milestone
-        if model.scope.isMilestone { columns.insert(.milestone) }
+        // The Labels column always shows: click an empty one to add a label
         // A project without sprints has no sprint to show
         if !model.scopeUsesSprints { columns.insert(.sprint) }
         return columns
     }
 
-    /// An empty status group or board column, by what its status means.
+    /// An empty status group, by what its status means.
     static func emptyStatusText(_ category: StatusCategory, name: String) -> String {
         switch category {
         case .notStarted: return "Nothing waiting in \(name). Drag a task here to move it back."
@@ -96,8 +93,6 @@ struct TaskListView: View {
         switch group.value {
         case let .status(status): return Self.emptyStatusText(status.category, name: status.name)
         case let .category(category): return Self.emptyStatusText(category, name: category.title)
-        case .milestone(nil): return "Every task has a milestone. Drag one here to take it off."
-        case .milestone: return "No tasks for this milestone yet. Drag tasks here to add them."
         case .project: return "No tasks in this project. Drag tasks here to move them."
         case .priority: return "No tasks with this priority. Drag a task here to set it."
         case .sprint(.active): return "Nothing planned for this sprint. Drag tasks here."
@@ -105,6 +100,7 @@ struct TaskListView: View {
         case .sprint: return "Empty. Drag tasks here."
         case .label(nil): return "Every task has a label. Drag one here to take its labels off."
         case .label: return "No tasks with this label. Drag a task here to add it."
+        case .ungrouped: return "No tasks."
         }
     }
 }
@@ -139,8 +135,7 @@ struct SprintPlanView: View {
         }
         pastSprints(&builder)
         builder.spacer("bottom", 72)
-        // Manual order only: rows are dragged between and within groups here, so headers don't sort
-        return TaskTable(
+                return TaskTable(
             showProject: scope.projectId == nil,
             excluding: store.tasks(in: scope).contains { !$0.labelIds.isEmpty } ? [.sprint] : [.sprint, .labels],
             including: [.score],
@@ -163,13 +158,14 @@ struct SprintPlanView: View {
                 key: key,
                 title: sprint.name,
                 hint: [sprint.headerHint, sprint.goal.isEmpty ? nil : sprint.goal].compactMap { $0 }.joined(separator: " · "),
-                tasks: store.tasks(of: sprint, in: scope),
+                tasks: model.sortedForGroup(store.tasks(of: sprint, in: scope), key, store: store),
                 emptyText: "No tasks were in this sprint.",
                 showProject: scope.projectId == nil,
                 drop: nil,
                 open: !model.isCollapsed(key),
                 gap: 24,
-                display: RowDisplay.maker(store: store, model: model)
+                sortable: true,
+                display: RowDisplay.maker(store: store, model: model, scores: true)
             )
         }
     }
@@ -181,13 +177,14 @@ struct SprintPlanView: View {
             key: key,
             title: later.name,
             hint: later.hint,
-            tasks: store.sprintTasks(ahead: later.ahead, in: scope),
+            tasks: model.sortedForGroup(store.sprintTasks(ahead: later.ahead, in: scope), key, store: store),
             emptyText: "Nothing planned for \(later.name). Drag tasks here.",
             showProject: scope.projectId == nil,
             drop: .upcoming(later.ahead),
             open: !model.isCollapsed(key),
             gap: 24,
             liveHint: .sprintLoad(scope: scope, slot: .next, ahead: later.ahead),
+            sortable: true,
             display: RowDisplay.maker(store: store, model: model, scores: true)
         )
     }
@@ -213,7 +210,7 @@ struct SprintPlanView: View {
             key: key,
             title: title,
             hint: hint,
-            tasks: store.sprintTasks(slot: slot, in: scope),
+            tasks: model.sortedForGroup(store.sprintTasks(slot: slot, in: scope), key, store: store),
             emptyText: empty,
             showProject: scope.projectId == nil,
             drop: .slot(slot),
@@ -223,6 +220,7 @@ struct SprintPlanView: View {
             gap: gap,
             actions: actions(slot),
             liveHint: .sprintLoad(scope: scope, slot: slot),
+            sortable: true,
             display: RowDisplay.maker(store: store, model: model, scores: true)
         )
     }
@@ -283,7 +281,6 @@ extension RowDisplay {
     static func maker(store: TaskStore, model: TasksViewModel, today: Bool = false, scores: Bool = false) -> (TaskItem) -> RowDisplay {
         let behind = scores ? store.sprintMix().behind : nil
         let projects = Dictionary(store.projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let milestones = Dictionary(store.workspace.milestones.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let workflows = Dictionary(store.allProjects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let labels = Dictionary(store.workspace.labels.map { ($0.id, RowLabel(name: $0.name, colorHex: $0.colorHex)) },
                                 uniquingKeysWith: { first, _ in first })
@@ -299,8 +296,6 @@ extension RowDisplay {
                 projectName: project?.name,
                 projectColorHex: project?.colorHex,
                 projectIcon: project?.icon,
-                milestoneName: task.milestoneId.flatMap { milestones[$0]?.name },
-                milestoneColorHex: task.milestoneId.flatMap { milestones[$0]?.colorHex },
                 sprintLabel: store.sprintLabel(for: task),
                 dueLabel: task.dueDate.map { TaskDates.dueLabel($0) },
                 dueIsRisk: store.isOverdue(task) || store.isDueToday(task),

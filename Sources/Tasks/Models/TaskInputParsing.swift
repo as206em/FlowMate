@@ -247,7 +247,6 @@ private extension String {
 /// What a one-line New task box understood (the menu bar search, the global box, the List's
 /// field): the title plus any tokens. It reads the same words as the composer (ComposerInput):
 /// - `!high` `!med` `!low` (also `!h` `!m` `!l`, `!1`–`!3`): priority
-/// - `@beta` or `@"beta launch"`: milestone (matched by name in the target project)
 /// - `+atlas` or `+"side project"`: project (the task goes there, and it becomes the remembered one)
 /// - `#now` `#next` `#backlog`: sprint
 /// - `*review` or `*"in review"`: status (matched by name in the target project's workflow)
@@ -258,7 +257,6 @@ private extension String {
 struct QuickAddInput: Equatable, Sendable {
     var title: String
     var priority: TaskPriority?
-    var milestoneQuery: String?
     var dueDate: Date?
     var expectedMinutes: Int?
     var projectQuery: String?
@@ -272,7 +270,7 @@ struct QuickAddInput: Equatable, Sendable {
     var typeQuery: String?
 
     var hasTokens: Bool {
-        priority != nil || milestoneQuery != nil || dueDate != nil || expectedMinutes != nil
+        priority != nil || dueDate != nil || expectedMinutes != nil
             || projectQuery != nil || slot != nil || statusQuery != nil || !labelQueries.isEmpty || typeQuery != nil
     }
 
@@ -282,7 +280,6 @@ struct QuickAddInput: Equatable, Sendable {
         for word in ComposerInput.words(text) {
             switch ComposerInput.token(word, now: now, calendar: calendar) {
             case let .priority(priority)?: result.priority = priority
-            case let .milestone(name)?: result.milestoneQuery = name
             case let .due(date)?: result.dueDate = date
             case let .minutes(minutes)?: result.expectedMinutes = minutes
             case let .project(name)?: result.projectQuery = name

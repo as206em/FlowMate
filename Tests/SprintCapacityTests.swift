@@ -78,7 +78,7 @@ final class SprintCapacityTests: XCTestCase {
         var changed = ws
         changed.projects[0].weeklyCapacityHours = 12.5
         changed.projects[0].usesSprints = false
-        changed.projects[0].defaultView = .milestones
+        changed.projects[0].defaultView = .sprints
         changed.projects[0].defaultExpectedMinutes = 30
         changed.projects[0].defaultSprintSlot = .backlog
         changed.projects[0].icon = .symbol("hammer")
@@ -87,7 +87,7 @@ final class SprintCapacityTests: XCTestCase {
         let p = back.projects[0]
         XCTAssertEqual(p.weeklyCapacityHours, 12.5)
         XCTAssertFalse(p.usesSprints)
-        XCTAssertEqual(p.defaultView, .milestones)
+        XCTAssertEqual(p.defaultView, .sprints)
         XCTAssertEqual(p.defaultExpectedMinutes, 30)
         XCTAssertEqual(p.defaultSprintSlot, .backlog)
         XCTAssertEqual(p.icon, .symbol("hammer"))
@@ -238,7 +238,7 @@ final class SprintCapacityTests: XCTestCase {
         XCTAssertNil(project.weeklyCapacityHours)
         XCTAssertEqual(project.defaultSprintSlot, .active)
         XCTAssertNil(project.defaultExpectedMinutes)
-        XCTAssertEqual(project.defaultView, .board, "an unknown view falls back to Board")
+        XCTAssertEqual(project.defaultView, .list, "an unknown view falls back to List")
         XCTAssertTrue(project.usesSprints)
         XCTAssertEqual(ProjectIcon.emoji(from: "🚀 go"), .emoji("🚀"))
         XCTAssertNil(ProjectIcon.emoji(from: "abc"))
@@ -265,7 +265,7 @@ final class SprintCapacityTests: XCTestCase {
         XCTAssertEqual(store.slotLoad(scope: .project(pid), slot: .backlog).label, "2 tasks · 2h")
 
         store.setWeeklyCapacity(pid, hours: 10)
-        XCTAssertEqual(store.weeklyCapacityHours(pid), 10)
+        XCTAssertEqual(store.project(pid)?.weeklyCapacityHours, 10)
         active = store.slotLoad(scope: .project(pid), slot: .active, now: hoursLater(2))
         XCTAssertEqual(active.capacityMinutes, 1200, "10h a week × 2 weeks")
         XCTAssertEqual(active.label, "2 tasks · 7h of 20h · 6h left")
@@ -301,21 +301,6 @@ final class SprintCapacityTests: XCTestCase {
         task(store, pid, "C", slot: .active, minutes: 30)
         XCTAssertEqual(store.slotLoad(scope: .project(pid), slot: .active).level, .over)
         XCTAssertEqual(store.sprintPlanLine(scope: .project(pid)).level, .over)
-    }
-
-    func testAtRiskUsesTheProjectsCapacity() async {
-        let (store, pid) = await makeStore()
-        // Due Mon Nov 2: Wed, Thu, Fri, Mon = 4 working days
-        let due = calendar.date(byAdding: .day, value: 5, to: calendar.startOfDay(for: now))!
-        let mid = store.addMilestone(projectId: pid, name: "Beta", dueDate: due)!
-        let id = task(store, pid, "Big", slot: .active, minutes: 12 * 60)
-        store.setMilestone(id, mid)
-        XCTAssertEqual(store.milestoneForecast(mid, now: now)?.health, .onTrack, "12h fits 4 days × 4h")
-        store.setWeeklyCapacity(pid, hours: 5)
-        XCTAssertEqual(store.milestoneForecast(mid, now: now)?.health, .atRisk, "5h a week is 1h a day: 4h left")
-        XCTAssertEqual(store.milestoneForecast(mid, now: now)?.hoursAvailable, 4)
-        store.setWeeklyCapacity(pid, hours: 20)
-        XCTAssertEqual(store.milestoneForecast(mid, now: now)?.health, .onTrack, "4h a day: 16h")
     }
 
     // MARK: - Past sprints and velocity
@@ -373,7 +358,7 @@ final class SprintCapacityTests: XCTestCase {
 
     // MARK: - Projects without sprints
 
-    func testWithoutSprintsBoardAndNextTaskUseAllOpenTasks() async {
+    func testWithoutSprintsNextTaskUsesAllOpenTasks() async {
         let (store, pid) = await makeStore()
         let backlog = task(store, pid, "Later", slot: .backlog, minutes: 60)
         let next = task(store, pid, "Soon", slot: .next, minutes: 60)
@@ -381,15 +366,13 @@ final class SprintCapacityTests: XCTestCase {
         model.select(.project(pid))
         model.syncProjects(store)
         XCTAssertNil(store.nextTaskToStart(projectId: pid), "with sprints, the backlog isn't current work")
-        XCTAssertEqual(model.tabs, [.board, .list, .sprints, .milestones])
+        XCTAssertEqual(model.tabs, [.list, .sprints])
 
         store.setUsesSprints(pid, false, now: now)
         model.syncProjects(store)
-        XCTAssertEqual(model.tabs, [.board, .list, .milestones], "no Sprints tab")
+        XCTAssertEqual(model.tabs, [.list], "no Sprints tab")
         model.tab = .sprints
         XCTAssertEqual(model.effectiveTab, .list)
-        XCTAssertEqual(Set(model.allBoardTasks(store).map(\.id)), [backlog, next], "Board shows every open task")
-        XCTAssertNil(model.boardCaption(store), "no Showing Sprint 1 caption")
         XCTAssertEqual(store.nextTaskToStart(projectId: pid)?.id, backlog)
         XCTAssertEqual(Set(store.activeSprintTasks(projectId: pid).map(\.id)), [backlog, next], "menu bar")
         XCTAssertEqual(store.sprintLabel(for: store.task(next)!), "")
@@ -406,12 +389,6 @@ final class SprintCapacityTests: XCTestCase {
         XCTAssertEqual(store.task(added.taskId)?.title, "Plan #next")
         XCTAssertEqual(store.task(added.taskId)?.sprintSlot, .active)
         XCTAssertEqual(store.composerSuggestions(.sprint, query: "", projectId: pid), [])
-
-        // A done task stays on the board for two weeks
-        let done = task(store, pid, "Shipped", slot: .active, minutes: 30)
-        store.setStatus(done, .done, now: now)
-        XCTAssertTrue(store.isOnBoard(store.task(done)!, in: .project(pid), now: now))
-        XCTAssertFalse(store.isOnBoard(store.task(done)!, in: .project(pid), now: hoursLater(24 * 15)))
     }
 
     func testTurningSprintsBackOn() async {
@@ -486,13 +463,12 @@ final class SprintCapacityTests: XCTestCase {
         model.select(.project(pid))
         XCTAssertEqual(model.effectiveTab, .list, "without a default: the last tab")
 
-        store.setDefaultView(pid, .milestones)
+        store.setDefaultView(pid, .sprints)
         model.syncProjects(store)
         model.select(.project(other))
         model.select(.project(pid))
-        XCTAssertEqual(model.effectiveTab, .milestones, "a default view always wins")
+        XCTAssertEqual(model.effectiveTab, .sprints, "a default view always wins")
 
-        store.setDefaultView(pid, .sprints)
         store.setUsesSprints(pid, false, now: now)
         model.syncProjects(store)
         model.select(.project(pid))

@@ -8,17 +8,10 @@ extension Workspace {
             colorHex: Focus.projectPalette[0],
             createdAt: now
         )
-        let milestone = Milestone(
-            projectId: project.id,
-            name: "Getting started",
-            dueDate: Calendar.current.date(byAdding: .day, value: 14, to: Calendar.current.startOfDay(for: now)),
-            colorHex: Milestone.nextColor(projectColor: project.colorHex, used: [])
-        )
-
         func task(_ index: Int, _ title: String, slot: SprintSlot = .active, status: WorkflowStatus = .todo,
                   priority: TaskPriority = .medium, expected: Int = 30, notes: String = "",
                   subtasks: [Subtask] = []) -> TaskItem {
-            TaskItem(projectId: project.id, milestoneId: milestone.id, sprintSlot: slot, status: status,
+            TaskItem(projectId: project.id, sprintSlot: slot, status: status,
                      priority: priority, title: title, notes: notes, subtasks: subtasks,
                      expectedMinutes: expected, createdAt: now, sortIndex: Double(index))
         }
@@ -32,15 +25,15 @@ extension Workspace {
                 - [ ] Start a second one from the menu bar
                 """),
             task(1, "Example: drag me to In progress", subtasks: [
-                Subtask(title: "Open the Board view"),
-                Subtask(title: "Drag this card to another column"),
+                Subtask(title: "Open the List view"),
+                Subtask(title: "Drag this row to another group"),
             ]),
             task(2, "Example: a finished task", status: .done, priority: .low, expected: 15),
             task(3, "Example: planned for the next sprint", slot: .next, priority: .low, expected: 60),
             task(4, "Example: an idea in the backlog", slot: .backlog, priority: .low, expected: 120),
         ]
 
-        return Workspace(projects: [project], milestones: [milestone], tasks: tasks,
+        return Workspace(projects: [project], tasks: tasks,
                          preferences: WorkspacePreferences(sampleProjectIds: [project.id]),
                          sprint: SprintState(number: 1, startDate: SprintState.defaultStart(for: now), goal: "Try out tasks and timers"))
     }

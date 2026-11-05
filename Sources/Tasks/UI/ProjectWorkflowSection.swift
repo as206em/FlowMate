@@ -45,7 +45,7 @@ struct ProjectWorkflowSection: View {
             }
             .focusPanel()
             .clipShape(RoundedRectangle(cornerRadius: Focus.radiusPanel))
-            Text("Board columns follow this order. The kind decides what a status does: starting a timer moves a not started task to the first started status, done and canceled pause timers and close with the sprint.")
+            Text("Groups follow this order. The kind decides what a status does: starting a timer moves a not started task to the first started status, done and canceled pause timers and close with the sprint.")
                 .font(.system(size: 12))
                 .foregroundColor(Focus.text3)
                 .fixedSize(horizontal: false, vertical: true)

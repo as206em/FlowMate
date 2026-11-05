@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The project side panel, opened from the sidebar, the header title or a breadcrumb.
-/// Left: name, Markdown description, the milestones and the workflow (statuses). Right: color, icon,
+/// Left: name, Markdown description and the workflow (statuses). Right: color, icon,
 /// target date, the sprint (plan in sprints, hours per week, number, start, length, goal), the
 /// defaults (view it opens on, new tasks' time and sprint), then Show tasks, Archive and Delete.
 /// TasksRootView supplies the frame, scrim, slide-in and Esc handling, as for the task panel.
@@ -33,7 +33,6 @@ struct ProjectPanel: View {
                             onEscape: { model.closePanel() },
                             minHeight: 140
                         )
-                        ProjectMilestonesSection(project: project)
                         ProjectWorkflowSection(project: project)
                     }
                     ProjectInspector(project: project)
@@ -42,150 +41,6 @@ struct ProjectPanel: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Project details")
         }
-    }
-}
-
-// MARK: - Milestones
-
-/// The project's milestones with progress; click one to open its panel. The last row adds one.
-private struct ProjectMilestonesSection: View {
-    @EnvironmentObject private var store: TaskStore
-    @EnvironmentObject private var model: TasksViewModel
-    let project: Project
-
-    @State private var newName = ""
-    @FocusState private var addFocused: Bool
-
-    var body: some View {
-        let milestones = store.milestones(of: project.id)
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Text("Milestones").font(Focus.body.weight(.semibold)).foregroundColor(Focus.text)
-                let open = milestones.filter { !$0.isCompleted }.count
-                Text(milestones.isEmpty ? "" : "\(open) open")
-                    .font(Focus.body)
-                    .foregroundColor(Focus.text3)
-            }
-            VStack(spacing: 0) {
-                ForEach(milestones) { milestone in
-                    MilestoneSummaryRow(milestone: milestone) { model.openMilestone(milestone.id, from: .project(project.id)) }
-                    FocusDivider()
-                }
-                HStack(spacing: 12) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(Focus.text3)
-                        .frame(width: 16)
-                    TextField("Add a milestone", text: $newName)
-                        .textFieldStyle(.plain)
-                        .font(Focus.body)
-                        .foregroundColor(Focus.text)
-                        .focused($addFocused)
-                        .onSubmit {
-                            // ↵ adds it with an Open toast; ⇧↵ adds it and shows its page
-                            let open = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false
-                            guard model.addMilestone(newName, projectId: project.id, open: open, store: store) != nil else { return }
-                            newName = ""
-                            if !open { addFocused = true }
-                        }
-                        .accessibilityLabel("New milestone name")
-                        .accessibilityHint("Return adds it. Shift-Return adds it and shows its page.")
-                    if addFocused, !newName.isEmpty {
-                        FocusKey(text: "⇧↵ add and open")
-                    }
-                }
-                .padding(.leading, 14)
-                .padding(.trailing, 10)
-                .frame(height: 42)
-            }
-            .focusPanel()
-            .clipShape(RoundedRectangle(cornerRadius: Focus.radiusPanel))
-        }
-    }
-}
-
-/// A milestone line: diamond, name, a progress bar with "3/7", and the due date. Used in the
-/// project panel and the Milestones view.
-struct MilestoneSummaryRow: View {
-    @EnvironmentObject private var store: TaskStore
-    let milestone: Milestone
-    var showProject = false
-    var height: CGFloat = 42
-    let open: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        let progress = store.milestoneProgress(milestone.id)
-        Button(action: open) {
-            HStack(spacing: 12) {
-                MilestoneIcon(milestone)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(milestone.name)
-                        .font(Focus.row)
-                        .foregroundColor(milestone.isCompleted ? Focus.text3 : Focus.text)
-                        .lineLimit(1)
-                    if showProject, let project = store.project(milestone.projectId) {
-                        HStack(spacing: 6) {
-                            FocusProjectTile(project: project, size: 14)
-                            Text(project.name).font(Focus.meta).foregroundColor(Focus.text3).lineLimit(1)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                FocusProgressBar(fraction: progress.fraction).frame(width: 80)
-                Text(progress.short)
-                    .font(Focus.meta.monospacedDigit())
-                    .foregroundColor(Focus.text3)
-                    .frame(width: 40, alignment: .leading)
-                    .help(progress.label)
-                Group {
-                    if milestone.isCompleted {
-                        FocusTag(text: "Completed", systemImage: "checkmark")
-                    } else {
-                        FocusTag(
-                            text: milestone.dueDate.map { "Due " + SprintState.shortDate($0) } ?? "No date",
-                            systemImage: milestone.dueDate == nil ? "calendar" : nil,
-                            risk: store.isOverdue(milestone)
-                        )
-                    }
-                }
-                // A fixed column, so the progress bars line up from row to row
-                .frame(width: 112, alignment: .trailing)
-            }
-            .padding(.leading, 14)
-            .padding(.trailing, 10)
-            .frame(height: height)
-            .background(hovering ? Focus.hover : .clear)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .focusPointerCursor()
-        .accessibilityLabel("\(milestone.name), \(progress.label)\(milestone.isCompleted ? ", completed" : "")")
-        .accessibilityHint("Opens the milestone")
-    }
-}
-
-/// ◆ in the milestone's color for an open milestone, a check in a diamond's place once it's complete.
-struct MilestoneIcon: View {
-    var completed = false
-    var colorHex: UInt32?
-    var size: CGFloat = 13
-
-    var body: some View {
-        Image(systemName: completed ? "checkmark.diamond.fill" : (colorHex == nil ? "diamond" : "diamond.fill"))
-            .font(.system(size: size, weight: .semibold))
-            .foregroundColor(colorHex.map { Color(hex: $0) } ?? (completed ? Focus.done : Focus.text3))
-            .opacity(completed && colorHex != nil ? 0.7 : 1)
-            .frame(width: 16)
-            .accessibilityHidden(true)
-    }
-}
-
-extension MilestoneIcon {
-    init(_ milestone: Milestone, size: CGFloat = 13) {
-        self.init(completed: milestone.isCompleted, colorHex: milestone.colorHex, size: size)
     }
 }
 
@@ -265,9 +120,9 @@ private struct ProjectInspector: View {
 
     private var capacityHint: String {
         guard let weekly = project.weeklyCapacityHours else {
-            return "Not set: milestone forecasts assume 4h a working day."
+            return "Not set."
         }
-        guard project.usesSprints else { return "\(SprintPlanRules.hoursText(weekly / 5)) a working day for milestone forecasts." }
+        guard project.usesSprints else { return "\(SprintPlanRules.hoursText(weekly / 5)) a working day." }
         let total = weekly * Double(store.sprint.lengthWeeks)
         return "\(SprintPlanRules.hoursText(total)) per \(store.sprint.lengthLabel) sprint."
     }
@@ -310,7 +165,7 @@ private struct ProjectInspector: View {
             }
             .padding(.bottom, 4)
             if !project.usesSprints {
-                Text("Board shows every open task. Turning sprints on puts the work in progress in \(sprint.name); the other open tasks wait in the backlog.")
+                Text("Every open task counts as current work. Turning sprints on puts the work in progress in \(sprint.name); the other open tasks wait in the backlog.")
                     .font(.system(size: 12))
                     .foregroundColor(Focus.text3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -358,10 +213,8 @@ private struct ProjectDeleteAlert: ViewModifier {
 
     private func message(_ project: Project) -> String {
         let tasks = store.tasks(of: project.id).count
-        let milestones = store.milestones(of: project.id).count
         var parts: [String] = []
         if tasks > 0 { parts.append("\(tasks) \(tasks == 1 ? "task" : "tasks")") }
-        if milestones > 0 { parts.append("\(milestones) \(milestones == 1 ? "milestone" : "milestones")") }
         let what = parts.isEmpty ? "" : "Its \(parts.joined(separator: " and ")) will be deleted too. "
         let archive = project.isArchived ? "" : "To keep them, archive the project instead. "
         return what + archive + "You can undo this with ⌘Z."

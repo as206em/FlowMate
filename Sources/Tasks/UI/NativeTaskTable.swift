@@ -345,7 +345,9 @@ struct TaskTableCell: View {
                 Color.clear.preference(key: CellHeightKey.self, value: proxy.size.height)
             })
             .onPreferenceChange(CellHeightKey.self) { onHeight?($0) }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // The cell keeps its old height until the new one is measured: pin the content to the
+            // top so growing content doesn't spill up and down around the row (it jumped)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -409,7 +411,8 @@ private struct GroupHeaderRow: View {
     /// The columns after the title, whose labels (or, collapsed, totals) the band carries.
     private var columns: [TaskColumn] {
         guard let layout, let title = layout.columns.firstIndex(of: .title) else { return [] }
-        return layout.columns[(title + 1)...].filter { !$0.title.isEmpty }
+        // Icon-only columns (the timer) stay in as blanks: they take width in the rows, so the labels line up
+        return Array(layout.columns[(title + 1)...])
     }
 
     var body: some View {
@@ -441,14 +444,16 @@ private struct GroupHeaderRow: View {
     /// Open: the column's label (it sorts when clicked). Collapsed: what the group holds there.
     @ViewBuilder
     private func cell(_ column: TaskColumn) -> some View {
-        if info.open {
+        if column.title.isEmpty {
+            Color.clear
+        } else if info.open {
             if info.sortable, let key = column.sortKey {
                 FocusColumnHeader(
                     title: column.title,
                     alignment: column.alignment,
-                    sortAscending: model.sort.key == key ? model.sort.ascending : nil
+                    sortAscending: model.groupSort(info.key).key == key ? model.groupSort(info.key).ascending : nil
                 ) {
-                    withAnimation(Focus.hoverAnimation) { model.sort = model.sort.toggled(key) }
+                    withAnimation(Focus.hoverAnimation) { model.toggleGroupSort(key, group: info.key) }
                 }
             } else {
                 FocusColumnHeader(title: column.title, alignment: column.alignment)
@@ -716,7 +721,13 @@ struct NativeTaskTable: NSViewRepresentable {
             }
             let point = table.convert(window.mouseLocationOutsideOfEventStream, from: nil)
             var target: TaskRowNSView?
-            if table.visibleRect.contains(point) {
+            // Something drawn above the table (the task side panel) swallows the pointer
+            let covered: Bool = {
+                guard let content = window.contentView else { return false }
+                let hit = content.hitTest(content.convert(window.mouseLocationOutsideOfEventStream, from: nil))
+                return hit.map { !$0.isDescendant(of: table) } ?? false
+            }()
+            if !covered, table.visibleRect.contains(point) {
                 let row = table.row(at: point)
                 if row >= 0 { target = table.view(atColumn: 0, row: row, makeIfNecessary: false) as? TaskRowNSView }
             }

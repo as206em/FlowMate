@@ -355,6 +355,7 @@ struct NextBestPanel: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .focusPanel()
+            .transaction { $0.animation = nil }
         }
     }
 
@@ -414,7 +415,9 @@ struct NextBestPanel: View {
         .padding(.horizontal, 14)
         .frame(height: 40)
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation(Focus.hoverAnimation) { model.toggleGroup(Self.groupKey) } }
+        // No animation: the table row measures the panel's height as it changes, and an
+        // animated height made it jump
+        .onTapGesture { var t = Transaction(); t.disablesAnimations = true; withTransaction(t) { model.toggleGroup(Self.groupKey) } }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityValue(open ? "Expanded" : "Collapsed")

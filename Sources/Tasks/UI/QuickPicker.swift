@@ -66,8 +66,8 @@ enum ListKey: Equatable {
 // MARK: - Anchors
 
 /// Where a picker can hang: views that registered under a key (a board card "task-<id>", the bulk
-/// bar, the task panel, a row of the milestone panel) and the native tables, which find a task's
-/// row themselves. One task can be on screen twice (a board card under the milestone panel's row):
+/// bar, the task panel, a row of a panel) and the native tables, which find a task's
+/// row themselves. One task can be on screen twice (a row under a panel):
 /// the anchor registered last wins while it's in the window, and the other takes over when it goes.
 @MainActor
 enum QuickPickerAnchors {
@@ -405,10 +405,6 @@ private struct QuickPickRow: View {
         case let .status(status): WorkflowStatusIcon(status: status, size: 14)
         case let .category(category): FocusStatusIcon(kind: category.focusKind, size: 14)
         case let .priority(priority): FocusPriorityBars(level: priority.focusLevel)
-        case let .milestone(color):
-            Image(systemName: color == nil ? "diamond" : "diamond.fill")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(color.map { Color(hex: $0) } ?? Focus.text3)
         case let .project(name, colorHex, icon): FocusProjectTile(name: name, colorHex: colorHex, size: 14, icon: icon)
         case let .symbol(name):
             Image(systemName: name).font(.system(size: 11, weight: .semibold)).foregroundColor(Focus.text3)

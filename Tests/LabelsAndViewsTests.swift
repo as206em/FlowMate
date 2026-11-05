@@ -29,7 +29,6 @@ final class LabelsAndViewsTests: XCTestCase {
         let json = """
         {"schemaVersion":10,
          "projects":[{"id":"\(pid)","name":"Atlas","colorHex":16739146,"sortIndex":0}],
-         "milestones":[],
          "tasks":[{"id":"\(tid)","projectId":"\(pid)","title":"Old task","statusId":"todo","statusCategory":"notStarted"}],
          "runningTimers":{}, "timeEntries":[]}
         """
@@ -49,7 +48,6 @@ final class LabelsAndViewsTests: XCTestCase {
         let json = """
         {"schemaVersion":11,
          "projects":[{"id":"\(pid)","name":"Atlas","colorHex":16739146,"sortIndex":0}],
-         "milestones":[],
          "tasks":[{"id":"\(tid)","projectId":"\(pid)","title":"T","statusId":"todo","statusCategory":"notStarted",
                    "labelIds":["\(lid)","\(UUID())","\(dup)", 42]}],
          "labels":[{"id":"\(lid)","name":"  bug  ","colorHex":5152245},{"id":"\(dup)","name":"BUG"},{"name":"no id"}],
@@ -173,7 +171,7 @@ final class LabelsAndViewsTests: XCTestCase {
         XCTAssertTrue(box.added?.contains("%Bug") ?? false)
 
         let model = TasksViewModel()
-        XCTAssertTrue(model.quickAdd("Review %bug", projectId: pid, milestoneId: nil, open: false, store: store))
+        XCTAssertTrue(model.quickAdd("Review %bug", projectId: pid, open: false, store: store))
         XCTAssertEqual(model.selectedTaskId.flatMap { store.task($0) }?.labelIds, [bug])
 
         // Tab completes an existing label, written as a word
@@ -346,9 +344,6 @@ final class LabelsAndViewsTests: XCTestCase {
         model.revertActiveView(store)
         XCTAssertFalse(model.isViewModified(store))
         XCTAssertEqual(model.filter.priorities, [.high])
-        model.tab = .board
-        XCTAssertTrue(model.isViewModified(store), "Board or List is part of the view")
-        model.tab = .list
         model.filter.priorities = [.high, .medium]
         model.updateActiveView(store)
         XCTAssertFalse(model.isViewModified(store))
@@ -363,7 +358,7 @@ final class LabelsAndViewsTests: XCTestCase {
     func testSavedViewRenameDuplicateReorderDeleteAndUndo() async {
         let (store, _) = await makeStore()
         let one = store.addSavedView(name: "One", scope: .all, layout: .list, options: .standard)!
-        let two = store.addSavedView(name: "Two", scope: .all, layout: .board, options: .standard)!
+        let two = store.addSavedView(name: "Two", scope: .all, layout: .list, options: .standard)!
         XCTAssertNil(store.addSavedView(name: "   ", scope: .all, layout: .list, options: .standard))
         store.renameSavedView(one, to: "First")
         store.setSavedViewIcon(one, "star")
@@ -376,7 +371,7 @@ final class LabelsAndViewsTests: XCTestCase {
 
         let (model, _) = viewModel()
         model.applySavedView(two, store: store)
-        XCTAssertEqual(model.effectiveTab, .board)
+        XCTAssertEqual(model.effectiveTab, .list)
         model.deleteSavedView(two, store: store)
         XCTAssertNil(model.activeViewId, "the scope stays, without the view")
         XCTAssertEqual(model.scope, .all)
@@ -401,7 +396,7 @@ final class LabelsAndViewsTests: XCTestCase {
         let suite = UUID().uuidString
         let (model, _) = viewModel(suite)
         model.select(.project(pid))
-        model.tab = .board
+        model.tab = .list
         model.filter.priorities = [.high]
         let id = model.saveCurrentView(name: "Hot", icon: nil, store: store)!
         model.filter.query = "draft"
@@ -410,13 +405,13 @@ final class LabelsAndViewsTests: XCTestCase {
         // The data file keeps the view
         let saved = try await repo.load()
         XCTAssertEqual(saved?.savedViews.map(\.name), ["Hot"])
-        XCTAssertEqual(saved?.savedViews.first?.layout, .board)
+        XCTAssertEqual(saved?.savedViews.first?.layout, .list)
 
         // The window comes back on it, with its filters (search text is never kept)
         let (restored, _) = viewModel(suite)
         XCTAssertEqual(restored.activeViewId, id)
         XCTAssertEqual(restored.scope, .project(pid))
-        XCTAssertEqual(restored.effectiveTab, .board)
+        XCTAssertEqual(restored.effectiveTab, .list)
         XCTAssertEqual(restored.filter.priorities, [.high])
         XCTAssertEqual(restored.filter.query, "")
         restored.dropStaleIds(store)
@@ -431,7 +426,7 @@ final class LabelsAndViewsTests: XCTestCase {
     func testSidebarOrderStepsAndFocusIncludeViews() async {
         let (store, pid) = await makeStore()
         let v1 = store.addSavedView(name: "One", scope: .all, layout: .list, options: .standard)!
-        let v2 = store.addSavedView(name: "Two", scope: .project(pid), layout: .board, options: .standard)!
+        let v2 = store.addSavedView(name: "Two", scope: .project(pid), layout: .list, options: .standard)!
         let (model, _) = viewModel()
         model.select(.all)
         XCTAssertEqual(model.sidebarScopes(store), [.today, .all, .view(v1), .view(v2), .project(pid)])
@@ -441,7 +436,7 @@ final class LabelsAndViewsTests: XCTestCase {
         XCTAssertTrue(model.stepSidebar(1, store: store))
         XCTAssertEqual(model.sidebarSelection, .view(v2))
         XCTAssertEqual(model.scope, .project(pid))
-        XCTAssertEqual(model.effectiveTab, .board)
+        XCTAssertEqual(model.effectiveTab, .list)
         XCTAssertTrue(model.stepSidebar(1, store: store))
         XCTAssertEqual(model.sidebarSelection, .project(pid))
         XCTAssertNil(model.activeViewId)

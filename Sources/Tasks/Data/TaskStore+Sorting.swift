@@ -2,7 +2,7 @@ import Foundation
 
 // Sorting for the list columns. Pure and deterministic: ties keep the manual order.
 extension TaskStore {
-    /// Sorts tasks by a column. Empty values (no due date, no milestone) always go last,
+    /// Sorts tasks by a column. Empty values (no due date) always go last,
     /// whichever direction is chosen.
     /// Done and canceled tasks always follow the open ones, each part keeping its order.
     func sorted(_ tasks: [TaskItem], by sort: TaskSort) -> [TaskItem] {
@@ -48,9 +48,6 @@ extension TaskStore {
         case .project:
             let names = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0.name) })
             return { names[$0.projectId].map(SortValue.text) }
-        case .milestone:
-            let names = Dictionary(uniqueKeysWithValues: workspace.milestones.map { ($0.id, $0.name) })
-            return { task in task.milestoneId.flatMap { names[$0] }.map(SortValue.text) }
         case .sprint:
             // Plan order: active, next, backlog, then closed
             let order: [SprintSlot] = [.active, .next, .backlog, .closed]
@@ -61,6 +58,10 @@ extension TaskStore {
             return { .number(Double($0.priority.rank)) }
         case .expected:
             return { .number(Double($0.expectedMinutes)) }
+        case .score:
+            let behind = sprintMix().behind
+            let now = Date()
+            return { task in task.isClosed ? nil : .number(Double(self.nextBestScore(task, behind: behind, now: now).score)) }
         case .created:
             return { .number($0.createdAt.timeIntervalSinceReferenceDate) }
         case .updated:

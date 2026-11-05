@@ -1,6 +1,6 @@
 import Foundation
 
-// Projects, milestones and sprints
+// Projects and sprints
 extension TaskStore {
     // MARK: - Projects
 
@@ -96,95 +96,13 @@ extension TaskStore {
         }
     }
 
-    /// Deletes the project with its milestones, tasks and their timers. Confirm in the UI first.
+    /// Deletes the project with its tasks and their timers. Confirm in the UI first.
     func deleteProject(_ id: UUID) {
         mutate("Delete project") { ws in
             let taskIds = Set(ws.tasks.filter { $0.projectId == id }.map(\.id))
             ws.projects.removeAll { $0.id == id }
-            ws.milestones.removeAll { $0.projectId == id }
             ws.tasks.removeAll { $0.projectId == id }
             ws.runningTimers = ws.runningTimers.filter { !taskIds.contains($0.key) }
-        }
-    }
-
-    // MARK: - Milestones
-
-    @discardableResult
-    func addMilestone(projectId: UUID, name: String, dueDate: Date? = nil) -> UUID? {
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, let project = project(projectId) else { return nil }
-        let used = workspace.milestones.filter { $0.projectId == projectId }.map(\.colorHex)
-        let milestone = Milestone(projectId: projectId, name: name, dueDate: dueDate,
-                                  colorHex: Milestone.nextColor(projectColor: project.colorHex, used: used))
-        mutate("Add milestone") { $0.milestones.append(milestone) }
-        return milestone.id
-    }
-
-    func renameMilestone(_ id: UUID, to name: String) {
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        mutate("Rename milestone") { ws in
-            guard let i = ws.milestones.firstIndex(where: { $0.id == id }) else { return }
-            ws.milestones[i].name = name
-        }
-    }
-
-    func setMilestoneColor(_ id: UUID, colorHex: UInt32) {
-        guard colorHex != Milestone.unsetColor else { return }
-        mutate("Change milestone color") { ws in
-            guard let i = ws.milestones.firstIndex(where: { $0.id == id }) else { return }
-            ws.milestones[i].colorHex = colorHex
-        }
-    }
-
-    func setMilestoneDue(_ id: UUID, to dueDate: Date?) {
-        mutate("Change milestone date") { ws in
-            guard let i = ws.milestones.firstIndex(where: { $0.id == id }) else { return }
-            ws.milestones[i].dueDate = dueDate
-        }
-    }
-
-    /// Markdown description
-    func setMilestoneNotes(_ id: UUID, _ notes: String) {
-        mutate("Edit description", coalesce: "milestone-notes-\(id)") { ws in
-            guard let i = ws.milestones.firstIndex(where: { $0.id == id }) else { return }
-            ws.milestones[i].notes = notes
-        }
-    }
-
-    /// Renames while typing in the milestone panel; quick edits share one undo step.
-    func setMilestoneName(_ id: UUID, _ name: String) {
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        mutate("Rename milestone", coalesce: "milestone-name-\(id)") { ws in
-            guard let i = ws.milestones.firstIndex(where: { $0.id == id }) else { return }
-            ws.milestones[i].name = name
-        }
-    }
-
-    /// "Mark complete": the milestone shows as completed. Its tasks are left as they are.
-    func completeMilestone(_ id: UUID, now: Date = Date()) {
-        mutate("Complete milestone") { ws in
-            guard let i = ws.milestones.firstIndex(where: { $0.id == id }), ws.milestones[i].completedAt == nil else { return }
-            ws.milestones[i].completedAt = now
-        }
-    }
-
-    func reopenMilestone(_ id: UUID) {
-        mutate("Reopen milestone") { ws in
-            guard let i = ws.milestones.firstIndex(where: { $0.id == id }) else { return }
-            ws.milestones[i].completedAt = nil
-        }
-    }
-
-    /// Deletes the milestone; its tasks stay and lose their milestone.
-    func deleteMilestone(_ id: UUID, now: Date = Date()) {
-        mutate("Delete milestone") { ws in
-            ws.milestones.removeAll { $0.id == id }
-            for i in ws.tasks.indices where ws.tasks[i].milestoneId == id {
-                ws.tasks[i].milestoneId = nil
-                ws.tasks[i].updatedAt = now
-            }
         }
     }
 

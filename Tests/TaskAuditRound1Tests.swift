@@ -1,7 +1,7 @@
 import XCTest
 @testable import FlowMate
 
-/// Audit round 1: the Board caption (#20) and one naming for past sprints (#38).
+/// Audit round 1: one naming for past sprints (#38).
 @MainActor
 final class TaskAuditRound1Tests: XCTestCase {
     private let t0 = Date(timeIntervalSince1970: 1_793_000_000)
@@ -12,40 +12,6 @@ final class TaskAuditRound1Tests: XCTestCase {
         let pid = store.addProject(name: "Alpha", now: t0)!
         store.clearUndoHistory()
         return (store, pid)
-    }
-
-    func testBoardCaptionCountsNextAndBacklog() async {
-        let (store, pid) = await makeStore()
-        let model = TasksViewModel()
-        model.select(.project(pid))
-        let sprint = store.sprintName()
-
-        _ = store.addTask(title: "Now", projectId: pid, sprintSlot: .active, now: t0)
-        XCTAssertEqual(model.boardCaption(store), "Showing \(sprint)")
-
-        _ = store.addTask(title: "Soon", projectId: pid, sprintSlot: .next, now: t0)
-        let later = store.addTask(title: "Later", projectId: pid, sprintSlot: .backlog, now: t0)!
-        XCTAssertEqual(model.boardCaption(store), "Showing \(sprint) · 2 more in Next and Backlog")
-        XCTAssertEqual(model.boardWaitingCount(store), 2)
-
-        // Done tasks don't wait; chips narrow the count like the board
-        store.setStatus(later, .done)
-        XCTAssertEqual(model.boardWaitingCount(store), 1)
-        model.filter.query = "nothing like it"
-        XCTAssertEqual(model.boardWaitingCount(store), 0)
-        model.filter = TaskFilter()
-
-        model.select(.all)
-        XCTAssertEqual(model.boardCaption(store), "Showing \(sprint) · 1 more in Next and Backlog")
-    }
-
-    func testBoardCaptionHidesWhileEmptyStateExplains() async {
-        let (store, pid) = await makeStore()
-        let model = TasksViewModel()
-        model.select(.project(pid))
-        _ = store.addTask(title: "Later", projectId: pid, sprintSlot: .backlog, now: t0)
-        XCTAssertEqual(model.boardEmptyReason(store), .sprintEmpty(waiting: 1))
-        XCTAssertNil(model.boardCaption(store), "the empty state already says it")
     }
 
     func testPastSprintsGroupUsesOneName() async {

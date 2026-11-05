@@ -1,13 +1,13 @@
 import Foundation
 
-// Single-key actions on the selection (Linear-style): S status, P priority, M milestone, R sprint,
+// Single-key actions on the selection (Linear-style): S status, P priority, R sprint,
 // D due date, E expected time, T time spent, L labels, ⇧M project, X done, 1–3 priority, ⌥↑/⌥↓ order.
 // The pickers' options and what choosing one does live here, so they're testable without views;
 // QuickPicker.swift draws them anchored to the row, card, bulk bar or task panel.
 
 /// What a single-key picker edits.
 enum TaskQuickAction: String, CaseIterable, Identifiable, Sendable {
-    case status, priority, milestone, sprint, due, expected, timeSpent, labels, project
+    case status, priority, sprint, due, expected, timeSpent, labels, project
 
     var id: String { rawValue }
 
@@ -18,7 +18,6 @@ enum TaskQuickAction: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .status: return "Status"
         case .priority: return "Priority"
-        case .milestone: return "Milestone"
         case .sprint: return "Sprint"
         case .due: return "Due date"
         case .expected: return "Expected time"
@@ -33,7 +32,6 @@ enum TaskQuickAction: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .status: return ["S"]
         case .priority: return ["P"]
-        case .milestone: return ["M"]
         case .sprint: return ["R"]
         case .due: return ["D"]
         case .expected: return ["E"]
@@ -50,7 +48,6 @@ enum TaskQuickAction: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .status: return "Change status…"
         case .priority: return "Set priority…"
-        case .milestone: return "Milestone, or a new one…"
         case .sprint: return "Move to sprint…"
         case .due: return "fri, nov 18, tomorrow, 3d…"
         case .expected: return "1h 30m, 45m, 2h…"
@@ -92,8 +89,6 @@ enum QuickPickValue: Equatable {
     /// Tasks of several workflows: each moves to the first status of the category in its project
     case category(StatusCategory)
     case priority(TaskPriority)
-    case milestone(UUID?)
-    case newMilestone(String)
     case sprint(SprintChoice)
     case due(Date?)
     case expected(Int)
@@ -112,7 +107,6 @@ struct QuickPickOption: Identifiable, Equatable {
         case status(WorkflowStatus)
         case category(StatusCategory)
         case priority(TaskPriority)
-        case milestone(UInt32?)
         case project(name: String, colorHex: UInt32, icon: ProjectIcon?)
         case symbol(String)
         case label(UInt32)
@@ -137,7 +131,7 @@ extension TasksViewModel {
     // MARK: - Targets
 
     /// The tasks a single-key action edits: the open task, else the selection (one or many).
-    /// None while a project or milestone panel is open.
+    /// None while a project panel is open.
     func keyboardTargets(_ store: TaskStore) -> [UUID] {
         guard openDetail == nil else { return [] }
         if let open = openTaskId, store.task(open) != nil { return [open] }
@@ -182,7 +176,7 @@ extension TasksViewModel {
     // MARK: - Options
 
     /// The picker's rows for these tasks, filtered by the typed text (fuzzy), with a row read from
-    /// the text itself first where the picker takes typed values (dates, durations, a new milestone).
+    /// the text itself first where the picker takes typed values (dates, durations).
     func quickPickOptions(_ action: TaskQuickAction, ids: [UUID], query: String, store: TaskStore,
                           now: Date = Date()) -> [QuickPickOption] {
         let tasks = store.existing(ids).compactMap { store.task($0) }
@@ -229,19 +223,6 @@ extension TasksViewModel {
                                 keywords: ["\(index + 1)", "!\(priority.rawValue)"],
                                 isCurrent: all({ $0.priority }, equal: priority), icon: .priority(priority), value: .priority(priority))
             }
-        case .milestone:
-            var rows = [QuickPickOption(id: "milestone-none", title: "No milestone", keywords: ["none", "clear"],
-                                        isCurrent: all({ $0.milestoneId }, equal: nil), icon: .milestone(nil), value: .milestone(nil))]
-            if let commonProject {
-                let current = Set(tasks.compactMap(\.milestoneId))
-                rows += store.milestones(of: commonProject).filter { !$0.isCompleted || current.contains($0.id) }.map { milestone in
-                    QuickPickOption(id: "milestone-\(milestone.id)", title: milestone.name,
-                                    detail: milestone.dueDate.map { SprintState.shortDate($0) } ?? "",
-                                    isCurrent: all({ $0.milestoneId }, equal: milestone.id),
-                                    icon: .milestone(milestone.colorHex), value: .milestone(milestone.id))
-                }
-            }
-            return rows
         case .sprint:
             return store.sprintChoices().map { choice in
                 let words: [String]
@@ -296,7 +277,6 @@ extension TasksViewModel {
     }
 
     /// A row read from the typed text: "fri" → Fri, Nov 6; "90m" → 1h 30m; "+15m" → add 15m;
-    /// a milestone name that doesn't exist → New milestone “Beta”.
     private static func typedOptions(_ action: TaskQuickAction, tasks: [TaskItem], query: String, store: TaskStore,
                                      now: Date) -> [QuickPickOption] {
         let text = query.trimmingCharacters(in: .whitespaces)
@@ -326,12 +306,6 @@ extension TasksViewModel {
             }
             return [QuickPickOption(id: "typed-spent", title: "Set to " + TaskDurationParser.format(seconds: seconds),
                                     detail: "time spent", isTyped: true, icon: .symbol("keyboard"), value: .setSpent(seconds))]
-        case .milestone:
-            guard let projectId = store.commonProjectId(tasks.map(\.id)),
-                  !store.milestones(of: projectId).contains(where: { $0.name.compare(text, options: .caseInsensitive) == .orderedSame })
-            else { return [] }
-            return [QuickPickOption(id: "typed-milestone", title: "New milestone “\(text)”", isTyped: true,
-                                    icon: .symbol("plus"), value: .newMilestone(text))]
         case .priority:
             // "1", "2", "3" pick the level directly
             guard let level = Int(text), let priority = TaskPriority.level(level) else { return [] }
@@ -363,20 +337,6 @@ extension TasksViewModel {
         case let .priority(priority):
             edit(n == 1 ? "Priority set to \(priority.title.lowercased())" : "\(subject) set to \(priority.title.lowercased()) priority",
                  store: store) { store.setPriority(ids, priority) }
-        case let .milestone(id):
-            let name = id.flatMap { store.milestone($0)?.name }
-            edit(name.map { "\(subject) added to \($0)" } ?? "Milestone cleared on \(TaskStore.taskCount(n))", store: store) {
-                store.setMilestone(ids, id)
-            }
-        case let .newMilestone(name):
-            guard let projectId = store.commonProjectId(ids) else { return }
-            edit("\(subject) added to new milestone \(name)", store: store) {
-                store.undoGroup("Add milestone") {
-                    if let milestone = store.addMilestone(projectId: projectId, name: name) {
-                        store.setMilestone(ids, milestone)
-                    }
-                }
-            }
         case let .sprint(choice):
             let title = store.sprintTitle(choice)
             edit("\(subject) moved to \(title)", store: store) { store.setSprint(ids, choice) }
@@ -441,23 +401,21 @@ extension TasksViewModel {
 
     // MARK: - ⌥↑ / ⌥↓
 
-    /// The groups whose order ⌥↑/⌥↓ change, as shown: List groups and Board columns (manual sort
+    /// The groups whose order ⌥↑/⌥↓ change, as shown: List groups (manual sort
     /// only), the Sprints groups, and Today's My focus. nil when the view has no manual order.
     func reorderableGroups(_ store: TaskStore, now: Date = Date()) -> (groups: [[UUID]], focus: Bool)? {
         if scope.isToday {
-            guard !isCollapsed(Self.todayFocusKey) else { return nil }
+            guard !isCollapsed(Self.todayKey) else { return nil }
             return ([store.todayPlan(now: now).focus.map(\.id)], true)
         }
         switch effectiveTab {
         case .list:
-            guard sort.isManual else { return nil }
-            return (listGroups(store, now: now).filter { !isCollapsed($0.id) }.map { $0.tasks.map(\.id) }, false)
-        case .board:
-            guard sort.isManual else { return nil }
-            return (boardColumns(store).map { boardTasks(store, column: $0, now: now).map(\.id) }, false)
+            let groups = listGroups(store, now: now).filter { !isCollapsed($0.id) && groupSort($0.id).isManual }
+            guard !groups.isEmpty else { return nil }
+            return (groups.map { $0.tasks.map(\.id) }, false)
         case .sprints:
             return (sprintGroupTasks(store).map { $0.map(\.id) }, false)
-        case .milestones, .overview:
+        case .overview:
             return nil
         }
     }
@@ -469,7 +427,7 @@ extension TasksViewModel {
         let ids = Set(keyboardTargets(store))
         guard let focus = selectedTaskId ?? ids.first, !ids.isEmpty else { return false }
         guard let reorderable = reorderableGroups(store, now: now) else {
-            if !scope.isToday, effectiveTab == .list || effectiveTab == .board {
+            if !scope.isToday, effectiveTab == .list {
                 show(Toast(message: "Sort by Manual to move tasks by hand"))
                 return true
             }
@@ -480,9 +438,9 @@ extension TasksViewModel {
         return true
     }
 
-    // MARK: - ⌘I and ⌘[ ⌘] on a milestone panel
+    // MARK: - ⌘I
 
-    /// ⌘I: opens the panel of the selected task (or, with none, of the milestone or project on
+    /// ⌘I: opens the panel of the selected task (or, with none, of the project on
     /// screen); closes the open panel.
     @discardableResult
     func togglePanel(store: TaskStore) -> Bool {
@@ -494,25 +452,11 @@ extension TasksViewModel {
             openTask(id)
             return true
         }
-        if let id = scope.milestoneId, store.milestone(id) != nil {
-            openMilestone(id)
-            return true
-        }
         if let id = scope.projectId, store.project(id) != nil {
             openProject(id)
             return true
         }
         return false
-    }
-
-    /// ⌘[ / ⌘] with a milestone panel open: the project's previous or next milestone.
-    @discardableResult
-    func stepMilestonePanel(_ offset: Int, store: TaskStore) -> Bool {
-        guard case let .milestone(id)? = openDetail, let milestone = store.milestone(id) else { return false }
-        let ids = store.milestones(of: milestone.projectId).map(\.id)
-        guard let index = ids.firstIndex(of: id), ids.indices.contains(index + offset) else { return false }
-        openMilestone(ids[index + offset], from: panelBack)
-        return true
     }
 
     // MARK: - ⌘0: the sidebar
@@ -535,30 +479,6 @@ extension TasksViewModel {
         }
         sidebarCursor = scopes[min(max(index + offset, 0), scopes.count - 1)]
         return true
-    }
-
-    /// → lists a project's milestones (then steps into them), ← hides them (from a milestone,
-    /// back to its project).
-    @discardableResult
-    func expandSidebarCursor(_ expand: Bool, store: TaskStore) -> Bool {
-        switch sidebarCursor {
-        case let .project(id)?:
-            if expand {
-                if isProjectExpanded(id) {
-                    return moveSidebarCursor(1, store: store)
-                }
-                expandedProjects.insert(id)
-            } else {
-                expandedProjects.remove(id)
-            }
-            return true
-        case let .milestone(_, projectId)?:
-            guard !expand else { return false }
-            sidebarCursor = .project(projectId)
-            return true
-        default:
-            return false
-        }
     }
 
     /// ↵ in the sidebar: shows the item and gives the keyboard back to the list.

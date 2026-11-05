@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// All projects › Overview: a card per active project, so a slipping one shows without opening
-/// each. Ordered by need for attention (overdue or at-risk milestone, overdue tasks, untouched for
+/// each. Ordered by need for attention (overdue tasks, untouched for
 /// a week) with a toggle for Name and Recent activity. A card opens its project; the overdue count
-/// opens its List filtered to overdue; the milestone opens its page; the ring starts the next task.
+/// opens its List filtered to overdue; the ring starts the next task.
 struct PortfolioOverview: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
@@ -37,7 +37,7 @@ struct PortfolioOverview: View {
 }
 
 /// One project on the Overview: tile and name with the play ring, the sprint line and bar, hours
-/// tracked, overdue and in-progress counts, the next milestone and the last activity.
+/// tracked, overdue and in-progress counts and the last activity.
 struct ProjectOverviewCard: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
@@ -54,9 +54,6 @@ struct ProjectOverviewCard: View {
                 .padding(.bottom, 14)
             stats
                 .padding(.bottom, 14)
-            FocusDivider()
-            milestoneBlock
-                .padding(.vertical, 12)
             FocusDivider()
             activityRow
                 .padding(.top, 10)
@@ -137,7 +134,7 @@ struct ProjectOverviewCard: View {
                     .fixedSize()
             }
             FocusProgressBar(fraction: card.sprintPlanned == 0 ? 0 : Double(card.sprintDone) / Double(card.sprintPlanned))
-                .help(!card.project.usesSprints ? "Done of every task on the board (no sprints)"
+                .help(!card.project.usesSprints ? "Done of every task (no sprints)"
                       : card.sprintDay.isOver ? "The sprint's last day has passed: complete it in Sprints" : card.sprint.dateRange)
         }
     }
@@ -183,27 +180,6 @@ struct ProjectOverviewCard: View {
         Focus.durationString(minutes: Int((seconds / 60).rounded(.down)))
     }
 
-    // MARK: - Milestone
-
-    @ViewBuilder
-    private var milestoneBlock: some View {
-        if let milestone = card.nextMilestone, let forecast = card.nextMilestoneForecast {
-            OverviewMilestoneButton(milestone: milestone, forecast: forecast, now: now) {
-                model.showMilestone(milestone.id, store: store)
-            }
-        } else {
-            HStack(spacing: 10) {
-                MilestoneIcon(completed: false, colorHex: nil)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("No open milestone").font(Focus.row).foregroundColor(Focus.text3).lineLimit(1)
-                    Text("Add one in the project's Milestones tab").font(Focus.meta).foregroundColor(Focus.text3).lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-            .frame(height: 40)
-        }
-    }
-
     // MARK: - Activity
 
     private var activityRow: some View {
@@ -222,8 +198,6 @@ struct ProjectOverviewCard: View {
     private var accessibilitySummary: String {
         var parts = [card.project.name, card.sprintLine, "\(card.sprintDone) of \(card.sprintPlanned) done",
                      "\(card.overdueCount) overdue", "\(card.inProgressCount) in progress"]
-        if let m = card.nextMilestone { parts.append("next milestone \(m.name)") }
-        if let label = card.nextMilestoneForecast?.health.label { parts.append(label) }
         parts.append(PortfolioRules.activityLabel(untouchedDays: card.untouchedDays))
         return parts.joined(separator: ", ")
     }
@@ -262,88 +236,5 @@ private struct OverdueStatButton: View {
         .focusPointerCursor()
         .help("Show the overdue tasks")
         .accessibilityLabel("\(count) overdue, show them")
-    }
-}
-
-/// The next milestone: diamond, name, its flag, then progress, due date and hours left.
-private struct OverviewMilestoneButton: View {
-    let milestone: Milestone
-    let forecast: MilestoneForecast
-    let now: Date
-    let action: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(alignment: .top, spacing: 10) {
-                MilestoneIcon(milestone)
-                    .padding(.top, 1)
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Text(milestone.name)
-                            .font(Focus.rowStrong)
-                            .foregroundColor(Focus.text)
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        dueText
-                    }
-                    HStack(spacing: 8) {
-                        FocusProgressBar(fraction: forecast.progress.fraction)
-                        Text("\(forecast.progress.done) of \(forecast.progress.total)")
-                            .font(Focus.meta.monospacedDigit())
-                            .foregroundColor(Focus.text3)
-                            .fixedSize()
-                        Text("·").font(Focus.meta).foregroundColor(Focus.text3)
-                        Text(forecast.remainingLabel)
-                            .font(Focus.meta.monospacedDigit())
-                            .foregroundColor(forecast.health == .atRisk ? Focus.risk : Focus.text3)
-                            .fixedSize()
-                    }
-                }
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: Focus.radiusTag).fill(hovering ? Focus.hover : .clear))
-            .padding(.horizontal, -6)
-            .padding(.vertical, -4)
-            .frame(minHeight: 40)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .focusPointerCursor()
-        .help(helpText)
-        .accessibilityLabel("\(milestone.name), \(forecast.progress.label), \(forecast.remainingLabel)\(forecast.health.label.map { ", " + $0 } ?? "")")
-        .accessibilityHint("Shows the milestone")
-    }
-
-    @ViewBuilder
-    private var dueText: some View {
-        let risky = forecast.health.needsAttention
-        HStack(spacing: 4) {
-            if risky {
-                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9.5, weight: .bold))
-            }
-            Text(dueLabel).font(Focus.meta).lineLimit(1)
-        }
-        .foregroundColor(risky ? Focus.risk : Focus.text3)
-        .fixedSize()
-    }
-
-    private var dueLabel: String {
-        guard let due = milestone.dueDate else { return "No date" }
-        let date = "Due " + TaskDates.dueLabel(due, now: now)
-        return forecast.health.label.map { "\($0) · \(date)" } ?? date
-    }
-
-    private var helpText: String {
-        var text = "\(milestone.name): \(forecast.progress.label), \(forecast.remainingLabel)"
-        if forecast.health == .atRisk, let available = forecast.hoursAvailable {
-            text += ". At risk: about \(Focus.durationString(minutes: Int(available * 60))) of working time before it's due"
-        } else if forecast.health == .overdue {
-            text += ". Past its due date"
-        }
-        return text
     }
 }

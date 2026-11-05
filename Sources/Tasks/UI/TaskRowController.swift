@@ -23,7 +23,7 @@ final class TaskRowController: NSObject {
             if modifiers.contains(.option) { store.startTimerExclusively(id) } else { store.toggleTimer(id) }
         case .score? where !task.isClosed:
             showEditor(.score, taskId: id, rect: rect, in: view)
-        case .milestone?, .due?, .priority?, .time?, .labels?:
+        case .due?, .priority?, .time?, .labels?:
             showEditor(column!, taskId: id, rect: rect, in: view)
         case .sprint? where task.sprintSlot != .closed:
             showEditor(.sprint, taskId: id, rect: rect, in: view)
@@ -53,7 +53,6 @@ final class TaskRowController: NSObject {
         let close: () -> Void = { [weak popover] in popover?.close() }
         let content = LiveTaskEditor(taskId: taskId) { task in
             switch column {
-            case .milestone: AnyView(TaskMilestoneEditor(task: task, close: close))
             case .sprint: AnyView(TaskSprintEditor(task: task, close: close))
             case .due: AnyView(TaskDueEditor(task: task, close: close))
             case .priority: AnyView(TaskPriorityEditor(task: task, close: close))

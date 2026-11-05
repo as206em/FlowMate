@@ -11,7 +11,7 @@ import Foundation
 // is "behind": the header turns amber and Next best gives that bucket's tasks +5.
 //
 // Score, 0–100: impact × 10 × effort factor, + 5 when the task's bucket is behind, + its nudge.
-//   impact  the task's own, else its milestone's, else its project's (5 when none), averaged with
+//   impact  the task's own, else its project's (5 when none), averaged with
 //           its type's impact when it has a type
 //   effort  of the time left (expected − tracked): 1.0 up to 30m, 0.9 up to 1h, 0.8 up to 2h,
 //           0.7 up to 4h, 0.6 beyond
@@ -133,7 +133,7 @@ struct SprintMix: Equatable, Sendable {
 /// Why a task scores what it does, for the row's explanation.
 struct NextBestScore: Equatable, Sendable {
     let impact: Int
-    /// Where the impact came from: "task", "milestone", "project" (and the type, when averaged)
+    /// Where the impact came from: "task", "project" (and the type, when averaged)
     let impactSource: String
     let typeName: String?
     let minutesLeft: Int
@@ -144,7 +144,7 @@ struct NextBestScore: Equatable, Sendable {
     let score: Int
     let pinnedTop: Bool
 
-    /// "Impact 8 (milestone + Sales) · 30m left · Reach is behind +5 · sent up +15"
+    /// "Impact 8 (project + Sales) · 30m left · Reach is behind +5 · sent up +15"
     var reason: String {
         var parts = ["Impact \(impact) (\(impactSource))", "\(Focus.durationString(minutes: minutesLeft)) left"]
         if boost > 0 { parts.append("behind on mix +\(boost)") }
@@ -268,13 +268,6 @@ extension TaskStore {
         }
     }
 
-    func setMilestoneImpact(_ milestoneId: UUID, _ impact: Int?) {
-        mutate("Change impact") { ws in
-            guard let i = ws.milestones.firstIndex(where: { $0.id == milestoneId }) else { return }
-            ws.milestones[i].impact = ImpactScale.cleaned(impact)
-        }
-    }
-
     /// The task's own impact; nil goes back to inheriting.
     func setTaskImpact(_ ids: [UUID], _ impact: Int?) {
         undoGroup("Change impact") {
@@ -282,10 +275,9 @@ extension TaskStore {
         }
     }
 
-    /// The impact a task inherits when it has none of its own: its milestone's, else its
+    /// The impact a task inherits when it has none of its own: its
     /// project's, else 5. With where it came from.
     func inheritedImpact(_ task: TaskItem) -> (value: Int, source: String) {
-        if let value = task.milestoneId.flatMap({ milestone($0)?.impact }) { return (value, "milestone") }
         if let value = project(task.projectId)?.impact { return (value, "project") }
         return (ImpactScale.neutral, "default")
     }

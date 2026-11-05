@@ -119,20 +119,15 @@ final class NextBestTests: XCTestCase {
         XCTAssertEqual(list.ranked[1].score.score, 36, "(6 + 5) / 2 = 5.5 → 6; 60 × 0.6 for 8h; Make gets no boost")
     }
 
-    func testTaskImpactOverridesMilestoneWhichOverridesProject() async {
+    func testTaskImpactOverridesProject() async {
         let (store, pid) = await makeStore()
         store.setProjectImpact(pid, 3)
-        let mid = store.addMilestone(projectId: pid, name: "Launch")!
-        store.setMilestoneImpact(mid, 8)
         let id = task(store, "Landing page", pid)
         XCTAssertEqual(store.ownOrInheritedImpact(store.task(id)!).value, 3)
-        store.setMilestone(id, mid)
-        XCTAssertEqual(store.ownOrInheritedImpact(store.task(id)!).source, "milestone")
-        XCTAssertEqual(store.ownOrInheritedImpact(store.task(id)!).value, 8)
         store.setTaskImpact([id], 10)
         XCTAssertEqual(store.ownOrInheritedImpact(store.task(id)!).value, 10)
         store.setTaskImpact([id], nil)
-        XCTAssertEqual(store.ownOrInheritedImpact(store.task(id)!).value, 8)
+        XCTAssertEqual(store.ownOrInheritedImpact(store.task(id)!).value, 3)
     }
 
     func testCandidatesLeaveOutWhatTodayAlreadyShowsAndOtherSprints() async {

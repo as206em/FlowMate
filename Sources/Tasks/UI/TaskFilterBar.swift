@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The part of the header row on List and Board after the tabs: search (⌘F), filter chips, Group (List only),
+/// The part of the header row on List after the tabs: search (⌘F), filter chips, Group (List only),
 /// Sort, Save view… and Clear. Settings are kept per project (TasksViewModel.optionsByScope).
 /// On a saved view whose filters changed: "Modified · Update view · Revert".
 struct TaskFilterBar: View {
@@ -28,14 +28,13 @@ struct TaskFilterBar: View {
 
     /// One filter dimension (a chip)
     enum Dimension: String, CaseIterable, Identifiable {
-        case status, priority, milestone, sprint, due, label, project
+        case status, priority, sprint, due, label, project
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .status: return "Status"
             case .priority: return "Priority"
-            case .milestone: return "Milestone"
             case .sprint: return "Sprint"
             case .due: return "Due"
             case .label: return "Label"
@@ -81,7 +80,6 @@ struct TaskFilterBar: View {
             if model.effectiveTab == .list {
                 groupButton
             }
-            sortButton
             if model.activeViewId != nil {
                 SavedViewModifiedControls()
             } else {
@@ -115,15 +113,13 @@ struct TaskFilterBar: View {
 
     // MARK: - Chips
 
-    /// Dimensions offered here: Sprint isn't on Board (it shows the active sprint) nor in a project
-    /// without sprints, Project only in All projects, Milestone not on a milestone's page.
+    /// Dimensions offered here: Sprint isn't offered in a project
+    /// without sprints, Project only in All projects.
     private var dimensions: [Dimension] {
         Dimension.allCases.filter { dimension in
             switch dimension {
-            case .sprint: return model.effectiveTab != .board && model.scopeUsesSprints
+            case .sprint: return model.scopeUsesSprints
             case .project: return model.scope.projectId == nil && store.projects.count > 1
-            // A milestone's page shows only its tasks
-            case .milestone: return !model.scope.isMilestone
             case .label: return !store.workspace.labels.isEmpty || !model.filter.labels.isEmpty
             default: return true
             }
@@ -139,7 +135,6 @@ struct TaskFilterBar: View {
         switch dimension {
         case .status: return !f.statuses.isEmpty || !f.categories.isEmpty
         case .priority: return !f.priorities.isEmpty
-        case .milestone: return !f.milestones.isEmpty
         case .sprint: return !f.sprintSlots.isEmpty
         case .due: return !f.due.isEmpty
         case .label: return !f.labels.isEmpty
@@ -153,7 +148,6 @@ struct TaskFilterBar: View {
             model.filter.statuses = []
             model.filter.categories = []
         case .priority: model.filter.priorities = []
-        case .milestone: model.filter.milestones = []
         case .sprint: model.filter.sprintSlots = []
         case .due: model.filter.due = []
         case .label: model.filter.labels = []
@@ -175,8 +169,6 @@ struct TaskFilterBar: View {
             }
             names = StatusCategory.ordered.filter(f.categories.contains).map(\.title) + known + Set(others).sorted()
         case .priority: names = TaskPriority.ordered.filter(f.priorities.contains).map(\.title)
-        case .milestone:
-            names = f.milestones.map { id in id.flatMap { store.milestone($0)?.name } ?? (id == nil ? "None" : "Deleted") }.sorted()
         case .sprint: names = Self.sprintChoices.filter { f.sprintSlots.contains($0.slot) }.map(\.title)
         case .due: names = TaskDueFilter.allCases.filter(f.due.contains).map(\.title)
         case .label: names = store.labels.filter { f.labels.contains($0.id) }.map(\.name)
@@ -240,10 +232,7 @@ struct TaskFilterBar: View {
         var filter = model.filter
         filter.due = [.overdue]
         var tasks = store.tasks(in: model.scope)
-        if model.effectiveTab == .board {
-            filter.sprintSlots = []
-            tasks = store.tasks(in: model.scope).filter { $0.sprintSlot == .active }
-        } else if !filter.sprintSlots.contains(.closed) {
+        if !filter.sprintSlots.contains(.closed) {
             tasks.removeAll { $0.sprintSlot == .closed }
         }
         return store.filtered(tasks, by: filter).count
@@ -262,7 +251,7 @@ struct TaskFilterBar: View {
                 }
             }
         }
-        .help("Filter by status, priority, milestone, sprint, due date or label")
+        .help("Filter by status, priority, sprint, due date or label")
     }
 
     private func binding(for menu: Menu) -> Binding<Bool> {
@@ -302,21 +291,6 @@ struct TaskFilterBar: View {
                 toggle(model.filter.priorities.contains(priority)) { model.filter.priorities.formSymmetricDifference([priority]) } label: {
                     FocusPriorityBars(level: priority.focusLevel)
                     Text(priority.title)
-                }
-            }
-        case .milestone:
-            toggle(model.filter.milestones.contains(nil)) { model.filter.milestones.formSymmetricDifference([nil]) } label: {
-                Text("No milestone").foregroundColor(Focus.text2)
-            }
-            ForEach(store.milestones(in: model.scope)) { milestone in
-                toggle(model.filter.milestones.contains(milestone.id)) {
-                    model.filter.milestones.formSymmetricDifference([milestone.id])
-                } label: {
-                    if model.scope.projectId == nil, let project = store.project(milestone.projectId) {
-                        FocusProjectTile(project: project, size: 14)
-                    }
-                    Image(systemName: "diamond.fill").font(.system(size: 9)).foregroundColor(Color(hex: milestone.colorHex))
-                    Text(milestone.name).lineLimit(1)
                 }
             }
         case .sprint:
@@ -431,7 +405,7 @@ struct TaskFilterBar: View {
                 }
             }
         }
-        .help(model.effectiveTab == .board ? "Sort the cards in each column" : "Sort the rows in each group")
+        .help("Sort the rows in each group")
     }
 
     /// "Soonest first", "High to low", "Newest first", "A to Z"

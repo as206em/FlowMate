@@ -3,7 +3,7 @@ import Combine
 import Foundation
 import UserNotifications
 
-// Task notifications: the morning summary, due and milestone reminders, and the long-run and
+// Task notifications: the morning summary, due reminders, and the long-run and
 // sleep prompts in Notification Center. NotificationPlanner decides what should be there; this
 // service keeps Notification Center in step with it (debounced after every change, at midnight
 // and on wake) and runs the notifications' buttons.
@@ -298,9 +298,6 @@ final class TaskNotifications: ObservableObject {
             TasksWindow.show(store: store)
         case let .task(id):
             TasksWindow.show(store: store, openTask: id)
-        case let .milestone(id):
-            model.showMilestone(id, store: store)
-            TasksWindow.show(store: store)
         }
     }
 }

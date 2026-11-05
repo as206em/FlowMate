@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The main FlowMate window (sidebar, board, list, sprints, milestones).
+/// The main FlowMate window (sidebar, list, sprints).
 /// A normal resizable window; the app shows a Dock icon while it's open.
 @MainActor
 enum TasksWindow {
@@ -63,6 +63,22 @@ enum TasksWindow {
     }
 
     private final class WindowDelegate: NSObject, NSWindowDelegate {
+        /// AppKit hands a window's first text field the cursor when it becomes key: that was the
+        /// sidebar's New project field, every time. Take it back unless something asked for it.
+        func windowDidBecomeKey(_ notification: Notification) {
+            guard let window = notification.object as? NSWindow else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    let model = TasksWindow.viewModel
+                    guard model.focusRequest == nil, model.activeComposer == nil,
+                          let editor = window.firstResponder as? NSTextView, editor.isFieldEditor else { return }
+                    // Only the sidebar's field (the left 260pt), never the search or a composer
+                    let frame = editor.convert(editor.bounds, to: nil)
+                    if frame.maxX <= 260 { window.makeFirstResponder(nil) }
+                }
+            }
+        }
+
         func windowWillClose(_ notification: Notification) {
             // Back to a menu bar only app once the main window is gone
             MainActor.assumeIsolated {

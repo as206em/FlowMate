@@ -12,13 +12,11 @@ import Foundation
 enum NotificationTarget: Equatable, Sendable {
     case today
     case task(UUID)
-    case milestone(UUID)
 
     var stringValue: String {
         switch self {
         case .today: return "today"
         case let .task(id): return "task:\(id.uuidString)"
-        case let .milestone(id): return "milestone:\(id.uuidString)"
         }
     }
 
@@ -28,7 +26,6 @@ enum NotificationTarget: Equatable, Sendable {
         guard parts.count == 2, let id = UUID(uuidString: parts[1]) else { return nil }
         switch parts[0] {
         case "task": self = .task(id)
-        case "milestone": self = .milestone(id)
         default: return nil
         }
     }
@@ -37,14 +34,14 @@ enum NotificationTarget: Equatable, Sendable {
 /// One notification FlowMate wants in Notification Center.
 struct PlannedNotification: Equatable, Sendable {
     enum Kind: String, Sendable {
-        case morning, due, milestone, longRun, away
+        case morning, due, longRun, away
 
         /// The actions offered with it (registered as UNNotificationCategory)
         var categoryId: String {
             switch self {
             case .longRun: return NotificationPlanner.longRunCategory
             case .away: return NotificationPlanner.awayCategory
-            case .morning, .due, .milestone: return NotificationPlanner.plainCategory
+            case .morning, .due: return NotificationPlanner.plainCategory
             }
         }
 
@@ -87,15 +84,6 @@ struct NotificationPlanInput: Equatable, Sendable {
         let dueDate: Date
     }
 
-    struct DueMilestone: Equatable, Sendable {
-        let id: UUID
-        let name: String
-        let projectName: String
-        let dueDate: Date
-        let done: Int
-        let total: Int
-    }
-
     struct RunningTimer: Equatable, Sendable {
         let taskId: UUID
         let title: String
@@ -112,8 +100,6 @@ struct NotificationPlanInput: Equatable, Sendable {
 
     /// Open tasks with a due date (archived projects left out)
     var dueTasks: [DueTask] = []
-    /// Open milestones with a due date
-    var milestones: [DueMilestone] = []
     var running: [RunningTimer] = []
     /// "Still working?" interval; nil when the prompt is off
     var longRunThreshold: TimeInterval?
@@ -131,12 +117,8 @@ enum NotificationPlanner {
     /// Days ahead the morning summary and due reminders are planned (today and tomorrow; the
     /// plan is redone every day and after every change)
     static let dayHorizon = 2
-    /// Milestone reminders this far ahead
-    static let milestoneHorizonDays = 30
     /// How many tasks get their own due reminder on one day; the rest share one
     static let dueReminderLimit = 4
-    /// Milestone reminders come this many days before the due date
-    static let milestoneLeadDays = 2
 
     static func plan(_ input: NotificationPlanInput, settings: NotificationSettings, now: Date,
                      calendar: Calendar = .current) -> [PlannedNotification] {
@@ -178,21 +160,6 @@ enum NotificationPlanner {
                         fireDate: fire, target: .today
                     ))
                 }
-            }
-        }
-
-        if settings.milestoneReminders, let horizon = calendar.date(byAdding: .day, value: milestoneHorizonDays, to: today) {
-            for milestone in input.milestones where milestone.total == 0 || milestone.done < milestone.total {
-                let dueDay = calendar.startOfDay(for: milestone.dueDate)
-                guard let remindDay = calendar.date(byAdding: .day, value: -milestoneLeadDays, to: dueDay) else { continue }
-                let fire = morning(of: remindDay)
-                guard fire > now, remindDay <= horizon else { continue }
-                let progress = milestone.total == 0 ? "No tasks yet" : "\(milestone.done) of \(milestone.total) done"
-                result.append(PlannedNotification(
-                    id: idPrefix + "milestone-\(milestone.id.uuidString)-\(dayKey(dueDay, calendar: calendar))",
-                    kind: .milestone, title: "\(milestone.name) is due in \(milestoneLeadDays) days",
-                    body: "\(progress) · \(milestone.projectName)", fireDate: fire, target: .milestone(milestone.id)
-                ))
             }
         }
 
@@ -294,12 +261,6 @@ extension TaskStore {
         input.dueTasks = workspace.tasks.compactMap { task in
             guard !task.isClosed, !archived.contains(task.projectId), let due = task.dueDate else { return nil }
             return .init(id: task.id, title: task.title, projectName: names[task.projectId] ?? "", dueDate: due)
-        }
-        input.milestones = workspace.milestones.compactMap { milestone in
-            guard !milestone.isCompleted, !archived.contains(milestone.projectId), let due = milestone.dueDate else { return nil }
-            let progress = milestoneProgress(milestone.id)
-            return .init(id: milestone.id, name: milestone.name, projectName: names[milestone.projectId] ?? "",
-                         dueDate: due, done: progress.done, total: progress.total)
         }
         input.running = runningTasks.compactMap { task in
             guard let started = startedAt(task.id) else { return nil }

@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Notifications settings: apply right away
 
-/// Settings › Notifications: the morning summary, due and milestone reminders, and the timer
+/// Settings › Notifications: the morning summary, due reminders, and the timer
 /// prompts in Notification Center. Turning one on asks macOS for permission the first time; when
 /// notifications are off for FlowMate in System Settings, a banner says so and opens it.
 struct NotificationsSettingsView: View {
@@ -22,14 +22,14 @@ struct NotificationsSettingsView: View {
 
             FocusSection(
                 title: "Today",
-                subtitle: "Click a notification to open Today, the task or the milestone."
+                subtitle: "Click a notification to open Today or the task."
             ) {
                 VStack(alignment: .leading, spacing: 14) {
                     toggle("Morning summary", hint: "“3 due today, 1 overdue”. Not sent on days with nothing due.",
                            isOn: settings.morningSummary) { value in update { $0.morningSummary = value } }
                     toggle("Due today reminders", hint: "One per task due that day, at the same time.",
                            isOn: settings.dueReminders) { value in update { $0.dueReminders = value } }
-                    FocusLabeled(label: "Send them at", hint: "The morning summary, the due reminders and the milestone reminders arrive then.") {
+                    FocusLabeled(label: "Send them at", hint: "The morning summary, and the due reminders arrive then.") {
                         FocusTabs(
                             options: NotificationSettings.morningChoices.map { (value: $0, label: NotificationSettings.timeLabel($0)) },
                             selection: Binding(
@@ -39,9 +39,7 @@ struct NotificationsSettingsView: View {
                         )
                         .fixedSize()
                     }
-                    .opacity(settings.morningSummary || settings.dueReminders || settings.milestoneReminders ? 1 : 0.55)
-                    toggle("Milestone due in 2 days", hint: "“Marketing is due in 2 days · 4 of 9 done”.",
-                           isOn: settings.milestoneReminders) { value in update { $0.milestoneReminders = value } }
+                    .opacity(settings.morningSummary || settings.dueReminders ? 1 : 0.55)
                 }
             }
 
@@ -119,7 +117,7 @@ struct NotificationsSettingsView: View {
         appState.updateNotificationSettings(change)
         let after = appState.notificationSettings
         let turnedOn = (after.morningSummary && !before.morningSummary) || (after.dueReminders && !before.dueReminders)
-            || (after.milestoneReminders && !before.milestoneReminders) || (after.longRunAlerts && !before.longRunAlerts)
+            || (after.longRunAlerts && !before.longRunAlerts)
             || (after.sleepAlerts && !before.sleepAlerts)
         if turnedOn { Task { await notifications.requestAuthorizationIfNeeded() } }
     }

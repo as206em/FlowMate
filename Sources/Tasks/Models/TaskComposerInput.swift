@@ -7,7 +7,6 @@ import Foundation
 //
 //   2h  90m  1h30m  1.5h  ~45m   expected time
 //   #now #next #backlog          sprint (#active, #sprint, #current and #later also work)
-//   @beta  @"beta launch"        milestone (matched by name in the project; _ stands for a space)
 //   !high !med !low  !1 !2 !3    priority
 //   due:fri  today  tomorrow     due date (due: takes anything TaskDateParser reads)
 //   +atlas  +"side project"      project
@@ -27,7 +26,6 @@ struct ComposerDraft: Equatable {
     /// The sprint picked by the group, a #word or the chip; nil uses the project's default
     /// (Project.newTaskSlot)
     var slot: SprintSlot?
-    var milestoneId: UUID?
     var priority: TaskPriority?
     var dueDate: Date?
     var expectedMinutes: Int?
@@ -44,17 +42,14 @@ struct ComposerDraft: Equatable {
     var typeId: UUID?
 
     /// Fills in what the composer's group and the scope give a new task: the group's value (its
-    /// status, sprint, milestone, priority or project) and, on a milestone's page, that milestone.
+    /// status, sprint, priority or project).
     mutating func apply(preset: TaskGroupValue?, in scope: TaskScope) {
-        if let milestoneId = scope.milestoneId, projectId == nil || projectId == scope.projectId {
-            self.milestoneId = milestoneId
-        }
         if scope.isToday { pinToday = true }
         switch preset {
         case let .status(status)?: self.status = status
         case let .category(category)?: self.category = category
         case let .sprint(slot)?: if slot != .closed { self.slot = slot }
-        case let .milestone(id)?: milestoneId = id
+        case .ungrouped?: break
         case let .priority(priority)?: self.priority = priority
         case let .project(id)?: projectId = id
         case let .label(id?)?: if !labelIds.contains(id) { labelIds.append(id) }
@@ -81,7 +76,7 @@ struct ComposerDraft: Equatable {
 
     /// Anything besides the defaults (which keeps the composer open)
     var hasValues: Bool {
-        slot != nil || milestoneId != nil || priority != nil || dueDate != nil || expectedMinutes != nil
+        slot != nil || priority != nil || dueDate != nil || expectedMinutes != nil
             || !labelIds.isEmpty || !newLabelNames.isEmpty
     }
 }
@@ -90,7 +85,6 @@ struct ComposerDraft: Equatable {
 enum ComposerToken: Equatable {
     case minutes(Int)
     case slot(SprintSlot)
-    case milestone(String)
     case priority(TaskPriority)
     case due(Date)
     case project(String)
@@ -103,7 +97,6 @@ enum ComposerToken: Equatable {
 /// A word that opens a picking menu.
 enum ComposerTrigger: Character, CaseIterable {
     case sprint = "#"
-    case milestone = "@"
     case priority = "!"
     case project = "+"
     case status = "*"
@@ -124,9 +117,6 @@ enum ComposerInput {
         switch first {
         case "#":
             return slot(String(lower.dropFirst())).map(ComposerToken.slot)
-        case "@":
-            let name = name()
-            return name.isEmpty ? nil : .milestone(name)
         case "!":
             return priority(String(lower.dropFirst())).map(ComposerToken.priority)
         case "+":
@@ -217,7 +207,7 @@ enum ComposerInput {
 
     /// Takes the finished words it recognises out of the text. A word is finished once a space
     /// follows it; with `final`, the last word counts too (on ↵). `accepts` says whether a token can
-    /// be used (a milestone or project that exists); refused words stay in the title.
+    /// be used (a project that exists); refused words stay in the title.
     static func extract(
         _ text: String,
         final: Bool = false,
@@ -263,8 +253,6 @@ enum ComposerInput {
 struct ComposerSuggestion: Identifiable, Equatable {
     enum Action: Equatable {
         case slot(SprintSlot)
-        case milestone(UUID)
-        case newMilestone(String)
         case priority(TaskPriority)
         case project(UUID)
         case status(WorkflowStatus)
@@ -303,18 +291,6 @@ extension TaskStore {
                     return ComposerSuggestion(id: "slot-\(slot)", title: sprintLabel(slot) + state,
                                               detail: words[slot] ?? "", action: .slot(slot))
                 }
-        case .milestone:
-            guard let projectId else { return [] }
-            let open = milestones(of: projectId).filter { !$0.isCompleted && matches($0.name) }
-            var rows = open.map {
-                ComposerSuggestion(id: "ms-\($0.id)", title: "◆ " + $0.name,
-                                   detail: $0.dueDate.map { SprintState.shortDate($0) } ?? "", action: .milestone($0.id))
-            }
-            let name = query.replacingOccurrences(of: "_", with: " ").trimmingCharacters(in: .whitespaces)
-            if !name.isEmpty, !open.contains(where: { $0.name.lowercased() == name.lowercased() }) {
-                rows.append(ComposerSuggestion(id: "ms-new", title: "New milestone “\(name)”", action: .newMilestone(name)))
-            }
-            return rows
         case .priority:
             return [TaskPriority.high, .medium, .low]
                 .filter { matches($0.title) || ComposerInput.priority(q) == $0 }
@@ -339,7 +315,6 @@ extension TaskStore {
         case .all:
             let all: [ComposerSuggestion] = [
                 .init(id: "all-sprint", title: "Sprint", detail: "#", action: .trigger(.sprint)),
-                .init(id: "all-milestone", title: "Milestone", detail: "@", action: .trigger(.milestone)),
                 .init(id: "all-priority", title: "Priority", detail: "!", action: .trigger(.priority)),
                 .init(id: "all-due", title: "Due date", detail: "due:fri", action: .pickDue),
                 .init(id: "all-time", title: "Expected time", detail: "2h", action: .pickTime),
@@ -356,7 +331,7 @@ extension TaskStore {
     @discardableResult
     func addTask(title: String, draft: ComposerDraft, projectId: UUID, now: Date = Date()) -> UUID? {
         undoGroup("Add task") { () -> UUID? in
-            guard let id = addTask(title: title, projectId: projectId, milestoneId: draft.milestoneId,
+            guard let id = addTask(title: title, projectId: projectId,
                                    sprintSlot: draft.slot, atTop: draft.atTop, now: now) else { return nil }
             if let priority = draft.priority { setPriority(id, priority) }
             if let due = draft.dueDate { setDueDate(id, due) }

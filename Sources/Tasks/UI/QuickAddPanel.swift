@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The floating "New task" box the global quick-add shortcut opens (Settings › General).
 /// It floats above every app without bringing FlowMate forward: type, ↵ adds (with the New task
-/// tokens !high @milestone +project #next *status due:fri ~90m; Tab completes the word being
+/// tokens !high +project #next *status due:fri ~90m; Tab completes the word being
 /// typed), ⇧↵ adds and opens the task, Esc or a click elsewhere closes.
 @MainActor
 enum QuickAddPanel {
@@ -168,7 +168,7 @@ struct QuickAddBox: View {
 
     @ViewBuilder
     private func field(_ target: Project) -> some View {
-        TextField("What needs doing?  !high  @milestone  +project  due:fri  ~1h", text: $model.text)
+        TextField("What needs doing?  !high  +project  due:fri  ~1h", text: $model.text)
             .textFieldStyle(.plain)
             .font(.system(size: 17))
             .foregroundColor(Focus.text)

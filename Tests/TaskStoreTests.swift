@@ -40,9 +40,6 @@ final class TaskStoreTests: XCTestCase {
         // Loading reconciles time with the log; give it the entry it would get
         ws.reconcileTrackedTime(now: t0)
         ws.runningTimers[ws.tasks[1].id] = t0.addingTimeInterval(0.25)
-        ws.milestones.append(Milestone(projectId: pid, name: "Undated"))
-        // Loading gives a milestone without a color one; give it the color it would get
-        ws.assignMilestoneColors()
         try await repo.save(ws)
 
         let loaded = try await repo.load()
@@ -198,7 +195,6 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(store.workspace.pastSprints.first?.startDate, start)
         XCTAssertEqual(sprint.displayGoal, SprintState.goalPlaceholder)
         XCTAssertEqual(store.sprintName(), "Sprint 2")
-        XCTAssertEqual(store.boardTasks(in: .project(pid), status: .done).count, 0)
 
         // Reopening a closed task, or starting its timer, brings it back to the backlog
         store.setStatus(doneActive, .todo)
@@ -226,8 +222,7 @@ final class TaskStoreTests: XCTestCase {
     func testDeleteProjectCascades() async {
         let (store, pid) = await makeStore()
         let keep = store.addProject(name: "Keep")!
-        let m = store.addMilestone(projectId: pid, name: "M")!
-        let a = store.addTask(title: "A", projectId: pid, milestoneId: m)!
+        let a = store.addTask(title: "A", projectId: pid)!
         let k = store.addTask(title: "K", projectId: keep)!
         store.startTimer(a)
         store.startTimer(k)
@@ -235,24 +230,9 @@ final class TaskStoreTests: XCTestCase {
         store.deleteProject(pid)
         XCTAssertNil(store.project(pid))
         XCTAssertNil(store.task(a))
-        XCTAssertNil(store.milestone(m))
         XCTAssertFalse(store.isRunning(a))
         XCTAssertTrue(store.isRunning(k))
         XCTAssertEqual(store.workspace.tasks.map(\.id), [k])
-    }
-
-    func testDeleteMilestoneClearsTasks() async {
-        let (store, pid) = await makeStore()
-        let m = store.addMilestone(projectId: pid, name: "M", dueDate: t0)!
-        let a = store.addTask(title: "A", projectId: pid, milestoneId: m)!
-        store.setStatus(a, .done)
-        store.addTask(title: "B", projectId: pid, milestoneId: m)
-        XCTAssertEqual(store.milestoneProgress(m), MilestoneProgress(done: 1, total: 2))
-
-        store.deleteMilestone(m)
-        XCTAssertNil(store.milestone(m))
-        XCTAssertNotNil(store.task(a))
-        XCTAssertTrue(store.workspace.tasks.allSatisfy { $0.milestoneId == nil })
     }
 
     // MARK: - Tasks
@@ -301,21 +281,15 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(store.task(a)?.notes, "# Title\n- [x] one\n- [ ] two")
     }
 
-    func testProjectColorsAndMilestoneTaskRules() async {
+    func testProjectColorsAndMovingTasks() async {
         let (store, pid) = await makeStore()
         XCTAssertEqual(store.project(pid)?.colorHex, Focus.projectPalette[0])
         let other = store.addProject(name: "Other")!
         XCTAssertEqual(store.project(other)?.colorHex, Focus.projectPalette[1])
 
-        let m = store.addMilestone(projectId: pid, name: "M")!
-        let a = store.addTask(title: "A", projectId: other)!
-        store.setMilestone(a, m)
-        XCTAssertNil(store.task(a)?.milestoneId, "milestone from another project is rejected")
-
-        let b = store.addTask(title: "B", projectId: pid, milestoneId: m)!
+        let b = store.addTask(title: "B", projectId: pid)!
         store.setProject(b, other)
         XCTAssertEqual(store.task(b)?.projectId, other)
-        XCTAssertNil(store.task(b)?.milestoneId)
     }
 
     func testDueHelpers() async {

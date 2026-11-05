@@ -74,7 +74,7 @@ struct TaskType: Identifiable, Codable, Equatable, Hashable, Sendable {
 }
 
 /// Impact is a whole number from 1 (least valuable) to 10 (most) wherever it is set: a project, a
-/// milestone, a type or a task.
+/// type or a task.
 enum ImpactScale {
     static let range = 1...10
     /// What a project without an impact counts as

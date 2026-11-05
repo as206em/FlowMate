@@ -40,7 +40,6 @@ struct Workspace: Codable, Equatable, Sendable {
 
     var schemaVersion: Int
     var projects: [Project]
-    var milestones: [Milestone]
     var tasks: [TaskItem]
     /// Task id -> when its current timer session started. Several can run at once.
     var runningTimers: [UUID: Date]
@@ -70,7 +69,6 @@ struct Workspace: Codable, Equatable, Sendable {
     init(
         schemaVersion: Int = Workspace.currentSchemaVersion,
         projects: [Project] = [],
-        milestones: [Milestone] = [],
         tasks: [TaskItem] = [],
         runningTimers: [UUID: Date] = [:],
         timeEntries: [TimeEntry] = [],
@@ -86,7 +84,6 @@ struct Workspace: Codable, Equatable, Sendable {
     ) {
         self.schemaVersion = schemaVersion
         self.projects = projects
-        self.milestones = milestones
         self.tasks = tasks
         self.runningTimers = runningTimers
         self.timeEntries = timeEntries
@@ -122,7 +119,7 @@ struct Workspace: Codable, Equatable, Sendable {
         // 6: projects decode the Simple workflow and tasks their old status under the same id.
         // 7: no time entries yet: reconcileTrackedTime (below) turns each task's total into one
         //    imported entry; normalizeCompletion dates closed tasks by their last update.
-        // 8: milestones decode without a color; assignMilestoneColors (below) gives each one.
+        // 8: (milestones, since removed)
         // 9: tasks decode with no focusDate (not pinned to Today); nothing to convert.
         // 10: past sprints get their numbers after the time log is reconciled (below).
         // 11: no labels or saved views yet (they decode as none); normalizeLabels drops dangling ids.
@@ -135,14 +132,7 @@ struct Workspace: Codable, Equatable, Sendable {
         ws.schemaVersion = Workspace.currentSchemaVersion
 
         let projectIds = Set(ws.projects.map(\.id))
-        ws.milestones.removeAll { !projectIds.contains($0.projectId) }
         ws.tasks.removeAll { !projectIds.contains($0.projectId) }
-        let milestoneProject = Dictionary(ws.milestones.map { ($0.id, $0.projectId) }, uniquingKeysWith: { a, _ in a })
-        for i in ws.tasks.indices {
-            if let mid = ws.tasks[i].milestoneId, milestoneProject[mid] != ws.tasks[i].projectId {
-                ws.tasks[i].milestoneId = nil
-            }
-        }
         let taskIds = Set(ws.tasks.map(\.id))
         ws.runningTimers = ws.runningTimers.filter { taskIds.contains($0.key) }
         ws.preferences.longRunKeptAt = ws.preferences.longRunKeptAt.filter { ws.runningTimers[$0.key] != nil }
@@ -150,7 +140,6 @@ struct Workspace: Codable, Equatable, Sendable {
         ws.normalizeStatuses()
         ws.normalizeCompletion()
         ws.reconcileTrackedTime(now: now)
-        ws.assignMilestoneColors()
         ws.normalizeLabels()
         ws.normalizeTypes()
         if addStats { ws.addPastSprintStats() }
@@ -221,24 +210,9 @@ struct Workspace: Codable, Equatable, Sendable {
         }
     }
 
-    /// Gives every milestone without a color one: per project, in stored order, the palette color
-    /// its milestones use least (never the project's own color while others are free).
-    mutating func assignMilestoneColors() {
-        guard milestones.contains(where: { $0.colorHex == Milestone.unsetColor }) else { return }
-        let projectColors = Dictionary(projects.map { ($0.id, $0.colorHex) }, uniquingKeysWith: { a, _ in a })
-        var used: [UUID: [UInt32]] = [:]
-        for m in milestones where m.colorHex != Milestone.unsetColor { used[m.projectId, default: []].append(m.colorHex) }
-        for i in milestones.indices where milestones[i].colorHex == Milestone.unsetColor {
-            let projectId = milestones[i].projectId
-            let hex = Milestone.nextColor(projectColor: projectColors[projectId], used: used[projectId] ?? [])
-            milestones[i].colorHex = hex
-            used[projectId, default: []].append(hex)
-        }
-    }
-
     /// Keeps labels and saved views consistent with the rest: one label per name (a duplicate's
     /// tasks move to the first), tasks only carry labels that exist (each once), and saved views
-    /// whose project or milestone is gone are dropped. Filters inside views keep only existing labels
+    /// whose project is gone are dropped. Filters inside views keep only existing labels
     /// and statuses.
     mutating func normalizeLabels() {
         if labels.isEmpty, savedViews.isEmpty, !tasks.contains(where: { !$0.labelIds.isEmpty }) { return }
@@ -266,15 +240,15 @@ struct Workspace: Codable, Equatable, Sendable {
         }
         guard !savedViews.isEmpty else { return }
         let projectIds = Set(projects.map(\.id))
-        let milestoneProjects = Dictionary(milestones.map { ($0.id, $0.projectId) }, uniquingKeysWith: { a, _ in a })
         let statusIds = Set(projects.flatMap { $0.statuses.map(\.id) })
         var viewIds = Set<UUID>()
         let views = savedViews.compactMap { view -> SavedView? in
             guard viewIds.insert(view.id).inserted else { return nil }
+            // Views of a milestone's page (milestones are gone) have nowhere to show
+            if view.scopeKey.hasPrefix("milestone-") { return nil }
             switch view.scope {
             case .today, .all: break
             case let .project(id): if !projectIds.contains(id) { return nil }
-            case let .milestone(id, projectId): if milestoneProjects[id] != projectId { return nil }
             }
             var view = view
             let labels = Set(view.options.filter.labels.map { merged[$0] ?? $0 }).intersection(valid)
@@ -310,14 +284,13 @@ struct Workspace: Codable, Equatable, Sendable {
 
     // Running timers are stored as {"<uuid>": "<date>"} so the JSON stays readable.
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, projects, milestones, tasks, runningTimers, timeEntries, preferences, sprint, pastSprints, upcomingCount, sprintScope, upcomingGoals, labels, savedViews, taskTypes
+        case schemaVersion, projects, tasks, runningTimers, timeEntries, preferences, sprint, pastSprints, upcomingCount, sprintScope, upcomingGoals, labels, savedViews, taskTypes
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = c.decode(.schemaVersion, or: 1)
         projects = c.decodeLossyArray(.projects)
-        milestones = c.decodeLossyArray(.milestones)
         tasks = c.decodeLossyArray(.tasks)
         let raw: [String: Date] = c.decode(.runningTimers, or: [:])
         runningTimers = Dictionary(raw.compactMap { key, value in UUID(uuidString: key).map { ($0, value) } },
@@ -343,7 +316,6 @@ struct Workspace: Codable, Equatable, Sendable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(schemaVersion, forKey: .schemaVersion)
         try c.encode(projects, forKey: .projects)
-        try c.encode(milestones, forKey: .milestones)
         try c.encode(tasks, forKey: .tasks)
         let raw = Dictionary(runningTimers.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { a, _ in a })
         try c.encode(raw, forKey: .runningTimers)

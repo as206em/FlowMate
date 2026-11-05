@@ -13,7 +13,6 @@ struct TaskInspector: View {
                 VStack(spacing: 6) {
                     property("Status", key: "S") { statusPicker }
                     property("Priority", key: "P, or 1–3") { priorityPicker }
-                    property("Milestone", key: "M") { milestonePicker }
                     if store.usesSprints(task.projectId) || task.sprintSlot == .closed {
                         property("Sprint", key: "R") { sprintPicker }
                     }
@@ -28,7 +27,7 @@ struct TaskInspector: View {
                         ImpactPicker(value: task.impact, unsetTitle: "Inherit · \(inherited.value) (\(inherited.source))") {
                             store.setTaskImpact([task.id], $0)
                         }
-                        .help("How valuable this task is, 1–10. Inherit uses its milestone's, else its project's. Its type's impact is averaged in for Next best.")
+                        .help("How valuable this task is, 1–10. Inherit uses its project's. Its type's impact is averaged in for Next best.")
                     }
                     property("Project") { projectPicker }
                 }
@@ -131,25 +130,14 @@ struct TaskInspector: View {
         )
     }
 
-    private var milestonePicker: some View {
-        let ids: [UUID?] = [nil] + store.milestones(of: task.projectId)
-            .filter { !$0.isCompleted || $0.id == task.milestoneId }.map(\.id)
-        return FocusPicker(
-            options: ids,
-            selection: Binding(get: { task.milestoneId }, set: { store.setMilestone(task.id, $0) }),
-            title: { id in id.flatMap { store.milestone($0)?.name } ?? "None" }
-        )
-        .accessibilityLabel("Milestone")
-    }
-
-    /// Moves the task to another project. Its milestone is cleared; the hint says so.
+    /// Moves the task to another project. 
     private var projectPicker: some View {
         FocusPicker(
             options: store.projects.map(\.id) + (store.isArchived(task.projectId) ? [task.projectId] : []),
             selection: Binding(get: { task.projectId }, set: { store.setProject(task.id, $0) }),
             title: { store.project($0)?.name ?? "" }
         )
-        .help(task.milestoneId == nil ? "Move to another project (⇧M)" : "Move to another project (⇧M). The milestone is cleared.")
+        .help("Move to another project (⇧M)")
         .accessibilityLabel("Project")
     }
 
