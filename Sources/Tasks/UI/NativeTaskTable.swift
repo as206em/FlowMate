@@ -118,6 +118,8 @@ enum TaskTableRow: Equatable, Identifiable {
     case velocity
     /// Sprints view (All projects): the sprint's progress chart
     case burnup
+    /// Today: the Next best ranking across projects
+    case nextBest
 
     var id: String {
         switch self {
@@ -130,6 +132,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case .trackedToday: return "tracked-today"
         case .velocity: return "velocity"
         case .burnup: return "burnup"
+        case .nextBest: return "next-best"
         }
     }
 
@@ -140,7 +143,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case let .task(info): return info.group
         case let .empty(group, _): return group
         case let .composer(group, _, _, _): return group
-        case .spacer, .sectionTitle, .trackedToday, .velocity, .burnup: return nil
+        case .spacer, .sectionTitle, .trackedToday, .velocity, .burnup, .nextBest: return nil
         }
     }
 
@@ -164,6 +167,7 @@ enum TaskTableRow: Equatable, Identifiable {
         case .trackedToday: return 120
         case .velocity: return 200
         case .burnup: return 240
+        case .nextBest: return 320
         }
     }
 }
@@ -185,6 +189,10 @@ struct TaskTableBuilder {
 
     mutating func velocity() {
         rows.append(.velocity)
+    }
+
+    mutating func nextBest() {
+        rows.append(.nextBest)
     }
 
     mutating func spacer(_ id: String, _ height: CGFloat) {
@@ -355,6 +363,8 @@ struct TaskTableCell: View {
             SprintVelocityPanel()
         case .burnup:
             SprintBurnupPanel()
+        case .nextBest:
+            NextBestPanel()
         }
     }
 }
@@ -473,6 +483,9 @@ private struct GroupHeaderRow: View {
                     .lineLimit(1)
                     .help(Self.help(load))
                     .accessibilityLabel(load.label + (load.level == .over ? ", over capacity" : ""))
+                if slot != .backlog {
+                    SprintMixHint(mix: store.sprintMix(scope: scope, slot: slot, ahead: ahead))
+                }
             }
         case nil:
             EmptyView()
@@ -960,7 +973,7 @@ struct NativeTaskTable: NSViewRepresentable {
                 return header(info.key)
             case let .empty(group, _), let .composer(group, _, _, _):
                 return header(group)
-            case .spacer, .sectionTitle, .trackedToday, .velocity, .burnup:
+            case .spacer, .sectionTitle, .trackedToday, .velocity, .burnup, .nextBest:
                 // Gap between groups: the group just above it
                 guard let group = rows[..<proposed].last(where: { $0.group != nil })?.group else { return nil }
                 return header(group)

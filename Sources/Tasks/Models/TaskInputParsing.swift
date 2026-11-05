@@ -268,10 +268,12 @@ struct QuickAddInput: Equatable, Sendable {
     var statusQuery: String?
     /// Every %label word, as typed (without the %)
     var labelQueries: [String] = []
+    /// The ^type word, as typed (without the ^)
+    var typeQuery: String?
 
     var hasTokens: Bool {
         priority != nil || milestoneQuery != nil || dueDate != nil || expectedMinutes != nil
-            || projectQuery != nil || slot != nil || statusQuery != nil || !labelQueries.isEmpty
+            || projectQuery != nil || slot != nil || statusQuery != nil || !labelQueries.isEmpty || typeQuery != nil
     }
 
     static func parse(_ text: String, now: Date = Date(), calendar: Calendar = .current) -> QuickAddInput {
@@ -289,6 +291,7 @@ struct QuickAddInput: Equatable, Sendable {
                 result.slotWord = word
             case let .status(name)?: result.statusQuery = name
             case let .label(name)?: result.labelQueries.append(name)
+            case let .type(name)?: result.typeQuery = name
             case nil: kept.append(word)
             }
         }

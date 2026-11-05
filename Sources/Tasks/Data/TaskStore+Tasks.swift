@@ -30,7 +30,8 @@ extension TaskStore {
                             expectedMinutes: project.newTaskExpectedMinutes,
                             createdAt: now,
                             sortIndex: atTop ? (workspace.tasks.map(\.sortIndex).min() ?? 0) - 1
-                                             : (workspace.tasks.map(\.sortIndex).max() ?? 0) + 1)
+                                             : (workspace.tasks.map(\.sortIndex).max() ?? 0) + 1,
+                            typeId: project.defaultTypeId)
         mutate("Add task") { $0.tasks.append(task) }
         return task.id
     }

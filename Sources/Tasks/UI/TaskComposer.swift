@@ -436,6 +436,8 @@ struct TaskComposer: View {
         case let .milestone(name): return store.matchMilestone(name, projectId: target.id) != nil
         case let .project(name): return store.matchProject(name) != nil
         case let .status(name): return store.matchStatus(name, projectId: (targetProject ?? target).id) != nil
+        // A ^word naming no type stays in the title
+        case let .type(name): return store.matchTaskType(name) != nil
         // A project without sprints leaves #next and the like in the title
         case .slot: return (targetProject ?? target).usesSprints
         default: return true
@@ -452,6 +454,7 @@ struct TaskComposer: View {
         case let .project(name): if let id = store.matchProject(name)?.id { setProject(id) }
         case let .status(name): draft.status = store.matchStatus(name, projectId: (targetProject ?? target).id)
         case let .label(name): draft.addLabel(named: name, existing: store.matchLabel(name))
+        case let .type(name): draft.typeId = store.matchTaskType(name)?.id
         }
     }
 

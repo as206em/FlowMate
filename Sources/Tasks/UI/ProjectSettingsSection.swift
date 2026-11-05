@@ -270,6 +270,20 @@ struct ProjectDefaultsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             FocusCaption(text: "Defaults").padding(.top, 12)
+            SidePanelProperty(label: "Impact") {
+                ImpactPicker(value: project.impact, unsetTitle: "Not set · \(ImpactScale.neutral)") {
+                    store.setProjectImpact(project.id, $0)
+                }
+                .help("How valuable this project's work is, 1–10. Its tasks inherit it in Next best, and it sets how often Keep warm reminds you of it.")
+            }
+            SidePanelProperty(label: "New task type") {
+                FocusPicker(
+                    options: [nil] + store.taskTypes.map { Optional($0.id) },
+                    selection: Binding(get: { project.defaultTypeId }, set: { store.setProjectDefaultType(project.id, $0) }),
+                    title: { id in store.taskType(id).map { "\($0.name) (\($0.bucket.title))" } ?? "None" }
+                )
+                .accessibilityLabel("Type of new tasks")
+            }
             SidePanelProperty(label: "Opens on") {
                 FocusPicker(
                     options: [nil] + ProjectView.allCases.filter { $0 != .sprints || project.usesSprints }.map { Optional($0) },

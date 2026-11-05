@@ -54,6 +54,11 @@ struct TasksRootView: View {
                 .environmentObject(store)
                 .environmentObject(model)
         }
+        .sheet(isPresented: $model.showingTypesManager) {
+            TaskTypesSheet()
+                .environmentObject(store)
+                .environmentObject(model)
+        }
         .sheet(item: $model.savingView) { request in
             SaveViewSheet(request: request)
                 .environmentObject(store)

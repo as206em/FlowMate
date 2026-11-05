@@ -112,6 +112,19 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
     /// Workspace labels (Workspace.labels), in the order they were added. The store keeps them
     /// existing and unique (Workspace.normalizeLabels).
     var labelIds: [UUID]
+    /// A workspace task type (Workspace.taskTypes): its bucket counts toward the sprint's mix and
+    /// its impact toward the Next best score. nil: untyped. The store keeps it existing.
+    var typeId: UUID?
+    /// The task's own impact (1–10), overriding its milestone's and project's; nil inherits.
+    var impact: Int?
+    /// Points added to the Next best score by Send up (+) and Send down (−). Cleared when the task
+    /// closes or the sprint completes, and by Back to normal.
+    var nudge: Int
+    /// The run of presses in a row in one direction: +n after n Send ups, −n after n Send downs.
+    /// The nth press moves 5, 10, then 15 points; the other direction takes back the last step.
+    var nudgeRun: Int
+    /// Sent to the top of Next best on this day (midnight); a pin from an earlier day has expired.
+    var topPinnedAt: Date?
 
     init(
         id: UUID = UUID(),
@@ -134,7 +147,12 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         completedAt: Date? = nil,
         focusDate: Date? = nil,
         focusIndex: Double = 0,
-        labelIds: [UUID] = []
+        labelIds: [UUID] = [],
+        typeId: UUID? = nil,
+        impact: Int? = nil,
+        nudge: Int = 0,
+        nudgeRun: Int = 0,
+        topPinnedAt: Date? = nil
     ) {
         self.id = id
         self.projectId = projectId
@@ -158,7 +176,15 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         self.focusDate = focusDate
         self.focusIndex = focusIndex
         self.labelIds = labelIds
+        self.typeId = typeId
+        self.impact = ImpactScale.cleaned(impact)
+        self.nudge = nudge
+        self.nudgeRun = nudgeRun
+        self.topPinnedAt = topPinnedAt
     }
+
+    /// Send up, Send down or Send to top changed where Next best puts it.
+    var isNudged: Bool { nudge != 0 || topPinnedAt != nil }
 
     /// Finished: done or canceled. Closed tasks have no timer, aren't overdue and collapse in List.
     var isClosed: Bool { statusCategory.isClosed }
@@ -175,6 +201,7 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         case id, projectId, milestoneId, sprintSlot, statusId, statusCategory, priority, title, notes, subtasks
         case dueDate, expectedMinutes, spentSeconds, createdAt, updatedAt, completedAt, sortIndex, closedSprintNumber
         case focusDate, focusIndex, labelIds, laterSprint
+        case typeId, impact, nudge, nudgeRun, topPinnedAt
     }
 
     private enum LegacyKeys: String, CodingKey { case status }
@@ -217,5 +244,11 @@ struct TaskItem: Identifiable, Codable, Equatable, Sendable {
         labelIds = c.decodeLossyArray(.labelIds)
         // Older files plan nothing beyond the next sprint
         laterSprint = c.decodeOptional(.laterSprint)
+        // Schema 13 and older: no type, impact or Next best nudges
+        typeId = c.decodeOptional(.typeId)
+        impact = ImpactScale.cleaned(c.decodeOptional(.impact))
+        nudge = c.decode(.nudge, or: 0)
+        nudgeRun = c.decode(.nudgeRun, or: 0)
+        topPinnedAt = c.decodeOptional(.topPinnedAt)
     }
 }

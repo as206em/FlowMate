@@ -22,6 +22,12 @@ struct TodayView: View {
         let sections = TasksViewModel.todaySections(plan)
         var builder = TaskTableBuilder()
         builder.spacer("top", 8)
+        // What to pick next across every project, when there is anything to rank
+        let rankable = !store.nextBestCandidates().isEmpty
+        if rankable {
+            builder.nextBest()
+            builder.spacer("after-next-best", 24)
+        }
         for (index, section) in sections.enumerated() {
             let focus = section.kind == .focus
             builder.group(

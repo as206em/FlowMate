@@ -78,6 +78,8 @@ final class TasksViewModel: ObservableObject {
     }
     /// The Labels sheet (add, rename, recolor, delete)
     @Published var showingLabelsManager = false
+    /// The Task types sheet (Edit types… in the type field and the sprint menu)
+    @Published var showingTypesManager = false
     /// The Save view sheet (new, or renaming one)
     @Published var savingView: SaveViewRequest?
     /// The tab on screen. Each scope remembers its own (`tabByScope`), so a project opens on its last tab.

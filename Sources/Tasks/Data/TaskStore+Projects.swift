@@ -279,6 +279,12 @@ extension TaskStore {
                     break
                 }
             }
+            // Next best nudges and pins belong to the sprint they were made in
+            for i in ws.tasks.indices where ws.tasks[i].isNudged || ws.tasks[i].nudgeRun != 0 {
+                ws.tasks[i].nudge = 0
+                ws.tasks[i].nudgeRun = 0
+                ws.tasks[i].topPinnedAt = nil
+            }
             let today = Calendar.current.startOfDay(for: now)
             // It ran until the day it was completed
             let end = max(old.startDate, today)

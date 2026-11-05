@@ -13,6 +13,7 @@ import Foundation
 //   +atlas  +"side project"      project
 //   *review  *"in review"        status (matched by name in the project's workflow)
 //   %bug  %"needs review"        label (a name that doesn't exist yet is created with the task)
+//   ^sales  ^build               task type (an existing one; anything else stays in the title)
 //   /                            a menu of all of the above
 
 /// The properties the composer has collected for the next task. nil means "not set".
@@ -39,6 +40,8 @@ struct ComposerDraft: Equatable {
     /// %words naming no label yet: made when the task is added (so a word typed and taken back
     /// leaves no label behind)
     var newLabelNames: [String] = []
+    /// A task type (a ^word); nil gives the project's default type
+    var typeId: UUID?
 
     /// Fills in what the composer's group and the scope give a new task: the group's value (its
     /// status, sprint, milestone, priority or project) and, on a milestone's page, that milestone.
@@ -93,6 +96,8 @@ enum ComposerToken: Equatable {
     case project(String)
     case status(String)
     case label(String)
+    /// `^reach`, `^sales`: a task type
+    case type(String)
 }
 
 /// A word that opens a picking menu.
@@ -137,6 +142,10 @@ enum ComposerInput {
             let name = name()
             guard let initial = name.first, initial.isLetter || initial.isNumber else { return nil }
             return .label(name)
+        case "^":
+            let name = name()
+            guard let initial = name.first, initial.isLetter else { return nil }
+            return .type(name)
         case "~":
             guard let minutes = TaskDurationParser.minutes(String(lower.dropFirst())), minutes > 0 else { return nil }
             return .minutes(minutes)
@@ -356,6 +365,7 @@ extension TaskStore {
             let made = draft.newLabelNames.compactMap { addLabel($0) }
             let labelIds = draft.labelIds.filter { label($0) != nil } + made
             if !labelIds.isEmpty { setLabels(id, labelIds) }
+            if let typeId = draft.typeId, taskType(typeId) != nil { setType([id], typeId) }
             if draft.pinToday {
                 addToToday([id], now: now)
                 // From the composer at the top (⌘N): first in My focus too

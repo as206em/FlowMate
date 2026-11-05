@@ -22,6 +22,14 @@ struct TaskInspector: View {
                         property("Today") { TaskTodayField(task: task) }
                     }
                     property("Labels", key: "L") { TaskLabelsField(task: task) }
+                    property("Type") { TaskTypeField(task: task) }
+                    property("Impact") {
+                        let inherited = store.inheritedImpact(task)
+                        ImpactPicker(value: task.impact, unsetTitle: "Inherit · \(inherited.value) (\(inherited.source))") {
+                            store.setTaskImpact([task.id], $0)
+                        }
+                        .help("How valuable this task is, 1–10. Inherit uses its milestone's, else its project's. Its type's impact is averaged in for Next best.")
+                    }
                     property("Project") { projectPicker }
                 }
                 .padding(.top, 16)
