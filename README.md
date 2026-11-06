@@ -29,6 +29,16 @@ Requires macOS 13 (Ventura) or later.
 - **API keys in the Keychain**: never written to the config file.
 - **Clean results**: reasoning blocks (`<think>…</think>`), "Here's the corrected text:" lines, and quotes or code fences the model wraps around the answer are removed.
 
+## Agent access (temporary MCP)
+
+Until there is a backend, FlowMate runs a small local MCP server so an agent (Claude Code, Claude Desktop) can manage tasks: list projects, create and edit tasks (project, priority, sprint, status, due date, labels, type, notes, subtasks, Today), complete, delete and move them up, down, to the top or bottom. It listens on `127.0.0.1` only (port 47821, or 47822 for the dev build; `FLOWMATE_MCP_PORT` changes it, `FLOWMATE_MCP=0` turns it off), calls the same code as the UI so changes appear live and undo with ⌘Z. Connect Claude Code with:
+
+```bash
+claude mcp add --transport http flowmate http://127.0.0.1:47821/mcp
+```
+
+The code is in `Sources/MCP/`; when the backend exists, swap the tool bodies in `MCPTaskTools.swift` for backend calls.
+
 ## Tasks
 
 Open the main window with **Open FlowMate** in the menu bar dropdown (`⌘O`).
