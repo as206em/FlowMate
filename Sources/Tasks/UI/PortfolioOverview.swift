@@ -1,15 +1,12 @@
 import SwiftUI
 
-/// All projects › Overview: a card per active project, so a slipping one shows without opening
-/// each. Ordered by need for attention (overdue tasks, untouched for
-/// a week) with a toggle for Name and Recent activity. A card opens its project; the overdue count
-/// opens its List filtered to overdue; the ring starts the next task.
+/// All projects › Overview: this week's Make vs Reach on top, then one row per active project with
+/// a single "Needs you" verdict (overdue, nothing planned, Reach light, untouched, or on track),
+/// its sprint progress and its plan's Make / Reach split. Rows that need you come first. A row opens
+/// its project, an overdue verdict its overdue tasks, and the ring starts the project's next task.
 struct PortfolioOverview: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
-
-    static let cardMinWidth: CGFloat = 300
-    static let spacing: CGFloat = 16
 
     var body: some View {
         // Hours tracked and "Untouched N days" move with the clock
@@ -19,222 +16,194 @@ struct PortfolioOverview: View {
     }
 
     private func content(now: Date) -> some View {
-        let cards = store.portfolio(sortedBy: model.overviewSort, now: now)
-        let summary = OverviewSummary(count: cards.count, attention: cards.filter { $0.attentionLevel > 0 }.count)
-        return VStack(alignment: .leading, spacing: 14) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.cardMinWidth), spacing: Self.spacing, alignment: .top)],
-                      alignment: .leading, spacing: Self.spacing) {
-                ForEach(cards) { card in
-                    ProjectOverviewCard(card: card, now: now)
+        let rows = store.portfolio(sortedBy: .attention, now: now).map { card in
+            (card: card, mix: store.sprintMix(scope: .project(card.project.id)))
+        }
+        let ordered = OverviewVerdict.ordered(rows.map { ($0.card, $0.mix) })
+        return VStack(alignment: .leading, spacing: 16) {
+            WeekMixCard()
+            VStack(spacing: 0) {
+                OverviewHeaderRow()
+                ForEach(Array(ordered.enumerated()), id: \.element.card.id) { index, row in
+                    if index > 0 { FocusDivider() }
+                    ProjectOverviewRow(card: row.card, mix: row.mix, verdict: row.verdict, now: now)
                 }
             }
+            .focusPanel()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // The header line reads it (TasksHeader)
-        .onAppear { model.overviewSummary = summary }
-        .onChange(of: summary) { model.overviewSummary = $0 }
     }
 }
 
-/// One project on the Overview: tile and name with the play ring, the sprint line and bar, hours
-/// tracked, overdue and in-progress counts and the last activity.
-struct ProjectOverviewCard: View {
+/// What a project needs from you, in one chip.
+struct OverviewVerdict: Equatable {
+    let text: String
+    let tone: VerdictTone
+    /// Higher comes first
+    let rank: Int
+    /// A click shows the project's overdue tasks
+    var opensOverdue = false
+
+    static func of(_ card: ProjectOverview, mix: SprintMix) -> OverviewVerdict {
+        if card.overdueCount > 0 {
+            return OverviewVerdict(text: "\(card.overdueCount) overdue", tone: .risk, rank: 4, opensOverdue: true)
+        }
+        if card.project.usesSprints, card.sprintPlanned == 0, card.openCount > 0 {
+            return OverviewVerdict(text: "Nothing planned in \(card.sprint.name)", tone: .warn, rank: 3)
+        }
+        if card.isStale, !card.isRunning {
+            return OverviewVerdict(text: PortfolioRules.activityLabel(untouchedDays: card.untouchedDays), tone: .warn, rank: 2)
+        }
+        if mix.behind == .reach {
+            return OverviewVerdict(text: "Reach is light", tone: .warn, rank: 1)
+        }
+        if card.isRunning { return OverviewVerdict(text: "Running now", tone: .live, rank: 0) }
+        return OverviewVerdict(text: "On track", tone: .good, rank: 0)
+    }
+
+    /// Verdict first (highest rank), then the attention order the cards came in.
+    static func ordered(_ rows: [(ProjectOverview, SprintMix)]) -> [(card: ProjectOverview, mix: SprintMix, verdict: OverviewVerdict)] {
+        rows.enumerated()
+            .map { (offset: $0.offset, card: $0.element.0, mix: $0.element.1, verdict: of($0.element.0, mix: $0.element.1)) }
+            .sorted { $0.verdict.rank != $1.verdict.rank ? $0.verdict.rank > $1.verdict.rank : $0.offset < $1.offset }
+            .map { (card: $0.card, mix: $0.mix, verdict: $0.verdict) }
+    }
+}
+
+private enum OverviewColumns {
+    static let name: CGFloat = 170
+    static let sprint: CGFloat = 190
+    static let mix: CGFloat = 150
+    static let ring: CGFloat = 30
+}
+
+private struct OverviewHeaderRow: View {
+    @EnvironmentObject private var store: TaskStore
+
+    var body: some View {
+        HStack(spacing: 16) {
+            FocusCaption(text: "Project").frame(width: OverviewColumns.name, alignment: .leading)
+            FocusCaption(text: "Needs you").frame(maxWidth: .infinity, alignment: .leading)
+            FocusCaption(text: store.sprint.name).frame(width: OverviewColumns.sprint, alignment: .leading)
+            FocusCaption(text: "Plan: Make · Reach").frame(width: OverviewColumns.mix, alignment: .leading)
+            Color.clear.frame(width: OverviewColumns.ring, height: 1)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 34)
+        .background(Color(hex: 0xF7F7F5))
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: Focus.radiusPanel, topTrailingRadius: Focus.radiusPanel))
+    }
+}
+
+/// One project on the Overview.
+struct ProjectOverviewRow: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
     let card: ProjectOverview
+    let mix: SprintMix
+    let verdict: OverviewVerdict
     let now: Date
 
     @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            titleRow
-                .padding(.bottom, 12)
-            sprintBlock
-                .padding(.bottom, 14)
-            stats
-                .padding(.bottom, 14)
-            FocusDivider()
-            activityRow
-                .padding(.top, 10)
+        HStack(spacing: 16) {
+            HStack(spacing: 10) {
+                FocusProjectTile(project: card.project, size: 22)
+                Text(card.project.name)
+                    .font(Focus.rowStrong)
+                    .foregroundColor(Focus.text)
+                    .lineLimit(1)
+                if card.isRunning { FocusLiveDot() }
+            }
+            .frame(width: OverviewColumns.name, alignment: .leading)
+            verdictChip
+                .frame(maxWidth: .infinity, alignment: .leading)
+            sprintCell
+                .frame(width: OverviewColumns.sprint, alignment: .leading)
+            mixCell
+                .frame(width: OverviewColumns.mix, alignment: .leading)
+            playButton
+                .frame(width: OverviewColumns.ring)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 12)
-        .padding(.bottom, 10)
-        .background(RoundedRectangle(cornerRadius: Focus.radiusCard).fill(Focus.raised))
-        .overlay(RoundedRectangle(cornerRadius: Focus.radiusCard)
-            .strokeBorder(hovering ? Focus.lineStrong : Focus.hairline, lineWidth: 1))
-        .contentShape(RoundedRectangle(cornerRadius: Focus.radiusCard))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(hovering ? Focus.hover : Color.clear)
+        .contentShape(Rectangle())
         .onTapGesture { model.select(.project(card.project.id)) }
         .onHover { hovering = $0 }
         .focusPointerCursor()
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(accessibilitySummary)
+        .accessibilityLabel("\(card.project.name), \(verdict.text)")
         .accessibilityAction(named: "Open project") { model.select(.project(card.project.id)) }
     }
 
-    // MARK: - Title
-
-    private var titleRow: some View {
-        HStack(spacing: 10) {
-            FocusProjectTile(project: card.project, size: 22)
-            Text(card.project.name)
-                .font(Focus.header)
-                .foregroundColor(Focus.text)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            if card.isRunning { FocusLiveDot() }
-            Spacer(minLength: 8)
-            playButton
+    @ViewBuilder
+    private var verdictChip: some View {
+        let chip = Text(verdict.text)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(verdict.tone.text)
+            .lineLimit(1)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(verdict.tone.fill))
+        if verdict.opensOverdue {
+            Button { model.showOverdueTasks(of: card.project.id) } label: { chip }
+                .buttonStyle(.plain)
+                .help("Show the overdue tasks")
+        } else {
+            chip
         }
+    }
+
+    private var sprintCell: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if card.project.usesSprints {
+                FocusProgressBar(fraction: card.sprintPlanned == 0 ? 0 : Double(card.sprintDone) / Double(card.sprintPlanned), height: 5)
+                Text(card.sprintPlanned == 0 ? "Nothing planned" : "\(card.sprintDone) of \(card.sprintPlanned) done")
+                    .font(Focus.meta.monospacedDigit())
+                    .foregroundColor(Focus.text3)
+                    .lineLimit(1)
+            } else {
+                Text("No sprints · \(card.openCount) open").font(Focus.meta).foregroundColor(Focus.text3).lineLimit(1)
+            }
+        }
+    }
+
+    private var mixCell: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if mix.hasTypedWork {
+                SprintMixBar(mix: mix, height: 5)
+                Text("\(Focus.durationString(minutes: mix.makeMinutes)) · \(Focus.durationString(minutes: mix.reachMinutes))")
+                    .font(Focus.meta.monospacedDigit())
+                    .foregroundColor(Focus.text3)
+                    .lineLimit(1)
+            } else {
+                Text("–").font(Focus.meta).foregroundColor(Focus.text3)
+            }
+        }
+        .help(mix.hasTypedWork ? "Planned in \(store.sprint.name): \(mix.label)" : "No typed tasks planned")
     }
 
     @ViewBuilder
     private var playButton: some View {
         if card.isRunning {
-            FocusTimerRing(progress: runningProgress, isRunning: true, size: 28, label: "\(card.project.name) timers") {
+            FocusTimerRing(progress: runningProgress, isRunning: true, size: 26, label: "\(card.project.name) timers") {
                 store.pauseTimers(projectId: card.project.id)
             }
             .help("Pause \(card.project.name)")
         } else if let id = card.nextTaskId, let task = store.task(id) {
-            FocusTimerRing(progress: store.progress(task, now: now), isRunning: false, size: 28, label: task.title) {
+            FocusTimerRing(progress: store.progress(task, now: now), isRunning: false, size: 26, label: task.title) {
                 store.startTimer(id)
                 model.show(.init(message: "Started \(task.title)", openTaskId: id))
             }
             .help("Start \(task.title)")
         } else {
-            FocusTimerRing(progress: 0, isRunning: false, size: 28, label: card.project.name) {}
-                .disabled(true)
-                .opacity(0.35)
-                .help(card.project.usesSprints ? "Nothing to start: plan a task in \(card.sprint.name)" : "Nothing to start: add a task")
+            Color.clear.frame(width: 26, height: 26)
         }
     }
 
     private var runningProgress: Double {
         store.runningTasks.first { $0.projectId == card.project.id }.map { store.progress($0, now: now) } ?? 0
-    }
-
-    // MARK: - Sprint
-
-    private var sprintBlock: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
-                Image(systemName: card.project.usesSprints ? "arrow.clockwise" : "tray.full")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundColor(Focus.text3)
-                Text(card.sprintLine)
-                    .font(Focus.meta)
-                    .foregroundColor(card.project.usesSprints && card.sprintDay.isOver ? Focus.progress : Focus.text2)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                Text(card.sprintPlanned == 0 ? "Nothing planned" : "\(card.sprintDone) of \(card.sprintPlanned) done")
-                    .font(Focus.meta.monospacedDigit())
-                    .foregroundColor(Focus.text3)
-                    .lineLimit(1)
-                    .fixedSize()
-            }
-            FocusProgressBar(fraction: card.sprintPlanned == 0 ? 0 : Double(card.sprintDone) / Double(card.sprintPlanned))
-                .help(!card.project.usesSprints ? "Done of every task (no sprints)"
-                      : card.sprintDay.isOver ? "The sprint's last day has passed: complete it in Sprints" : card.sprint.dateRange)
-        }
-    }
-
-    // MARK: - Numbers
-
-    private var stats: some View {
-        HStack(alignment: .top, spacing: 0) {
-            if card.project.usesSprints { stat(Self.hours(card.trackedInSprint), "this sprint") }
-            stat(Self.hours(card.trackedThisWeek), "this week")
-            stat(store.projectCompletion(card.project.id).percentText, "complete")
-            overdueStat
-            stat("\(card.inProgressCount)", "in progress")
-        }
-    }
-
-    private func stat(_ value: String, _ label: String, color: Color = Focus.text) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.system(size: 15, weight: .semibold).monospacedDigit())
-                .foregroundColor(color)
-                .lineLimit(1)
-            Text(label)
-                .font(Focus.meta)
-                .foregroundColor(Focus.text3)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var overdueStat: some View {
-        if card.overdueCount > 0 {
-            OverdueStatButton(count: card.overdueCount) { model.showOverdueTasks(of: card.project.id) }
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            stat("0", "overdue", color: Focus.text3)
-        }
-    }
-
-    /// "3h 10m", "45m", "0m"
-    static func hours(_ seconds: TimeInterval) -> String {
-        Focus.durationString(minutes: Int((seconds / 60).rounded(.down)))
-    }
-
-    // MARK: - Activity
-
-    private var activityRow: some View {
-        HStack(spacing: 6) {
-            Image(systemName: card.isStale ? "moon.zzz" : "clock")
-                .font(.system(size: 10.5, weight: .semibold))
-            Text(card.isRunning ? "Running now" : PortfolioRules.activityLabel(untouchedDays: card.untouchedDays))
-                .font(Focus.meta)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .foregroundColor(card.isStale && !card.isRunning ? Focus.progress : Focus.text3)
-        .help("Last change \(TaskDates.dueLabel(card.lastActivity, now: now))")
-    }
-
-    private var accessibilitySummary: String {
-        var parts = [card.project.name, card.sprintLine, "\(card.sprintDone) of \(card.sprintPlanned) done",
-                     "\(card.overdueCount) overdue", "\(card.inProgressCount) in progress"]
-        parts.append(PortfolioRules.activityLabel(untouchedDays: card.untouchedDays))
-        return parts.joined(separator: ", ")
-    }
-}
-
-/// The overdue count in `risk`; a click shows the project's overdue tasks.
-private struct OverdueStatButton: View {
-    let count: Int
-    let action: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(count)")
-                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
-                    .foregroundColor(Focus.risk)
-                HStack(spacing: 3) {
-                    Text("overdue").font(Focus.meta).foregroundColor(Focus.riskTint.text)
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundColor(Focus.risk)
-                        .opacity(hovering ? 1 : 0)
-                }
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: Focus.radiusTag).fill(hovering ? Focus.riskTint.fill : .clear))
-            .padding(.horizontal, -6)
-            .padding(.vertical, -2)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .focusPointerCursor()
-        .help("Show the overdue tasks")
-        .accessibilityLabel("\(count) overdue, show them")
     }
 }

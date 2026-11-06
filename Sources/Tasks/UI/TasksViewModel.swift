@@ -105,6 +105,8 @@ final class TasksViewModel: ObservableObject {
     @Published var showingArchived = false
     /// The "Complete sprint" dialog is open (it completes the workspace's sprint)
     @Published var completingSprint = false
+    /// Today's Start next: tasks passed over with Skip, until the app quits
+    @Published var skippedNextBest: Set<UUID> = []
     /// The keyboard selection in List and Sprints (↑/↓, ↵, Space, ⌘⌫, ⌘D): the focused task.
     /// Setting it directly selects only that task; ⌘-click and ⇧-click add to `selectedTaskIds`.
     @Published var selectedTaskId: UUID? {

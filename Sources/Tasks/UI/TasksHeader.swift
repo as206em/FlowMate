@@ -2,21 +2,16 @@ import AppKit
 import SwiftUI
 
 /// The header, two lines on every screen so they all read the same:
-///   1 (52pt)  the title (project, All projects, Today or a saved view), the numbers
-///             of the active sprint, and the Sprint menu on the right
-///   2 (42pt)  the tabs (List · Sprints), underlined, with the tools of the
-///             tab after them: search and filters, Group and Sort
+///   1 (52pt)  the title (project, All projects, Today or a saved view); on Today, the time
+///             tracked today. Sprint numbers live on the Sprints tab's sprint card, once.
+///   2 (42pt)  the tabs (Overview · List · Sprints), underlined, with the tools of the
+///             tab after them: search and filters, Group and Sort on List
 /// Today has no tabs, so it has the first line only. The New task composer lives in the groups.
 struct TasksHeader: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
 
     private var hasTabs: Bool { !model.tabs.isEmpty }
-
-    /// The active sprint's menu, where the project (or every project) plans in sprints.
-    private var showsSprint: Bool {
-        model.scopeUsesSprints && !model.scope.isToday
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,13 +46,10 @@ struct TasksHeader: View {
                     .foregroundColor(Focus.text)
                     .lineLimit(1)
             }
-            HeaderStats(scope: model.scope, showsSprint: showsSprint)
+            if model.scope.isToday { TodayTrackedStat() }
             Spacer(minLength: 12)
             if !hasTabs, let keys = model.collapsibleGroupKeys(store) {
                 CollapseAllButton(keys: keys)
-            }
-            if showsSprint {
-                SprintHeaderItems(scope: model.scope)
             }
         }
         .padding(.horizontal, 28)
@@ -90,9 +82,8 @@ struct TasksHeader: View {
         case .sprints:
             Spacer(minLength: 12)
             if let keys { CollapseAllButton(keys: keys) }
-            SprintHeaderItems(scope: model.scope, showsChip: false, showsActions: true)
         case .overview:
-            OverviewHeaderTools()
+            Spacer(minLength: 12)
         }
     }
 }
@@ -136,84 +127,25 @@ private struct CollapseAllButton: View {
     }
 }
 
-/// The numbers beside the title: how far the active sprint is, what is overdue, the time tracked
-/// in the sprint and the days left. Without sprints (and on Today) the ones that still apply.
-private struct HeaderStats: View {
+/// Today's one number beside the title: the time tracked today (it follows running timers).
+private struct TodayTrackedStat: View {
     @EnvironmentObject private var store: TaskStore
-    @EnvironmentObject private var model: TasksViewModel
-    let scope: TaskScope
-    let showsSprint: Bool
 
     var body: some View {
-        // Minutes are the finest unit shown, so a minute's tick is enough (not the second ticker)
         TimelineView(.periodic(from: Date(), by: 60)) { context in
-            let now = context.date
-            HStack(spacing: 0) {
-                if scope.isToday {
-                    let plan = store.todayPlan(now: now)
-                    stat(Focus.durationString(minutes: Int((plan.plannedSeconds / 60).rounded())), "planned")
-                    overdue(plan.overdue.count)
-                } else if model.activeView(store) == nil {
-                    if showsSprint {
-                        stat(store.sprintCompletion(scope: scope).percentText, "\(store.sprint.name) done")
-                    }
-                    overdue(store.tasks(in: scope).filter { store.isOverdue($0, now: now) }.count)
-                    if showsSprint {
-                        let tracked = Int((store.trackedInSprint(projectId: scope.projectId, now: now) / 60).rounded())
-                        stat(Focus.durationString(minutes: tracked), "tracked")
-                        let left = max(0, (Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: now),
-                                                                         to: Calendar.current.startOfDay(for: store.sprint.endDate)).day ?? 0) + 1)
-                        stat("\(left) \(left == 1 ? "day" : "days")", "left")
-                    }
-                }
+            let plan = store.todayPlan(now: context.date)
+            HStack(spacing: 6) {
+                Text(TodayFormat.duration(plan.trackedSeconds))
+                    .font(Focus.rowStrong.monospacedDigit())
+                    .foregroundColor(plan.running.isEmpty ? Focus.text : Focus.liveText)
+                Text("tracked").font(Focus.meta).foregroundColor(Focus.text3)
             }
-        }
-        .padding(.leading, 2)
-    }
-
-    @ViewBuilder
-    private func overdue(_ count: Int) -> some View {
-        if count > 0 { stat("\(count)", "overdue", tint: Focus.risk) }
-    }
-
-    private func stat(_ value: String, _ label: String, tint: Color = Focus.text) -> some View {
-        HStack(spacing: 6) {
-            Text(value).font(Focus.rowStrong.monospacedDigit()).foregroundColor(tint)
-            Text(label).font(Focus.meta).foregroundColor(Focus.text3)
-        }
-        .lineLimit(1)
-        .fixedSize()
-        .padding(.leading, 16)
-        .padding(.trailing, 2)
-        .overlay(alignment: .leading) { Rectangle().fill(Focus.hairline).frame(width: 1, height: 14) }
-        .padding(.leading, 14)
-    }
-}
-
-/// All projects › Overview: how many projects need attention, and the sort of the cards.
-private struct OverviewHeaderTools: View {
-    @EnvironmentObject private var store: TaskStore
-    @EnvironmentObject private var model: TasksViewModel
-
-    var body: some View {
-        let attention = model.overviewSummary.attention
-        Text(summary(count: model.overviewSummary.count, attention: attention))
-            .font(Focus.meta)
-            .foregroundColor(attention > 0 ? Focus.progress : Focus.text3)
             .lineLimit(1)
-        Spacer(minLength: 12)
-        Text("Sort").font(Focus.meta).foregroundColor(Focus.text3)
-        FocusTabs(options: PortfolioSort.allCases.map { (value: $0, label: $0.title) }, selection: $model.overviewSort)
             .fixedSize()
-            .accessibilityLabel("Sort projects")
-    }
-
-    private func summary(count: Int, attention: Int) -> String {
-        let projects = "\(count) \(count == 1 ? "project" : "projects")"
-        switch attention {
-        case 0: return "\(projects) · all on track"
-        case 1: return "\(projects) · 1 needs attention"
-        default: return "\(projects) · \(attention) need attention"
+            .padding(.leading, 16)
+            .overlay(alignment: .leading) { Rectangle().fill(Focus.hairline).frame(width: 1, height: 14) }
+            .padding(.leading, 14)
+            .help(plan.trackedByProject.map { "\($0.name) \(TodayFormat.duration($0.seconds))" }.joined(separator: " · "))
         }
     }
 }

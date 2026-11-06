@@ -1,17 +1,15 @@
 import SwiftUI
 
-// The Today page (TaskScope.today): what to work on today across every project.
+// The Today page (TaskScope.today): what to work on today across every project, in three blocks.
 //
-//   Running      the timers running now (Pause all)
-//   Due          open tasks due today, and overdue ones above them (Move overdue to today · Tomorrow)
-//   My focus     tasks pinned for today (⌘T, right-click › Add to Today, or ⌘N here), in your
-//                order (drag to reorder, or drag a task in from the sections above);
-//                "Planned 5h 30m" is what's left of their expected time
-//   Done today   tasks finished today
+//   This week     Make against Reach of the time tracked this week, with the Reach target; when
+//                 one side is behind it says so, and Start next leans that way (Next best's boost)
+//   Start next    the one task Next best ranks first (Skip shows the one after it)
+//   Today         one list: running, overdue, due today, pinned, then done today
 //
-// Rows are the list's rows (status circle, project, title, due, priority, expected, timer ring;
+// Rows are the list's rows (status circle, project, title, type, due, expected, timer ring;
 // click opens the panel; ↑/↓ ↵ Space work). Hovering an overdue, due or pinned row shows
-// "→ Tomorrow".
+// "→ Tomorrow". The time tracked today is in the header, once.
 
 struct TodayView: View {
     @EnvironmentObject private var store: TaskStore
@@ -21,7 +19,13 @@ struct TodayView: View {
         let plan = store.todayPlan()
         let sections = TasksViewModel.todaySections(plan)
         var builder = TaskTableBuilder()
-        builder.spacer("top", 8)
+        builder.spacer("top", 4)
+        builder.append(.weekMix)
+        builder.spacer("after-mix", 12)
+        if StartNextCard.pick(store: store, model: model) != nil {
+            builder.append(.startNext)
+            builder.spacer("after-start", 16)
+        }
         for section in sections {
             builder.group(
                 key: section.key,
@@ -36,24 +40,17 @@ struct TodayView: View {
                 open: !model.isCollapsed(section.key),
                 gap: 0,
                 actions: actions(hasOverdue: !plan.overdue.isEmpty, running: plan.running.count),
-                liveHint: .todayPlanned,
+                liveHint: nil,
                 risk: !plan.overdue.isEmpty,
                 draggable: true,
                 sortable: true,
-                display: RowDisplay.maker(store: store, model: model, today: true, scores: true)
+                display: RowDisplay.maker(store: store, model: model, today: true)
             )
-        }
-        // What to pick next across every project, after Today's own sections, when there is
-        // anything to rank. Collapses like a group (NextBestPanel.groupKey).
-        if !store.nextBestCandidates().isEmpty {
-            builder.spacer("before-next-best", 24)
-            builder.nextBest()
         }
         builder.spacer("bottom", 72)
         return TaskTable(
             showProject: true,
-            excluding: [.sprint],
-            including: [.score],
+            excluding: [.sprint, .priority, .labels],
             rows: builder.rows,
             drops: builder.drops,
             draggable: builder.draggable

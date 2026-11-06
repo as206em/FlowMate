@@ -146,6 +146,20 @@ final class PortfolioTests: XCTestCase {
         XCTAssertEqual(late.overdueCount, 2)
     }
 
+    func testOverviewVerdictSaysWhatNeedsYouFirst() async {
+        let (store, ids) = await portfolioStore()
+        let none = SprintMix(makeMinutes: 0, reachMinutes: 0, untypedMinutes: 0, targetPercent: nil)
+        let rows = ["fine", "stale", "late"].map { (store.projectOverview(ids[$0]!, now: now, calendar: calendar)!, none) }
+        let ordered = OverviewVerdict.ordered(rows)
+        XCTAssertEqual(ordered.first?.verdict.text, "2 overdue")
+        XCTAssertTrue(ordered.first?.verdict.opensOverdue == true)
+        XCTAssertEqual(ordered.map(\.card.project.id).last, ids["fine"], "the project on track comes last")
+        let light = SprintMix(makeMinutes: 600, reachMinutes: 0, untypedMinutes: 0, targetPercent: 30)
+        let fine = store.projectOverview(ids["fine"]!, now: now, calendar: calendar)!
+        XCTAssertEqual(OverviewVerdict.of(fine, mix: light).text, "Reach is light")
+        XCTAssertEqual(OverviewVerdict.of(fine, mix: none).text, "On track")
+    }
+
     // MARK: - Window
 
     func testOverviewTabPaletteAndRememberedChoices() async {
