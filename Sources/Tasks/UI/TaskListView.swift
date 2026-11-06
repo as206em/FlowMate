@@ -26,6 +26,10 @@ struct TaskListView: View {
         let showProject = model.scope.projectId == nil
         var builder = TaskTableBuilder()
         builder.spacer("top", 8)
+        if let notice = emptySprintNotice() {
+            builder.append(notice)
+            builder.spacer("after-notice", 14)
+        }
         for (index, group) in groups.enumerated() {
             builder.group(
                 key: group.id,
@@ -45,14 +49,13 @@ struct TaskListView: View {
                 open: !model.isCollapsed(group.id),
                 gap: index == 0 ? 0 : 24,
                 sortable: true,
-                display: RowDisplay.maker(store: store, model: model, scores: true)
+                display: RowDisplay.maker(store: store, model: model)
             )
         }
         builder.spacer("bottom", 72)
         return TaskTable(
             showProject: showProject,
             excluding: excluded(groups),
-            including: [.score],
             caption: hidden > 0 ? "\(hidden) \(hidden == 1 ? "task" : "tasks") from past sprints hidden. Filter by Sprint › Past sprints to show them." : "",
             rows: builder.rows,
             drops: builder.drops
@@ -70,10 +73,22 @@ struct TaskListView: View {
         case .label, .none: columns = []
         case .status: columns = []
         }
-        // The Labels column always shows: click an empty one to add a label
-        // A project without sprints has no sprint to show
-        if !model.scopeUsesSprints { columns.insert(.sprint) }
+        // Sprint planning lives on the Sprints tab; Labels show once something has one
+        if model.grouping != .sprint { columns.insert(.sprint) }
+        if !groups.contains(where: { $0.tasks.contains { !$0.labelIds.isEmpty } }) { columns.insert(.labels) }
         return columns
+    }
+
+    /// A project whose sprint has nothing of it while its backlog has work: say so, with a way there.
+    private func emptySprintNotice() -> TaskTableRow? {
+        guard let projectId = model.scope.projectId, model.scopeUsesSprints, model.filter.isEmpty,
+              let project = store.project(projectId) else { return nil }
+        let active = store.sprintTasks(slot: .active, in: model.scope).filter { !$0.isClosed }
+        let waiting = store.sprintTasks(slot: .backlog, in: model.scope).filter { !$0.isClosed }.count
+        guard active.isEmpty, waiting > 0 else { return nil }
+        return .notice(id: "empty-sprint",
+                       text: "Nothing from \(project.name) is in \(store.sprint.name). \(TaskStore.taskCount(waiting)) \(waiting == 1 ? "waits" : "wait") in the backlog.",
+                       action: .planInSprints)
     }
 
     /// An empty status group, by what its status means.
@@ -105,44 +120,73 @@ struct TaskListView: View {
     }
 }
 
-/// Sprints view: Active, Next and Backlog of the workspace's sprint, with the tasks of every project
-/// in scope (or one project's), each header with its task count and expected time against the
-/// capacity of those projects ("7 tasks · 11h of 20h"). Drag rows between groups; the numbers
-/// follow. Past sprints follow with their numbers and the velocity chart.
+/// Sprints view: one sprint card with every number (dates, plan against capacity, Make / Reach,
+/// per-project capacity, Fill sprint and the ⋯ menu), then the active sprint's tasks, the backlog
+/// tasks Fill sprint would add (Suggested, with Add all), Next, later sprints and the Backlog.
+/// Past sprints close the page, folded; the velocity chart shows once there are three to compare.
 struct SprintPlanView: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
     let scope: TaskScope
 
+    static let suggestedKey = "sprint-suggested"
+
     var body: some View {
         let sprint = store.sprint
         var builder = TaskTableBuilder()
-        builder.spacer("top", 8)
-        group(&builder, .active, title: "\(sprint.name) · active", hint: sprint.dateRange,
-              empty: "Nothing in this sprint yet. Drag tasks here from Next or Backlog, or add one with the New task field.", gap: 0)
+        builder.spacer("top", 4)
+        builder.append(.sprintCard(scope))
+        builder.spacer("after-card", 16)
+        group(&builder, .active, title: "\(sprint.name) · planned", hint: "",
+              empty: "Nothing in this sprint yet. Add the suggestions below, drag tasks here from the backlog, or add one with the New task field.",
+              gap: 0, liveHint: nil)
+        suggested(&builder)
         let upcoming = store.upcomingSprints()
         group(&builder, .next, title: "\(sprint.nextName) · next", hint: upcoming.first?.hint ?? sprint.nextDateRange,
-              empty: "Nothing planned for the next sprint. Drag tasks here to line them up.", gap: 24)
+              empty: "Nothing planned for the next sprint. Drag tasks here to line them up.", gap: 24,
+              liveHint: .sprintLoad(scope: scope, slot: .next))
         for later in upcoming where later.ahead > 1 {
             laterGroup(&builder, later)
         }
         group(&builder, .backlog, title: "Backlog", hint: "",
-              empty: "No ideas parked for later. Drag tasks here, or pick Backlog on the New task field's sprint chip.", gap: 24)
-        // The charts close the page; they used to push the plan 240pt down
-        if scope.projectId == nil {
-            builder.sectionTitle("Burn-up")
-            builder.burnup()
-        }
+              empty: "No ideas parked for later. Drag tasks here, or pick Backlog on the New task field's sprint chip.", gap: 24,
+              liveHint: .sprintLoad(scope: scope, slot: .backlog))
         pastSprints(&builder)
         builder.spacer("bottom", 72)
-                return TaskTable(
+        return TaskTable(
             showProject: scope.projectId == nil,
-            excluding: store.tasks(in: scope).contains { !$0.labelIds.isEmpty } ? [.sprint] : [.sprint, .labels],
+            excluding: store.tasks(in: scope).contains { !$0.labelIds.isEmpty } ? [.sprint, .priority] : [.sprint, .priority, .labels],
             including: [.score],
             rows: builder.rows,
-            drops: builder.drops
+            drops: builder.drops,
+            draggable: builder.draggable
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    /// What Fill sprint would add, best score first, while the sprint has room. Drag one into the
+    /// sprint, or Add all.
+    private func suggested(_ builder: inout TaskTableBuilder) {
+        let picks = store.fillPicks(scope: scope).compactMap { store.task($0) }
+        guard !picks.isEmpty else { return }
+        let mix = store.mix(of: picks)
+        var hint = "· \(Focus.durationString(minutes: picks.reduce(0) { $0 + $1.expectedMinutes }))"
+        if let reach = mix.reachPercent { hint += " · \(reach)% Reach" }
+        hint += " · best score first"
+        builder.group(
+            key: Self.suggestedKey,
+            title: "Suggested",
+            hint: hint,
+            tasks: picks,
+            emptyText: "",
+            showProject: scope.projectId == nil,
+            drop: nil,
+            open: !model.isCollapsed(Self.suggestedKey),
+            gap: 24,
+            actions: [.fillToCapacity(scope: scope)],
+            draggable: true,
+            display: RowDisplay.maker(store: store, model: model, scores: true)
+        )
     }
 
     /// Completed sprints, newest first, collapsed until opened:
@@ -150,8 +194,8 @@ struct SprintPlanView: View {
     private func pastSprints(_ builder: inout TaskTableBuilder) {
         let past = store.pastSprints()
         guard !past.isEmpty else { return }
-        builder.sectionTitle("Past sprints")
-        builder.velocity()
+        builder.sectionTitle("History")
+        if past.count >= 3 { builder.velocity() }
         for sprint in past {
             let key = TasksViewModel.pastSprintGroupKey(sprint)
             builder.group(
@@ -189,22 +233,8 @@ struct SprintPlanView: View {
         )
     }
 
-    /// Backlog: Fill to capacity and Sort by score; Next: Sort by score (each needs tasks to act on).
-    private func actions(_ slot: SprintSlot) -> [GroupHeaderAction] {
-        let open = store.sprintTasks(slot: slot, in: scope).filter { !$0.isClosed }
-        guard open.count > 0 else { return [] }
-        switch slot {
-        case .backlog:
-            // Always offered: without a capacity it says how to set one
-            return [.fillToCapacity(scope: scope)] + (open.count > 1 ? [.sortByScore(scope: scope, slot: .backlog)] : [])
-        case .next:
-            return open.count > 1 ? [.sortByScore(scope: scope, slot: .next)] : []
-        default:
-            return []
-        }
-    }
-
-    private func group(_ builder: inout TaskTableBuilder, _ slot: SprintSlot, title: String, hint: String, empty: String, gap: CGFloat) {
+    private func group(_ builder: inout TaskTableBuilder, _ slot: SprintSlot, title: String, hint: String, empty: String, gap: CGFloat,
+                       liveHint: GroupLiveHint?) {
         let key = TasksViewModel.sprintGroupKey(slot)
         builder.group(
             key: key,
@@ -218,8 +248,7 @@ struct SprintPlanView: View {
             composerOnTop: model.isComposerPinned(TasksViewModel.listComposerKey(key)),
             open: !model.isCollapsed(key),
             gap: gap,
-            actions: actions(slot),
-            liveHint: .sprintLoad(scope: scope, slot: slot),
+            liveHint: liveHint,
             sortable: true,
             display: RowDisplay.maker(store: store, model: model, scores: true)
         )
@@ -284,6 +313,8 @@ extension RowDisplay {
         let workflows = Dictionary(store.allProjects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let labels = Dictionary(store.workspace.labels.map { ($0.id, RowLabel(name: $0.name, colorHex: $0.colorHex)) },
                                 uniquingKeysWith: { first, _ in first })
+        let types = Dictionary(store.taskTypes.map { ($0.id, RowType(name: $0.name, colorHex: $0.colorHex, bucket: $0.bucket)) },
+                               uniquingKeysWith: { first, _ in first })
         let running = store.workspace.runningTimers
         let selected = model.selectedTaskIds
         let flashing = model.flashTaskId
@@ -310,7 +341,8 @@ extension RowDisplay {
                 quickAction: today && !task.isClosed
                     && (store.isOverdue(task, now: now) || store.isDueToday(task, now: now) || store.isInFocus(task, now: now))
                     ? .tomorrow : nil,
-                score: scores && !task.isClosed ? store.nextBestScore(task, behind: behind, now: now) : nil
+                score: scores && !task.isClosed ? store.nextBestScore(task, behind: behind, now: now) : nil,
+                type: task.typeId.flatMap { types[$0] }
             )
         }
     }

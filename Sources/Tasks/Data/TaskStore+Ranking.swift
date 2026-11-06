@@ -311,6 +311,24 @@ extension TaskStore {
         return SprintMix(makeMinutes: make, reachMinutes: reach, untypedMinutes: untyped, targetPercent: sprint.reachTargetPercent)
     }
 
+    /// The Make / Reach split of the time actually tracked in `range` (this week on Today and the
+    /// Overview), against the sprint's Reach target. Untracked or untyped work is left out.
+    func trackedMix(in range: DateInterval, now: Date = Date()) -> SprintMix {
+        let buckets = Dictionary(taskTypes.map { ($0.id, $0.bucket) }, uniquingKeysWith: { a, _ in a })
+        let byTask = trackedSecondsByTask(.all, in: range, now: now)
+        var make = 0.0, reach = 0.0, untyped = 0.0
+        for (id, seconds) in byTask {
+            switch task(id)?.typeId.flatMap({ buckets[$0] }) {
+            case .make?: make += seconds
+            case .reach?: reach += seconds
+            case nil: untyped += seconds
+            }
+        }
+        func minutes(_ s: Double) -> Int { Int((s / 60).rounded()) }
+        return SprintMix(makeMinutes: minutes(make), reachMinutes: minutes(reach), untypedMinutes: minutes(untyped),
+                         targetPercent: sprint.reachTargetPercent)
+    }
+
     /// The share of typed time meant for Reach work; nil turns the target off.
     func setReachTarget(_ percent: Int?) {
         mutate("Change mix target") { $0.sprint.reachTargetPercent = SprintState.cleanTarget(percent) }
@@ -403,6 +421,15 @@ extension TaskStore {
     /// order. Nothing moves without a capacity. One undo step.
     @discardableResult
     func fillSprintToCapacity(scope: TaskScope = .all, now: Date = Date(), calendar: Calendar = .current) -> [UUID] {
+        let picked = fillPicks(scope: scope, now: now, calendar: calendar)
+        guard !picked.isEmpty else { return [] }
+        undoGroup("Fill to capacity") { setSprintSlot(picked, .active) }
+        return picked
+    }
+
+    /// The backlog tasks Fill sprint would move, in pick order, without moving them (the Sprints
+    /// view lists them as suggestions). Empty without a capacity or when nothing fits.
+    func fillPicks(scope: TaskScope = .all, now: Date = Date(), calendar: Calendar = .current) -> [UUID] {
         guard let capacity = sprintCapacityMinutes(in: scope) else { return [] }
         var planned = slotLoad(scope: scope, slot: .active, now: now).plannedMinutes
         var active = sprintTasks(slot: .active, in: scope).filter { !$0.isCanceled }
@@ -423,8 +450,6 @@ extension TaskStore {
             active.append(best)
             pool.removeAll { $0.id == best.id }
         }
-        guard !picked.isEmpty else { return [] }
-        undoGroup("Fill to capacity") { setSprintSlot(picked, .active) }
         return picked
     }
 
