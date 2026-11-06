@@ -25,6 +25,8 @@ final class TaskRowController: NSObject {
             showEditor(.score, taskId: id, rect: rect, in: view)
         case .due?, .priority?, .time?, .labels?:
             showEditor(column!, taskId: id, rect: rect, in: view)
+        case .kind?:
+            showTypeMenu(taskId: id, rect: rect, in: view)
         case .sprint? where task.sprintSlot != .closed:
             showEditor(.sprint, taskId: id, rect: rect, in: view)
         case .title? where clickCount >= 2:
@@ -66,6 +68,28 @@ final class TaskRowController: NSObject {
         popover.contentViewController = NSHostingController(rootView: content)
         popover.show(relativeTo: rect, of: view, preferredEdge: .maxY)
         self.popover = popover
+    }
+
+    /// The Type column's menu: the types by bucket, None and Edit types….
+    private func showTypeMenu(taskId: UUID, rect: NSRect, in view: NSView) {
+        guard let store, let task = store.task(taskId) else { return }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for bucket in TypeBucket.allCases {
+            let types = store.taskTypes.filter { $0.bucket == bucket }
+            guard !types.isEmpty else { continue }
+            if menu.numberOfItems > 0 { menu.addItem(.separator()) }
+            let header = NSMenuItem(title: bucket.title, action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+            for type in types {
+                menu.addItem(item(type.name, checked: task.typeId == type.id) { [weak store] in store?.setType([taskId], type.id) })
+            }
+        }
+        menu.addItem(.separator())
+        menu.addItem(item("None", checked: task.typeId == nil) { [weak store] in store?.setType([taskId], nil) })
+        menu.addItem(item("Edit types…") { [weak model] in model?.showingTypesManager = true })
+        menu.popUp(positioning: nil, at: NSPoint(x: rect.minX, y: rect.maxY), in: view)
     }
 
     // MARK: Rename

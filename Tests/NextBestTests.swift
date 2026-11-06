@@ -234,6 +234,37 @@ final class NextBestTests: XCTestCase {
         XCTAssertTrue(store.fillSprintToCapacity(now: t0).isEmpty)
     }
 
+    func testFillPicksSuggestWithoutMoving() async {
+        let (store, pid) = await makeStore()
+        store.setWeeklyCapacity(pid, hours: 1)
+        let best = backlog(store, "Best", pid, minutes: 60)
+        let low = backlog(store, "Low", pid, minutes: 60)
+        store.setTaskImpact([best], 9)
+        store.setTaskImpact([low], 2)
+        XCTAssertEqual(store.fillPicks(now: t0), [best, low])
+        XCTAssertEqual(store.task(best)!.sprintSlot, .backlog, "suggestions don't move anything")
+        XCTAssertEqual(store.fillSprintToCapacity(now: t0), [best, low], "Add all moves the same tasks")
+        XCTAssertTrue(store.fillPicks(now: t0).isEmpty, "a full sprint suggests nothing")
+    }
+
+    func testTrackedMixSplitsTheWeekByBucket() async {
+        let (store, pid) = await makeStore()
+        store.setReachTarget(30)
+        let code = task(store, "Code", pid)
+        let sell = task(store, "Sell", pid)
+        let loose = task(store, "Loose", pid)
+        store.setType([code], build)
+        store.setType([sell], sales)
+        store.addTimeEntry(taskId: code, start: t0, end: t0.addingTimeInterval(3 * 3600), now: t0.addingTimeInterval(4 * 3600))
+        store.addTimeEntry(taskId: sell, start: t0, end: t0.addingTimeInterval(1800), now: t0.addingTimeInterval(4 * 3600))
+        store.addTimeEntry(taskId: loose, start: t0, end: t0.addingTimeInterval(600), now: t0.addingTimeInterval(4 * 3600))
+        let mix = store.trackedMix(in: DateInterval(start: t0.addingTimeInterval(-3600), duration: 86_400), now: t0.addingTimeInterval(4 * 3600))
+        XCTAssertEqual(mix.makeMinutes, 180)
+        XCTAssertEqual(mix.reachMinutes, 30)
+        XCTAssertEqual(mix.untypedMinutes, 10)
+        XCTAssertEqual(mix.behind, .reach, "14% against a 30% target")
+    }
+
     func testSortByScoreOrdersTheBacklog() async {
         let (store, pid) = await makeStore()
         let low = backlog(store, "Low", pid, minutes: 30)

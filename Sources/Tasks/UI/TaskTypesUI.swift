@@ -242,6 +242,7 @@ struct TaskTypesSheet: View {
 /// A thin two-part bar: Make in the neutral color, Reach in green, and a tick at the target.
 struct SprintMixBar: View {
     let mix: SprintMix
+    var height: CGFloat = 6
 
     var body: some View {
         GeometryReader { geo in
@@ -259,15 +260,18 @@ struct SprintMixBar: View {
                         }
                     }
                 }
+            }
+            .frame(height: height)
+            .overlay(alignment: .leading) {
                 if let target = mix.targetPercent {
                     // Reach sits on the right, so its target share is measured from the right edge
                     Rectangle().fill(Focus.text)
-                        .frame(width: 2, height: 10)
+                        .frame(width: 2, height: height + 4)
                         .offset(x: width * (1 - CGFloat(target) / 100) - 1)
                 }
             }
         }
-        .frame(height: 6)
+        .frame(height: height)
         .accessibilityElement()
         .accessibilityLabel("\(mix.label). \(mix.shareLabel ?? "")")
     }

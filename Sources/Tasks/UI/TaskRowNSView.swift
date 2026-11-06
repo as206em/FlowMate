@@ -38,6 +38,15 @@ struct RowDisplay: Equatable {
     var quickAction: RowQuickAction?
     /// The Next best score (the Sprints view's Score column); nil elsewhere and for closed tasks
     var score: NextBestScore? = nil
+    /// The task's type (the Type column): its name, color and Make / Reach bucket
+    var type: RowType? = nil
+}
+
+/// A task type as a row draws it.
+struct RowType: Equatable {
+    let name: String
+    let colorHex: UInt32
+    let bucket: TypeBucket
 }
 
 /// A label as a row draws it.
@@ -211,6 +220,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             case .project: drawProject(display, in: cell)
             case .title: if !isRenaming { drawTitle(task, display, in: cell) }
             case .labels: drawLabels(display.labels, in: cell)
+            case .kind: drawType(display.type, in: cell)
             case .sprint: drawMeta(display.sprintLabel, in: cell)
             case .due: drawDue(task, display, in: cell)
             case .priority: drawPriority(task.priority, in: cell)
@@ -294,6 +304,12 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             drawText("+\(layout.more)", font: font, color: Style.text3,
                      in: NSRect(x: x, y: cell.minY, width: max(0, cell.maxX - x), height: cell.height))
         }
+    }
+
+    /// The type as one chip in its color, like a label.
+    private func drawType(_ type: RowType?, in cell: NSRect) {
+        guard let type else { return drawEmpty(in: cell) }
+        drawLabels([RowLabel(name: type.name, colorHex: type.colorHex)], in: cell)
     }
 
     private static var darkenedColors: [UInt32: NSColor] = [:]
@@ -668,6 +684,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             }
             return "Click to open, double-click to rename"
         case .project: return info.display.projectName ?? ""
+        case .kind: return info.display.type.map { "\($0.name) · \($0.bucket.title). Click to change" } ?? "Set a type (Make or Reach work)"
         case .labels: return info.display.labels.isEmpty ? "Add labels (L)" : info.display.labels.map(\.name).joined(separator: ", ") + " · click to change (L)"
         case .sprint: return task.sprintSlot == .closed ? info.display.sprintLabel : "Change sprint"
         case .due: return "Change due date"
