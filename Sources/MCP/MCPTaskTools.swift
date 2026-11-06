@@ -21,21 +21,21 @@ struct MCPTaskTools {
 
     // MARK: - Definitions
 
-    private static func tool(_ name: String, _ description: String, _ properties: [String: Any] = [:],
+    static func tool(_ name: String, _ description: String, _ properties: [String: Any] = [:],
                              required: [String] = []) -> [String: Any] {
         ["name": name, "description": description,
          "inputSchema": ["type": "object", "properties": properties, "required": required]]
     }
 
-    private static let string: [String: Any] = ["type": "string"]
-    private static func string(_ description: String) -> [String: Any] { ["type": "string", "description": description] }
-    private static func integer(_ description: String) -> [String: Any] { ["type": "integer", "description": description] }
-    private static func boolean(_ description: String) -> [String: Any] { ["type": "boolean", "description": description] }
-    private static func choice(_ values: [String], _ description: String) -> [String: Any] {
+    static let string: [String: Any] = ["type": "string"]
+    static func string(_ description: String) -> [String: Any] { ["type": "string", "description": description] }
+    static func integer(_ description: String) -> [String: Any] { ["type": "integer", "description": description] }
+    static func boolean(_ description: String) -> [String: Any] { ["type": "boolean", "description": description] }
+    static func choice(_ values: [String], _ description: String) -> [String: Any] {
         ["type": "string", "enum": values, "description": description]
     }
 
-    private static var taskFields: [String: Any] {
+    static var taskFields: [String: Any] {
         [
             "project": string("Project name or id"),
             "priority": choice(["high", "medium", "low"], "Priority"),
@@ -86,7 +86,7 @@ struct MCPTaskTools {
             tool("delete_task", "Delete a task (undo with ⌘Z in the app).", ["id": string("Task id")], required: ["id"]),
             tool("add_subtask", "Add a subtask to a task.", ["id": string("Task id"), "title": string("Subtask title")], required: ["id", "title"]),
             tool("create_project", "Create a project.", ["name": string("Project name")], required: ["name"]),
-        ]
+        ] + moreDefinitions
     }
 
     // MARK: - Dispatch
@@ -116,7 +116,7 @@ struct MCPTaskTools {
             }
             return json(["id": id.uuidString, "name": name])
         default:
-            throw MCPToolError("Unknown tool: \(name)")
+            return try callMore(name, args)
         }
     }
 
@@ -169,7 +169,7 @@ struct MCPTaskTools {
         return ["total": tasks.count, "tasks": tasks.prefix(limit).map(summary)]
     }
 
-    private func createTask(_ args: [String: Any]) throws -> [String: Any] {
+    func createTask(_ args: [String: Any]) throws -> [String: Any] {
         guard let title = (args["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
             throw MCPToolError("A task needs a title.")
         }
@@ -196,7 +196,7 @@ struct MCPTaskTools {
         return taskDetail(try task(["id": id.uuidString]))
     }
 
-    private func updateTask(_ args: [String: Any]) throws -> [String: Any] {
+    func updateTask(_ args: [String: Any]) throws -> [String: Any] {
         let current = try task(args)
         let id = current.id
         // Resolve everything first, so a bad value changes nothing
@@ -288,15 +288,15 @@ struct MCPTaskTools {
 
     // MARK: - Lookups
 
-    private func undoGroupRun(_ name: String, _ body: () -> Void) { store.undoGroup(name, body) }
+    func undoGroupRun(_ name: String, _ body: () -> Void) { store.undoGroup(name, body) }
 
-    private func project(_ query: String) throws -> Project {
+    func project(_ query: String) throws -> Project {
         if let id = UUID(uuidString: query), let project = store.project(id) { return project }
         if let project = store.matchProject(query) { return project }
         throw MCPToolError("No project matches “\(query)”. Projects: " + store.projects.map(\.name).joined(separator: ", "))
     }
 
-    private func task(_ args: [String: Any]) throws -> TaskItem {
+    func task(_ args: [String: Any]) throws -> TaskItem {
         guard let text = (args["id"] as? String)?.trimmingCharacters(in: .whitespaces).lowercased(), !text.isEmpty else {
             throw MCPToolError("Pass a task id.")
         }
@@ -309,7 +309,7 @@ struct MCPTaskTools {
         throw MCPToolError("No task with id “\(text)”. Use list_tasks to find ids.")
     }
 
-    private func resolveStatus(_ query: String, in project: Project) throws -> WorkflowStatus {
+    func resolveStatus(_ query: String, in project: Project) throws -> WorkflowStatus {
         if let status = store.matchStatus(query, projectId: project.id) { return status }
         let key = TaskStore.matchKey(query)
         let category: StatusCategory? = switch key {
@@ -323,32 +323,32 @@ struct MCPTaskTools {
         throw MCPToolError("No status “\(query)” in \(project.name). Statuses: " + project.statuses.map(\.name).joined(separator: ", "))
     }
 
-    private func taskType(_ query: String) throws -> TaskType? {
+    func taskType(_ query: String) throws -> TaskType? {
         let key = TaskStore.matchKey(query)
         if let type = store.taskTypes.first(where: { TaskStore.matchKey($0.name) == key }) { return type }
         throw MCPToolError("No task type “\(query)”. Types: " + store.taskTypes.map(\.name).joined(separator: ", "))
     }
 
-    private static func priority(_ value: String) throws -> TaskPriority {
+    static func priority(_ value: String) throws -> TaskPriority {
         guard let priority = TaskPriority(rawValue: value.lowercased()) else { throw MCPToolError("priority must be high, medium or low.") }
         return priority
     }
 
-    private static func slot(_ value: String) throws -> SprintSlot {
+    static func slot(_ value: String) throws -> SprintSlot {
         guard let slot = SprintSlot(rawValue: value.lowercased()), SprintSlot.plannable.contains(slot) else {
             throw MCPToolError("sprint must be active, next or backlog.")
         }
         return slot
     }
 
-    private static func date(_ value: String) throws -> Date {
+    static func date(_ value: String) throws -> Date {
         guard let date = TaskDateParser.parse(value) else { throw MCPToolError("Couldn't read the date “\(value)”. Use YYYY-MM-DD, today, tomorrow, fri or 3d.") }
         return date
     }
 
     // MARK: - Output
 
-    private static func kind(_ category: StatusCategory) -> String {
+    static func kind(_ category: StatusCategory) -> String {
         switch category {
         case .notStarted: return "not started"
         case .started: return "started"
@@ -357,14 +357,14 @@ struct MCPTaskTools {
         }
     }
 
-    private static func day(_ date: Date) -> String {
+    static func day(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }
 
-    private func summary(_ task: TaskItem) -> [String: Any] {
+    func summary(_ task: TaskItem) -> [String: Any] {
         let project = store.project(task.projectId)
         var out: [String: Any] = [
             "id": task.id.uuidString,
@@ -384,16 +384,16 @@ struct MCPTaskTools {
         return out
     }
 
-    private func taskDetail(_ task: TaskItem) -> [String: Any] {
+    func taskDetail(_ task: TaskItem) -> [String: Any] {
         var out = summary(task)
         out["notes"] = task.notes
-        out["subtasks"] = task.subtasks.map { ["title": $0.title, "done": $0.isDone] as [String: Any] }
+        out["subtasks"] = task.subtasks.map { ["id": $0.id.uuidString, "title": $0.title, "done": $0.isDone] as [String: Any] }
         out["spentMinutes"] = Int(task.spentSeconds / 60)
         out["running"] = store.isRunning(task.id)
         return out
     }
 
-    private func json(_ object: Any) -> String {
+    func json(_ object: Any) -> String {
         let options: JSONSerialization.WritingOptions = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: options) else { return "{}" }
         return String(decoding: data, as: UTF8.self)
