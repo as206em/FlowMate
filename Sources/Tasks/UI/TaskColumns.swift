@@ -80,8 +80,8 @@ struct TaskColumnLayout: Equatable, Sendable {
     /// The title keeps at least this much room; other columns drop out to make it.
     static let minTitleWidth: CGFloat = 200
     /// Dropped first when the table is narrow
-    /// (Score, where shown, is what the Sprint plan plans by: it goes last)
-    static let dropOrder: [TaskColumn] = [.sprint, .project, .priority, .kind, .score]
+    /// (Priority and Score, where shown, go last: they're what tasks get planned by)
+    static let dropOrder: [TaskColumn] = [.sprint, .project, .kind, .priority, .score]
     /// Shown only where a table asks for them (`including`)
     static let optIn: Set<TaskColumn> = [.score]
 
@@ -101,7 +101,7 @@ struct TaskColumnLayout: Equatable, Sendable {
     }
 
     /// The layout for a table: Project only in All projects, minus `excluding`,
-    /// then narrow columns dropped (sprint, labels, project, priority) until the title fits.
+    /// then narrow columns dropped (sprint, project, type, priority) until the title fits.
     static func make(showProject: Bool, excluding: Set<TaskColumn> = [], including: Set<TaskColumn> = [],
                      width: CGFloat) -> TaskColumnLayout {
         var layout = TaskColumnLayout(columns: shown.filter { column in

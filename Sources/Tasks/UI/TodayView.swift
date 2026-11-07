@@ -48,7 +48,7 @@ struct TodayView: View {
         builder.spacer("bottom", 72)
         return TaskTable(
             showProject: true,
-            excluding: [.sprint, .priority],
+            excluding: [.sprint],
             rows: builder.rows,
             drops: builder.drops,
             draggable: builder.draggable

@@ -3,18 +3,18 @@ import SwiftUI
 // Fixing tracked time: the time cell's popover (spent + expected), "Adjust time…", the
 // "Still working on X?" prompt and its "Stop at…" picker.
 
-/// The list's time cell popover: time spent (editable) above the expected time.
+/// The list's time cell popover: the expected time above time spent (editable).
 struct TaskTimeEditor: View {
     let task: TaskItem
     let close: () -> Void
 
     var body: some View {
         FocusPopoverMenu(width: 250, maxHeight: 520) {
-            FocusMenuSection(title: "Time spent", first: true)
+            TaskExpectedChoices(task: task, first: true, close: close)
+            FocusMenuSection(title: "Time spent")
             TaskTimeSpentEditor(task: task)
                 .padding(.horizontal, 8)
                 .padding(.bottom, 6)
-            TaskExpectedChoices(task: task, close: close)
         }
     }
 }

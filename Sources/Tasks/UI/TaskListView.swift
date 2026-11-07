@@ -166,10 +166,10 @@ struct SprintPlanView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
-    /// Priority is left out (Score plans). In a project the Sprint column stays, so a backlog task
+    /// In a project the Sprint column stays, so a backlog task
     /// shows "Backlog" and a click there moves it into a sprint; All projects leaves it out.
     private var sprintPlanExcluded: Set<TaskColumn> {
-        var columns: Set<TaskColumn> = [.priority]
+        var columns: Set<TaskColumn> = []
         if !model.sprintPlanBacklogFirst { columns.insert(.sprint) }
         return columns
     }
