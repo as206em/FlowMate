@@ -28,7 +28,7 @@ struct CompletionSummary: View {
     }
 }
 
-/// The Sprints view's progress chart: hours done climbing toward the hours planned, day by day since
+/// The sprint plan's progress chart: hours done climbing toward the hours planned, day by day since
 /// the sprint began. The planned line steps up when work is added; the dashed line is the pace that
 /// finishes everything on the last day.
 struct SprintBurnupPanel: View {

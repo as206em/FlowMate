@@ -366,13 +366,13 @@ final class SprintCapacityTests: XCTestCase {
         model.select(.project(pid))
         model.syncProjects(store)
         XCTAssertNil(store.nextTaskToStart(projectId: pid), "with sprints, the backlog isn't current work")
-        XCTAssertEqual(model.tabs, [.list, .sprints])
+        XCTAssertEqual(model.grouping, .sprint, "grouped by sprint by default")
+        XCTAssertTrue(model.showsSprintPlan)
 
         store.setUsesSprints(pid, false, now: now)
         model.syncProjects(store)
-        XCTAssertEqual(model.tabs, [.list], "no Sprints tab")
-        model.tab = .sprints
-        XCTAssertEqual(model.effectiveTab, .list)
+        XCTAssertEqual(model.grouping, .status, "Status by default without sprints")
+        XCTAssertFalse(model.showsSprintPlan)
         XCTAssertEqual(store.nextTaskToStart(projectId: pid)?.id, backlog)
         XCTAssertEqual(Set(store.activeSprintTasks(projectId: pid).map(\.id)), [backlog, next], "menu bar")
         XCTAssertEqual(store.sprintLabel(for: store.task(next)!), "")
@@ -453,26 +453,53 @@ final class SprintCapacityTests: XCTestCase {
         XCTAssertEqual(store.project(pid)?.newTaskExpectedMinutes, 60)
     }
 
-    func testDefaultViewOpensTheProjectOnIt() async {
+    func testProjectSprintPlanOpensOnTheBacklogWithSprintsClosed() async {
+        let (store, pid) = await makeStore()
+        let later = task(store, pid, "Later", slot: .backlog, minutes: 60)
+        let now1 = task(store, pid, "Now", slot: .active, minutes: 60)
+        let model = TasksViewModel()
+        model.syncProjects(store)
+        model.select(.project(pid))
+        XCTAssertTrue(model.showsSprintPlan)
+        let keys = model.collapsibleGroupKeys(store)!
+        XCTAssertEqual(keys.first, TasksViewModel.sprintGroupKey(.backlog))
+        model.openOnlyFirstGroup(store)
+        XCTAssertFalse(model.isCollapsed(TasksViewModel.sprintGroupKey(.backlog)))
+        XCTAssertTrue(model.isCollapsed(TasksViewModel.sprintGroupKey(.active)))
+        XCTAssertTrue(model.isCollapsed(TasksViewModel.sprintGroupKey(.next)))
+        XCTAssertEqual(model.visibleTasks(store).map(\.id), [later], "only the backlog is open")
+        XCTAssertEqual(model.defaultComposerKey(store), TasksViewModel.listComposerKey(TasksViewModel.sprintGroupKey(.backlog)))
+
+        // All projects keeps the active sprint first
+        model.select(.all)
+        XCTAssertEqual(model.collapsibleGroupKeys(store)?.first, TasksViewModel.sprintGroupKey(.active))
+        model.openOnlyFirstGroup(store)
+        XCTAssertEqual(model.visibleTasks(store).map(\.id), [now1])
+    }
+
+    func testProjectsShareTheirGroupingAndShowSprintsGroupsBySprint() async {
         let (store, pid) = await makeStore()
         let other = store.addProject(name: "Bolt", now: now)!
         let model = TasksViewModel()
-        model.select(.project(pid))
-        model.tab = .list
-        model.select(.project(other))
-        model.select(.project(pid))
-        XCTAssertEqual(model.effectiveTab, .list, "without a default: the last tab")
-
-        store.setDefaultView(pid, .sprints)
         model.syncProjects(store)
-        model.select(.project(other))
         model.select(.project(pid))
-        XCTAssertEqual(model.effectiveTab, .sprints, "a default view always wins")
+        XCTAssertEqual(model.grouping, .sprint, "projects start grouped by sprint")
+        model.options.grouping = .priority
+        model.select(.project(other))
+        XCTAssertEqual(model.grouping, .priority, "every project follows")
+        model.options.grouping = .status
+
+        model.select(.all)
+        model.tab = .overview
+        model.showSprints(of: pid)
+        XCTAssertEqual(model.scope, .project(pid))
+        XCTAssertEqual(model.effectiveTab, .list)
+        XCTAssertTrue(model.showsSprintPlan)
 
         store.setUsesSprints(pid, false, now: now)
         model.syncProjects(store)
         model.select(.project(pid))
-        XCTAssertEqual(model.effectiveTab, .list, "no Sprints without sprints")
+        XCTAssertFalse(model.showsSprintPlan, "no sprint plan without sprints")
     }
 
     func testIconSetAndUndo() async {

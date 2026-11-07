@@ -104,10 +104,11 @@ final class TaskListBatch1Tests: XCTestCase {
 
     func testColumnLayoutKeepsTitleRoom() {
         let wide = TaskColumnLayout.make(showProject: true, width: 1200)
-        XCTAssertEqual(wide.columns, TaskColumn.allCases.filter { !TaskColumnLayout.optIn.contains($0) })
+        XCTAssertEqual(wide.columns, TaskColumnLayout.shown.filter { !TaskColumnLayout.optIn.contains($0) })
+        XCTAssertFalse(wide.contains(.labels), "labels sit in the title cell, aligned right")
         // Score shows only where a table asks for it (the Sprints view)
         let scored = TaskColumnLayout.make(showProject: true, including: [.score], width: 1300)
-        XCTAssertEqual(scored.columns, TaskColumn.allCases)
+        XCTAssertEqual(scored.columns, TaskColumnLayout.shown)
 
         let project = TaskColumnLayout.make(showProject: false, width: 1000)
         XCTAssertFalse(project.contains(.project))
@@ -119,7 +120,7 @@ final class TaskListBatch1Tests: XCTestCase {
         for width in stride(from: 400, through: 1000, by: 20) {
             let layout = TaskColumnLayout.make(showProject: true, width: CGFloat(width))
             XCTAssertTrue(layout.contains(.title) && layout.contains(.status) && layout.contains(.timer))
-            if layout.columns.count > TaskColumn.allCases.count - TaskColumnLayout.dropOrder.count {
+            if layout.columns.count > TaskColumnLayout.shown.count - TaskColumnLayout.dropOrder.count {
                 XCTAssertGreaterThanOrEqual(CGFloat(width) - layout.fixedWidth, TaskColumnLayout.minTitleWidth)
             }
         }

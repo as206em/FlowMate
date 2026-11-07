@@ -5,7 +5,7 @@ import Foundation
 //
 // The sprint is one for the whole workspace (Workspace.sprint); projects take part in it.
 // Capacity: the weekly hours of the projects in view, added up × the sprint's weeks, is what one
-// sprint can hold. The Sprints view compares each slot's expected time with it ("11h of 20h"),
+// sprint can hold. The Sprint plan compares each slot's expected time with it ("11h of 20h"),
 // amber from 90% and red past 100%. Velocity: the expected time of the tasks done in a sprint, kept on each PastSprint;
 // "recent velocity" is the average of the last three sprints.
 //
@@ -25,7 +25,7 @@ enum CapacityLevel: Equatable, Sendable {
     case over
 }
 
-/// One slot of the Sprints view in numbers.
+/// One slot of the Sprint plan in numbers.
 struct SprintSlotLoad: Equatable, Sendable {
     /// Tasks in the slot (canceled ones left out)
     let count: Int
@@ -123,7 +123,7 @@ extension TaskStore {
         return projects.filter(\.usesSprints)
     }
 
-    /// The numbers of one Sprints view slot (live: the store changes as tasks are dragged).
+    /// The numbers of one Sprint plan slot (live: the store changes as tasks are dragged).
     func slotLoad(scope: TaskScope = .all, slot: SprintSlot, ahead: Int = 1, now: Date = Date()) -> SprintSlotLoad {
         let sprintTasks = slot == .next ? sprintTasks(ahead: ahead, in: scope) : sprintTasks(slot: slot, in: scope)
         let tasks = sprintTasks.filter { !$0.isCanceled }
@@ -222,13 +222,6 @@ extension TaskStore {
                     ws.tasks[i].updatedAt = now
                 }
             }
-        }
-    }
-
-    func setDefaultView(_ projectId: UUID, _ view: ProjectView?) {
-        mutate("Change default view") { ws in
-            guard let i = ws.projects.firstIndex(where: { $0.id == projectId }) else { return }
-            ws.projects[i].defaultView = view
         }
     }
 

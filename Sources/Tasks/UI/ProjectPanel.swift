@@ -141,7 +141,7 @@ private struct ProjectInspector: View {
     }
 
     /// Whether the project takes part in the workspace's sprint, and its weekly capacity. The sprint
-    /// itself (number, dates, goal) is edited on the Sprints tab.
+    /// itself (number, dates, goal) is edited in the sprint menu of All projects.
     private var sprintSection: some View {
         let sprint = store.sprint
         return VStack(alignment: .leading, spacing: 6) {
@@ -170,7 +170,7 @@ private struct ProjectInspector: View {
                     .foregroundColor(Focus.text3)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("\(sprint.name) · \(sprint.dateRange). The sprint is shared with every project that takes part; its number, dates and goal are on the Sprints tab.")
+                Text("\(sprint.name) · \(sprint.dateRange). The sprint is shared with every project that takes part; its number, dates and goal are in the sprint menu of All projects.")
                     .font(.system(size: 12))
                     .foregroundColor(Focus.text3)
                     .fixedSize(horizontal: false, vertical: true)

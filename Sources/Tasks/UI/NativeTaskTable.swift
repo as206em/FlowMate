@@ -71,9 +71,9 @@ struct GroupSummary: Equatable {
 /// A button in a group header.
 enum GroupHeaderAction: Equatable {
     case moveOverdueToToday, moveOverdueToTomorrow, pauseAll
-    /// Sprints view, Backlog: pull the best-scoring tasks into the active sprint until it's full
+    /// Sprint plan, Backlog: pull the best-scoring tasks into the active sprint until it's full
     case fillToCapacity(scope: TaskScope)
-    /// Sprints view: reorder the slot's tasks by Next best score, highest first
+    /// Sprint plan: reorder the slot's tasks by Next best score, highest first
     case sortByScore(scope: TaskScope, slot: SprintSlot)
 
     var title: String {
@@ -99,7 +99,7 @@ enum GroupHeaderAction: Equatable {
 enum GroupLiveHint: Equatable {
     /// "Planned 5h 30m": what's left of the tasks pinned to Today
     case todayPlanned
-    /// Sprints view: "7 tasks · 11h of 20h · 5h left", amber near the capacity, red over it.
+    /// Sprint plan: "7 tasks · 11h of 20h · 5h left", amber near the capacity, red over it.
     /// Replaces the header's count.
     case sprintLoad(scope: TaskScope, slot: SprintSlot, ahead: Int = 1)
 
@@ -128,9 +128,9 @@ enum TaskTableRow: Equatable, Identifiable {
     case composer(group: String, preset: TaskGroupValue, isDefault: Bool, title: String)
     /// Today's "Tracked today" panel: the total and a bar per project (drawn live)
     case trackedToday
-    /// Sprints view: the velocity chart of the recent sprints
+    /// Sprint plan: the velocity chart of the recent sprints
     case velocity
-    /// Sprints view (All projects): the sprint's progress chart
+    /// Sprint plan (All projects): the sprint's progress chart
     case burnup
     /// Today: the Next best ranking across projects
     case nextBest

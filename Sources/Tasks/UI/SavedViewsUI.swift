@@ -377,7 +377,7 @@ enum SavedViewDescription {
         if !f.labels.isEmpty { lines.append("Label: " + store.labels.filter { f.labels.contains($0.id) }.map(\.name).joined(separator: ", ")) }
         if !f.projectIds.isEmpty { lines.append("Project: " + store.projects.filter { f.projectIds.contains($0.id) }.map(\.name).joined(separator: ", ")) }
         var arrange: [String] = []
-        if options.grouping != .status { arrange.append("Grouped by \(options.grouping.title.lowercased())") }
+        if options.grouping != TaskViewOptions.standard.grouping { arrange.append("Grouped by \(options.grouping.title.lowercased())") }
         if !options.sort.isManual { arrange.append("Sorted by \(options.sort.key.title.lowercased()) \(options.sort.ascending ? "↑" : "↓")") }
         if !arrange.isEmpty { lines.append(arrange.joined(separator: " · ")) }
         if lines.isEmpty { lines.append("No filters: every task") }

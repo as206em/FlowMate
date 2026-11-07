@@ -120,7 +120,7 @@ extension TaskStore {
         }
     }
 
-    /// Sprints view drag and drop: new slot, placed before `beforeTaskId` (or at the end when nil).
+    /// Sprint plan drag and drop: new slot, placed before `beforeTaskId` (or at the end when nil).
     func moveTask(_ id: UUID, toSlot slot: SprintSlot, before beforeTaskId: UUID? = nil) {
         undoGroup("Move task") {
             setSprintSlot(id, slot)

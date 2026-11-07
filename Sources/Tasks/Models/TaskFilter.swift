@@ -93,13 +93,15 @@ extension TaskSortKey {
     static let menuChoices: [TaskSortKey] = [.manual, .priority, .due, .created, .updated]
 }
 
-/// How one scope's List is narrowed, sorted and grouped. Kept per project.
+/// How one scope's tasks are narrowed, sorted and grouped. Kept per project.
+/// Grouped by Sprint by default: the sprint plan. A scope without sprints shows Status instead
+/// (TasksViewModel.grouping).
 struct TaskViewOptions: Equatable, Codable, Sendable {
     var filter = TaskFilter()
     var sort: TaskSort = .manual
-    var grouping: TaskGrouping = .status
+    var grouping: TaskGrouping = .sprint
 
-    init(filter: TaskFilter = TaskFilter(), sort: TaskSort = .manual, grouping: TaskGrouping = .status) {
+    init(filter: TaskFilter = TaskFilter(), sort: TaskSort = .manual, grouping: TaskGrouping = .sprint) {
         self.filter = filter
         self.sort = sort
         self.grouping = grouping
@@ -121,7 +123,7 @@ struct TaskViewOptions: Equatable, Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         filter = c.decode(.filter, or: TaskFilter())
         sort = c.decode(.sort, or: .manual)
-        grouping = c.decode(.grouping, or: .status)
+        grouping = c.decode(.grouping, or: .sprint)
     }
 }
 

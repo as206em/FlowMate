@@ -1,7 +1,7 @@
 import Charts
 import SwiftUI
 
-/// The Sprints view's velocity panel under "Past sprints": a bar per recent sprint (the last six)
+/// The sprint plan's velocity panel under "Past sprints": a bar per recent sprint (the last six)
 /// for the hours of work done (expected time of done tasks), a dash for what was planned and,
 /// when the project has a capacity, a dashed line for it. Hover a sprint for its numbers.
 struct SprintVelocityPanel: View {

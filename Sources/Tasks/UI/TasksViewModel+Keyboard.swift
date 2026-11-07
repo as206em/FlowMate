@@ -409,12 +409,14 @@ extension TasksViewModel {
             return ([store.todayPlan(now: now).focus.map(\.id)], true)
         }
         switch effectiveTab {
+        case .list where showsSprintPlan:
+            let groups = sprintGroups(store).filter { groupSort($0.key).isManual }
+            guard !groups.isEmpty else { return nil }
+            return (groups.map { $0.tasks.map(\.id) }, false)
         case .list:
             let groups = listGroups(store, now: now).filter { !isCollapsed($0.id) && groupSort($0.id).isManual }
             guard !groups.isEmpty else { return nil }
             return (groups.map { $0.tasks.map(\.id) }, false)
-        case .sprints:
-            return (sprintGroupTasks(store).map { $0.map(\.id) }, false)
         case .overview:
             return nil
         }

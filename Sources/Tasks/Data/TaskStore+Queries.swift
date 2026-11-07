@@ -47,7 +47,7 @@ extension TaskStore {
         tasks(in: scope).filter { $0.statusId == status.id }
     }
 
-    /// Sprints view group: the tasks in `scope` (All projects by default) sitting in the active
+    /// Sprint plan group: the tasks in `scope` (All projects by default) sitting in the active
     /// sprint, the next one (not the later ones, see `sprintTasks(ahead:in:)`) or the backlog.
     /// Projects that don't take part in sprints have none.
     func sprintTasks(slot: SprintSlot, in scope: TaskScope = .all) -> [TaskItem] {

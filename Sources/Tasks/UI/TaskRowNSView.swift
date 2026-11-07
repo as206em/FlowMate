@@ -36,7 +36,7 @@ struct RowDisplay: Equatable {
     var labels: [RowLabel] = []
     /// A button shown at the end of the title while the row is hovered (Today: "→ Tomorrow")
     var quickAction: RowQuickAction?
-    /// The Next best score (the Sprints view's Score column); nil elsewhere and for closed tasks
+    /// The Next best score (the sprint plan's Score column); nil elsewhere and for closed tasks
     var score: NextBestScore? = nil
     /// The task's type (the Type column): its name, color and Make / Reach bucket
     var type: RowType? = nil
@@ -279,14 +279,25 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
     }
 
     /// Label chips (a dot and the name in the label's tint) that fit the cell, then "+2" for the rest.
-    private func drawLabels(_ labels: [RowLabel], in cell: NSRect) {
+    private static let chipPad: CGFloat = 6, chipDot: CGFloat = 6, chipGap: CGFloat = 4, chipSpacing: CGFloat = 4
+
+    private func chipWidths(_ labels: [RowLabel]) -> [CGFloat] {
+        labels.map { textWidth($0.name, font: Style.tag) + Self.chipPad * 2 + Self.chipDot + Self.chipGap }
+    }
+
+    /// `trailing`: the chips end at the cell's right edge (labels inside the title cell).
+    private func drawLabels(_ labels: [RowLabel], in cell: NSRect, trailing: Bool = false) {
         guard !labels.isEmpty else { return drawEmpty(in: cell) }
         let font = Style.tag
-        let pad: CGFloat = 6, dot: CGFloat = 6, gap: CGFloat = 4, between: CGFloat = 4
-        let layout = LabelChipLayout.fit(labels.map { textWidth($0.name, font: font) + pad * 2 + dot + gap },
-                                         width: cell.width, spacing: between,
-                                         moreWidth: { textWidth("+\($0)", font: font) + 10 })
+        let pad = Self.chipPad, dot = Self.chipDot, gap = Self.chipGap, between = Self.chipSpacing
+        let moreWidth: (Int) -> CGFloat = { self.textWidth("+\($0)", font: font) + 10 }
+        let layout = LabelChipLayout.fit(chipWidths(labels), width: cell.width, spacing: between, moreWidth: moreWidth)
         var x = cell.minX - 2
+        if trailing {
+            let used = layout.widths.reduce(0, +) + between * CGFloat(max(layout.widths.count - 1, 0))
+                + (layout.more > 0 ? between + moreWidth(layout.more) : 0)
+            x = cell.maxX - used
+        }
         for (index, width) in layout.widths.enumerated() {
             let label = labels[index]
             let chip = NSRect(x: x, y: cell.midY - 10, width: width, height: 20)
@@ -417,6 +428,10 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             drawQuickAction(action, in: button)
             cell.size.width = max(0, button.minX - 8 - cell.minX)
         }
+        if let labels = labelsRect(in: cell, display) {
+            drawLabels(display.labels, in: labels, trailing: true)
+            cell.size.width = max(0, labels.minX - 10 - cell.minX)
+        }
         var titleWidth = cell.width
         let summaryWidth = task.subtaskSummary.map { 13 + textWidth($0, font: Style.count) + 10 } ?? 0
         let noteWidth = display.note.map { textWidth($0, font: Style.meta) + 10 } ?? 0
@@ -439,6 +454,19 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
                  color: task.isClosed ? Style.text3 : Style.text,
                  in: NSRect(x: cell.minX, y: cell.minY, width: titleWidth, height: cell.height),
                  strikethrough: task.isClosed)
+    }
+
+    /// The task's labels at the trailing end of the title cell (before the hover button), at most
+    /// 45% of it; nil without labels.
+    private func labelsRect(in titleCell: NSRect, _ display: RowDisplay) -> NSRect? {
+        guard !display.labels.isEmpty else { return nil }
+        var cell = titleCell
+        if let button = quickActionRect(in: cell) { cell.size.width = max(0, button.minX - 8 - cell.minX) }
+        let widths = chipWidths(display.labels)
+        let natural = widths.reduce(0, +) + Self.chipSpacing * CGFloat(widths.count - 1)
+        let width = min(natural, cell.width * 0.45)
+        guard width >= 24 else { return nil }
+        return NSRect(x: cell.maxX - width, y: cell.minY, width: width, height: cell.height)
     }
 
     /// Where the hover button sits: the trailing end of the title cell, only while hovered.
@@ -656,6 +684,11 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             controller?.perform(action, task: info.task.id)
             return
         }
+        if hit?.column == .title, let labels = labelsRect(in: hit!.rect, info.display), labels.contains(point) {
+            controller?.click(task: info.task.id, column: .labels, rect: labels, in: self,
+                              clickCount: event.clickCount, modifiers: event.modifierFlags, rename: {})
+            return
+        }
         controller?.click(task: info.task.id, column: hit?.column, rect: hit?.rect ?? bounds, in: self,
                           clickCount: event.clickCount, modifiers: event.modifierFlags,
                           rename: { [weak self] in self?.beginRename() })
@@ -681,6 +714,9 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         case .title:
             if let action = info.display.quickAction, let button = quickActionRect(in: hit.rect), button.contains(point) {
                 return action.help
+            }
+            if let labels = labelsRect(in: hit.rect, info.display), labels.contains(point) {
+                return info.display.labels.map(\.name).joined(separator: ", ") + " · click to change (L)"
             }
             return "Click to open, double-click to rename"
         case .project: return info.display.projectName ?? ""

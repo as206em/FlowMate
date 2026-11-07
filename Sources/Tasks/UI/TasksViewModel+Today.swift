@@ -12,11 +12,16 @@ struct TodaySection: Equatable {
 
 extension TasksViewModel {
     static let todayKey = "today"
+    static let todaySprintKey = "today-sprint"
 
-    /// Today is a single group (running, overdue, due today, pinned, then done today); it always shows,
-    /// its empty state says how to pin tasks.
-    static func todaySections(_ plan: TodayPlan) -> [TodaySection] {
-        [TodaySection(key: todayKey, title: "Today", tasks: plan.allTasks)]
+    /// Today focus (running, overdue, due today, pinned, then done today), always shown with an empty
+    /// state that says how to pin tasks; then the current sprint's open tasks that aren't in it.
+    static func todaySections(_ plan: TodayPlan, store: TaskStore) -> [TodaySection] {
+        let focus = TodaySection(key: todayKey, title: "Today focus", tasks: plan.allTasks)
+        let shown = Set(plan.allTasks.map(\.id))
+        let sprint = store.sprintTasks(slot: .active).filter { !$0.isClosed && !shown.contains($0.id) }
+        guard !sprint.isEmpty else { return [focus] }
+        return [focus, TodaySection(key: todaySprintKey, title: "Current sprint", tasks: sprint)]
     }
 
     /// The tasks ⌘T and the bulk bar's Today button act on: the selection (or the open task).

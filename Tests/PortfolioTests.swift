@@ -167,8 +167,8 @@ final class PortfolioTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "portfolio-\(UUID())")!
         let model = TasksViewModel(defaults: defaults, stateKey: "state")
         model.select(.all)
-        XCTAssertEqual(model.tabs, [.overview, .list, .sprints])
-        XCTAssertEqual(TasksViewModel.tabs(in: .project(ids["fine"]!)), [.list, .sprints])
+        XCTAssertEqual(model.tabs, [.overview, .list])
+        XCTAssertEqual(TasksViewModel.tabs(in: .project(ids["fine"]!)), [.list])
         XCTAssertEqual(TasksViewModel.tab(.overview, in: .project(ids["fine"]!)), .list)
 
         // ⌘K "Go to Overview" from a project

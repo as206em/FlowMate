@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// List view: a column table of tasks in groups (Status by default; the filter bar picks another).
+/// The tasks view: a column table of tasks in groups (Sprint by default, Status in a project
+/// without sprints; the filter bar picks another). Grouped by Sprint it is the sprint plan.
 /// Drag a row onto another group to change that value, or within a group to reorder (manual sort).
 /// Click a column header to sort inside each group; a third click returns to the manual order.
 struct TaskListView: View {
@@ -8,7 +9,9 @@ struct TaskListView: View {
     @EnvironmentObject private var model: TasksViewModel
 
     var body: some View {
-        if let reason = model.listEmptyReason(store) {
+        if model.showsSprintPlan {
+            SprintPlanView(scope: model.scope)
+        } else if let reason = model.listEmptyReason(store) {
             TasksEmptyStateView(reason: reason)
                 .padding(.top, 16)
                 .padding(.horizontal, TaskTableCell.sidePadding)
@@ -73,9 +76,8 @@ struct TaskListView: View {
         case .label, .none: columns = []
         case .status: columns = []
         }
-        // Sprint planning lives on the Sprints tab; Labels show once something has one
+        // Sprint planning lives in the Sprint grouping
         if model.grouping != .sprint { columns.insert(.sprint) }
-        if !groups.contains(where: { $0.tasks.contains { !$0.labelIds.isEmpty } }) { columns.insert(.labels) }
         return columns
     }
 
@@ -120,16 +122,15 @@ struct TaskListView: View {
     }
 }
 
-/// Sprints view: one sprint card with every number (dates, plan against capacity, Make / Reach,
-/// per-project capacity, Fill sprint and the ⋯ menu), then the active sprint's tasks, the backlog
-/// tasks Fill sprint would add (Suggested, with Add all), Next, later sprints and the Backlog.
-/// Past sprints close the page, folded; the velocity chart shows once there are three to compare.
+/// The tasks grouped by Sprint: one sprint card with every number (dates, plan against capacity, Make / Reach,
+/// per-project capacity, Fill sprint and the ⋯ menu), then the active sprint's tasks, Next, later
+/// sprints and the Backlog (in a project the Backlog comes first). In a project, past sprints close
+/// the page, folded; the velocity chart shows once there are three to compare.
+/// The search and filter chips narrow every group.
 struct SprintPlanView: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
     let scope: TaskScope
-
-    static let suggestedKey = "sprint-suggested"
 
     var body: some View {
         let sprint = store.sprint
@@ -137,10 +138,13 @@ struct SprintPlanView: View {
         builder.spacer("top", 4)
         builder.append(.sprintCard(scope))
         builder.spacer("after-card", 16)
+        // A project starts with its Backlog, open; the sprints follow, closed, then the old sprints.
+        // All projects shows only the sprints ahead and the backlog (no Suggested, no old sprints)
+        let backlogFirst = model.sprintPlanBacklogFirst
+        if backlogFirst { backlog(&builder, gap: 0) }
         group(&builder, .active, title: "\(sprint.name) · planned", hint: "",
-              empty: "Nothing in this sprint yet. Add the suggestions below, drag tasks here from the backlog, or add one with the New task field.",
-              gap: 0, liveHint: nil)
-        suggested(&builder)
+              empty: "Nothing in this sprint yet. Drag tasks here from the backlog, or add one with the New task field.",
+              gap: backlogFirst ? 24 : 0, liveHint: nil, composerIsDefault: !backlogFirst)
         let upcoming = store.upcomingSprints()
         group(&builder, .next, title: "\(sprint.nextName) · next", hint: upcoming.first?.hint ?? sprint.nextDateRange,
               empty: "Nothing planned for the next sprint. Drag tasks here to line them up.", gap: 24,
@@ -148,14 +152,12 @@ struct SprintPlanView: View {
         for later in upcoming where later.ahead > 1 {
             laterGroup(&builder, later)
         }
-        group(&builder, .backlog, title: "Backlog", hint: "",
-              empty: "No ideas parked for later. Drag tasks here, or pick Backlog on the New task field's sprint chip.", gap: 24,
-              liveHint: .sprintLoad(scope: scope, slot: .backlog))
-        pastSprints(&builder)
+        if !backlogFirst { backlog(&builder, gap: 24) }
+        if backlogFirst { pastSprints(&builder) }
         builder.spacer("bottom", 72)
         return TaskTable(
             showProject: scope.projectId == nil,
-            excluding: store.tasks(in: scope).contains { !$0.labelIds.isEmpty } ? [.sprint, .priority] : [.sprint, .priority, .labels],
+            excluding: sprintPlanExcluded,
             including: [.score],
             rows: builder.rows,
             drops: builder.drops,
@@ -164,45 +166,27 @@ struct SprintPlanView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
-    /// What Fill sprint would add, best score first, while the sprint has room. Drag one into the
-    /// sprint, or Add all.
-    private func suggested(_ builder: inout TaskTableBuilder) {
-        let picks = store.fillPicks(scope: scope).compactMap { store.task($0) }
-        guard !picks.isEmpty else { return }
-        let mix = store.mix(of: picks)
-        var hint = "· \(Focus.durationString(minutes: picks.reduce(0) { $0 + $1.expectedMinutes }))"
-        if let reach = mix.reachPercent { hint += " · \(reach)% Reach" }
-        hint += " · best score first"
-        builder.group(
-            key: Self.suggestedKey,
-            title: "Suggested",
-            hint: hint,
-            tasks: picks,
-            emptyText: "",
-            showProject: scope.projectId == nil,
-            drop: nil,
-            open: !model.isCollapsed(Self.suggestedKey),
-            gap: 24,
-            actions: [.fillToCapacity(scope: scope)],
-            draggable: true,
-            display: RowDisplay.maker(store: store, model: model, scores: true)
-        )
+    /// Priority is left out (Score plans). In a project the Sprint column stays, so a backlog task
+    /// shows "Backlog" and a click there moves it into a sprint; All projects leaves it out.
+    private var sprintPlanExcluded: Set<TaskColumn> {
+        var columns: Set<TaskColumn> = [.priority]
+        if !model.sprintPlanBacklogFirst { columns.insert(.sprint) }
+        return columns
     }
 
-    /// Completed sprints, newest first, collapsed until opened:
-    /// "Sprint 3  10  8 done · 18h planned · 21h tracked · Oct 12 – Oct 25", after the velocity chart.
+    /// Completed sprints, newest first, collapsed until opened, spaced like the other groups:
+    /// "Sprint 3 · old  10  8 done · 18h planned · 21h tracked · Oct 12 – Oct 25". The velocity
+    /// chart closes the page once there are three to compare.
     private func pastSprints(_ builder: inout TaskTableBuilder) {
         let past = store.pastSprints()
         guard !past.isEmpty else { return }
-        builder.sectionTitle("History")
-        if past.count >= 3 { builder.velocity() }
         for sprint in past {
             let key = TasksViewModel.pastSprintGroupKey(sprint)
             builder.group(
                 key: key,
-                title: sprint.name,
+                title: "\(sprint.name) · old",
                 hint: [sprint.headerHint, sprint.goal.isEmpty ? nil : sprint.goal].compactMap { $0 }.joined(separator: " · "),
-                tasks: model.sortedForGroup(store.tasks(of: sprint, in: scope), key, store: store),
+                tasks: model.sortedForGroup(model.sprintPlanTasks(store.tasks(of: sprint, in: scope), store: store), key, store: store),
                 emptyText: "No tasks were in this sprint.",
                 showProject: scope.projectId == nil,
                 drop: nil,
@@ -211,6 +195,10 @@ struct SprintPlanView: View {
                 sortable: true,
                 display: RowDisplay.maker(store: store, model: model, scores: true)
             )
+        }
+        if past.count >= 3 {
+            builder.spacer("before-velocity", 24)
+            builder.velocity()
         }
     }
 
@@ -221,7 +209,7 @@ struct SprintPlanView: View {
             key: key,
             title: later.name,
             hint: later.hint,
-            tasks: model.sortedForGroup(store.sprintTasks(ahead: later.ahead, in: scope), key, store: store),
+            tasks: model.sortedForGroup(model.sprintPlanTasks(store.sprintTasks(ahead: later.ahead, in: scope), store: store), key, store: store),
             emptyText: "Nothing planned for \(later.name). Drag tasks here.",
             showProject: scope.projectId == nil,
             drop: .upcoming(later.ahead),
@@ -233,18 +221,24 @@ struct SprintPlanView: View {
         )
     }
 
+    private func backlog(_ builder: inout TaskTableBuilder, gap: CGFloat) {
+        group(&builder, .backlog, title: "Backlog", hint: "",
+              empty: "No ideas parked for later. Drag tasks here, or pick Backlog on the New task field's sprint chip.", gap: gap,
+              liveHint: .sprintLoad(scope: scope, slot: .backlog), composerIsDefault: gap == 0)
+    }
+
     private func group(_ builder: inout TaskTableBuilder, _ slot: SprintSlot, title: String, hint: String, empty: String, gap: CGFloat,
-                       liveHint: GroupLiveHint?) {
+                       liveHint: GroupLiveHint?, composerIsDefault: Bool = false) {
         let key = TasksViewModel.sprintGroupKey(slot)
         builder.group(
             key: key,
             title: title,
             hint: hint,
-            tasks: model.sortedForGroup(store.sprintTasks(slot: slot, in: scope), key, store: store),
+            tasks: model.sortedForGroup(model.sprintPlanTasks(store.sprintTasks(slot: slot, in: scope), store: store), key, store: store),
             emptyText: empty,
             showProject: scope.projectId == nil,
             drop: .slot(slot),
-            composerIsDefault: slot == .active,
+            composerIsDefault: composerIsDefault,
             composerOnTop: model.isComposerPinned(TasksViewModel.listComposerKey(key)),
             open: !model.isCollapsed(key),
             gap: gap,
@@ -257,9 +251,9 @@ struct SprintPlanView: View {
 
 /// What dropping a task on a group (or a row in it) does.
 enum TaskGroupDrop: Equatable {
-    /// Sprints view: move to the slot, placed before the row
+    /// Sprint plan: move to the slot, placed before the row
     case slot(SprintSlot)
-    /// Sprints view: move to the sprint planned this many places after the active one (2 or more)
+    /// Sprint plan: move to the sprint planned this many places after the active one (2 or more)
     case upcoming(Int)
     /// List: set the group's value; place before the row only in manual order
     case group(TaskGroupValue, reorder: Bool)

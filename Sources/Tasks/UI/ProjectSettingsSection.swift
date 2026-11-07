@@ -284,14 +284,6 @@ struct ProjectDefaultsSection: View {
                 )
                 .accessibilityLabel("Type of new tasks")
             }
-            SidePanelProperty(label: "Opens on") {
-                FocusPicker(
-                    options: [nil] + ProjectView.allCases.filter { $0 != .sprints || project.usesSprints }.map { Optional($0) },
-                    selection: Binding(get: { project.defaultView }, set: { store.setDefaultView(project.id, $0) }),
-                    title: { $0?.title ?? "Last used" }
-                )
-                .accessibilityLabel("Opens on")
-            }
             SidePanelProperty(label: "New task time") {
                 FocusPicker(
                     options: [nil] + TaskItem.expectedChoices.map { Optional($0) },
@@ -327,8 +319,6 @@ struct ProjectDefaultsSection: View {
     }
 
     private var hint: String {
-        let opens = project.defaultView.map { "Opens on \($0.title) from the sidebar, menu bar and Overview." }
-            ?? "Opens on the view you used last."
-        return opens + " A group, column or typed word still picks a new task's sprint and time."
+        "A group, column or typed word still picks a new task's sprint and time."
     }
 }

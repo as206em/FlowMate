@@ -113,7 +113,7 @@ extension TaskStore {
         }
     }
 
-    /// Sprints view drag and drop onto an upcoming sprint, placed before `beforeTaskId`.
+    /// Sprint plan drag and drop onto an upcoming sprint, placed before `beforeTaskId`.
     func moveTask(_ id: UUID, toUpcoming ahead: Int, before beforeTaskId: UUID? = nil) {
         undoGroup("Move task") {
             setSprint(id, .upcoming(ahead))

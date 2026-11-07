@@ -533,7 +533,7 @@ private struct NextBestRow: View {
 
 // MARK: - Score popover
 
-/// The Sprints view's Score cell popover: the number, how it's made, and the nudges.
+/// The sprint plan's Score cell popover: the number, how it's made, and the nudges.
 struct TaskScoreEditor: View {
     @EnvironmentObject private var store: TaskStore
     let task: TaskItem

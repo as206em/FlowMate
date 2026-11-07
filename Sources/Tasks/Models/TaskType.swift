@@ -1,7 +1,7 @@
 import Foundation
 
 /// The two kinds of work a sprint balances: making the product, and reaching the people who use
-/// or buy it (customers, sales, marketing). The Sprints view compares their planned time with the
+/// or buy it (customers, sales, marketing). The Sprint plan compares their planned time with the
 /// sprint's mix target, so a sprint that is all building shows it.
 enum TypeBucket: String, CaseIterable, Identifiable, Sendable, TolerantStringEnum {
     case make, reach

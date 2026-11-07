@@ -200,25 +200,18 @@ struct TasksRootView: View {
         store.isLoaded && store.projects.isEmpty && model.scope.projectId == nil
     }
 
-    /// List and Sprints: views drawn by the native table
+    /// The tasks: drawn by the native table
     private var usesNativeTable: Bool {
         guard !showsFirstProject else { return false }
         switch model.effectiveTab {
         case .list: return true
-        case .sprints: return true
         case .overview: return false
         }
     }
 
     @ViewBuilder
     private var nativeTableContent: some View {
-        if model.effectiveTab == .sprints {
-            VStack(alignment: .leading, spacing: 0) {
-                SprintPlanView(scope: model.scope)
-            }
-        } else {
-            TaskListView()
-        }
+        TaskListView()
     }
 
     @ViewBuilder
@@ -237,8 +230,6 @@ struct TasksRootView: View {
             switch model.effectiveTab {
             case .list:
                 TaskListView()
-            case .sprints:
-                SprintPlanView(scope: model.scope)
             case .overview:
                 PortfolioOverview()
             }

@@ -8,13 +8,13 @@ final class TasksViewModel: ObservableObject {
     enum Tab: String, CaseIterable {
         /// All projects only: a card per project (TaskStore.portfolio)
         case overview
-        case list, sprints
+        /// The tasks, grouped (Sprint grouping shows the sprint plan, see `showsSprintPlan`)
+        case list
 
         var title: String {
             switch self {
             case .overview: return "Overview"
-            case .list: return "List"
-            case .sprints: return "Sprints"
+            case .list: return "Tasks"
             }
         }
     }
@@ -125,7 +125,8 @@ final class TasksViewModel: ObservableObject {
     @Published var collapsedGroups: Set<String> = [] {
         didSet { if collapsedGroups != oldValue { saveWindowState() } }
     }
-    /// Filters, sort and grouping per scope ("all" or a project id), so each project keeps its own.
+    /// Filters, sort and grouping per scope ("all" or a project id), so each project keeps its own
+    /// filters and sort. The grouping of every project is one, kept under `projectsKey`.
     @Published var optionsByScope: [String: TaskViewOptions] = [:] {
         didSet { if optionsByScope != oldValue { saveWindowState() } }
     }
@@ -193,31 +194,37 @@ final class TasksViewModel: ObservableObject {
         paletteRecents = defaults?.stringArray(forKey: Self.paletteRecentsKey) ?? []
     }
 
-    /// Sprints exists in All projects and in a project that uses sprints; fall back to List elsewhere.
-    var effectiveTab: Tab { Self.tab(tab, in: scope, sprints: scopeUsesSprints) }
+    /// Overview exists in All projects only; elsewhere the tasks show.
+    var effectiveTab: Tab { Self.tab(tab, in: scope) }
 
-    var tabs: [Tab] { Self.tabs(in: scope, sprints: scopeUsesSprints) }
+    var tabs: [Tab] { Self.tabs(in: scope) }
 
-    static func tabs(in scope: TaskScope, sprints: Bool = true) -> [Tab] {
+    static func tabs(in scope: TaskScope) -> [Tab] {
         switch scope {
         case .today: return []
-        case .all: return sprints ? [.overview, .list, .sprints] : [.overview, .list]
-        case .project: return sprints ? [.list, .sprints] : [.list]
+        case .all: return [.overview, .list]
+        case .project: return [.list]
         }
     }
 
-    /// The tab a scope can show for `tab` (List when it has no such tab).
-    static func tab(_ tab: Tab, in scope: TaskScope, sprints: Bool = true) -> Tab {
-        tabs(in: scope, sprints: sprints).contains(tab) ? tab : .list
+    /// The tab a scope can show for `tab` (the tasks when it has no such tab).
+    static func tab(_ tab: Tab, in scope: TaskScope) -> Tab {
+        tabs(in: scope).contains(tab) ? tab : .list
     }
+
+    /// The tasks grouped by Sprint: the sprint plan (sprint card, active, next, later
+    /// sprints, backlog and, in a project, past sprints) instead of plain groups.
+    var showsSprintPlan: Bool { !scope.isToday && effectiveTab == .list && grouping == .sprint }
+
+    /// In a project the sprint plan starts with the Backlog, open, and the sprints follow, closed
+    /// (each screen opens with only its first group open, `openOnlyFirstGroup`).
+    var sprintPlanBacklogFirst: Bool { scope.projectId != nil }
 
     // MARK: - Per-project settings the views follow
 
-    /// Projects planned without sprints (Project.usesSprints off): no Sprints tab, no sprint
+    /// Projects planned without sprints (Project.usesSprints off): no sprint plan, no sprint
     /// filter, grouping or column. Kept in step with the store by TasksRootView (`syncProjects`).
     @Published private(set) var sprintlessProjects: Set<UUID> = []
-    /// Projects that open on a view of their own choosing (Project.defaultView).
-    private(set) var defaultViews: [UUID: ProjectView] = [:]
 
     /// Copies the per-project settings the view model needs from the store.
     func syncProjects(_ store: TaskStore) {
@@ -225,8 +232,6 @@ final class TasksViewModel: ObservableObject {
         if sprintless != sprintlessProjects { sprintlessProjects = sprintless }
         let anySprints = store.allProjects.isEmpty || store.allProjects.contains(where: \.usesSprints)
         if anySprints != anyProjectUsesSprints { anyProjectUsesSprints = anySprints }
-        defaultViews = Dictionary(store.allProjects.compactMap { p in p.defaultView.map { (p.id, $0) } },
-                                  uniquingKeysWith: { a, _ in a })
     }
 
     /// At least one project takes part in the workspace's sprint (true with no projects).
@@ -243,27 +248,17 @@ final class TasksViewModel: ObservableObject {
         TaskGrouping.available(in: scope).filter { $0 != .sprint || scopeUsesSprints }
     }
 
-    static func tab(_ view: ProjectView) -> Tab {
-        switch view {
-        case .list: return .list
-        case .sprints: return .sprints
-        }
-    }
-
-    /// The filter bar shows on List (Today has none).
+    /// The filter bar shows with the tasks (Today has none).
     var showsFilterBar: Bool { !scope.isToday && effectiveTab == .list }
 
-    /// Shows a scope on the tab it was last used with (its filters are kept per scope too).
-    /// A scope never visited keeps the current tab. A project with a default view set
-    /// (Project.defaultView) always opens on it, from anywhere (sidebar, menu bar, palette,
-    /// Overview); without one it opens on its last tab.
+    /// Shows a scope on the tab it was last used with (its filters and grouping are kept per
+    /// scope too). A scope never visited keeps the current tab.
     func select(_ scope: TaskScope) {
-        var remembered = tabByScope[scope.key] ?? tab
-        if case let .project(id) = scope, let view = defaultViews[id] { remembered = Self.tab(view) }
+        let remembered = tabByScope[scope.key] ?? tab
         activeViewId = nil
         self.scope = scope
         // Today has no tabs: the tab stays for the next scope
-        if !scope.isToday { tab = Self.tab(remembered, in: scope, sprints: scopeUsesSprints) }
+        if !scope.isToday { tab = Self.tab(remembered, in: scope) }
         selectedTaskId = nil
         sidebarCursor = nil
         closePanel()
@@ -329,11 +324,12 @@ final class TasksViewModel: ObservableObject {
         self.filter = filter
     }
 
-    /// Opens the Sprints tab, of the project when given and of all projects otherwise (from a
-    /// past-sprint link or the panel).
+    /// Shows the sprint plan (the tasks grouped by Sprint), of the project when given and of all
+    /// projects otherwise (from a past-sprint link or the panel).
     func showSprints(of projectId: UUID? = nil) {
         select(projectId.map { .project($0) } ?? .all)
-        tab = .sprints
+        tab = .list
+        if scopeUsesSprints { options.grouping = .sprint }
     }
 
     /// The sidebar's items top to bottom: Today, All projects, the saved views and each project
@@ -484,11 +480,11 @@ final class TasksViewModel: ObservableObject {
         } else {
             switch effectiveTab {
             case .overview: return
-            case .sprints:
-                shown = Set(visibleTasks(store, includingCollapsed: true).map(\.id))
-                for sprint in store.pastSprints() { shown.formUnion(store.tasks(of: sprint, in: scope).map(\.id)) }
             case .list:
                 shown = Set(visibleTasks(store, includingCollapsed: true).map(\.id))
+                if showsSprintPlan {
+                    for sprint in store.pastSprints() { shown.formUnion(sprintPlanTasks(store.tasks(of: sprint, in: scope), store: store).map(\.id)) }
+                }
             }
         }
         keepSelected(selectedTaskIds.filter { store.task($0) != nil && shown.contains($0) })
@@ -515,21 +511,24 @@ final class TasksViewModel: ObservableObject {
     /// The keys of the groups the current view can collapse (List, Sprints, Today); nil on the other tabs.
     func collapsibleGroupKeys(_ store: TaskStore) -> [String]? {
         if scope.isToday {
-            let keys = Self.todaySections(store.todayPlan()).map(\.key)
+            let keys = Self.todaySections(store.todayPlan(), store: store).map(\.key)
             return store.nextBestCandidates().isEmpty ? keys : keys + [NextBestPanel.groupKey]
         }
         switch effectiveTab {
+        case .list where showsSprintPlan:
+            let upcoming = store.upcomingSprints().filter { $0.ahead > 1 }.map { Self.upcomingGroupKey($0.ahead) }
+            if sprintPlanBacklogFirst {
+                let past = store.pastSprints().map(Self.pastSprintGroupKey)
+                return [Self.sprintGroupKey(.backlog), Self.sprintGroupKey(.active),
+                        Self.sprintGroupKey(.next)] + upcoming + past
+            }
+            return Self.sprintSlots.map(Self.sprintGroupKey) + upcoming
         case .list:
             // The keys only: group without sorting
             let filter = appliedFilter
             var tasks = store.filtered(store.tasks(in: scope), by: filter)
             if !filter.sprintSlots.contains(.closed) { tasks.removeAll { $0.sprintSlot == .closed } }
             return store.groups(tasks, by: grouping, in: scope).map(\.id)
-        case .sprints:
-            var keys = Self.sprintSlots.map(Self.sprintGroupKey)
-            keys += store.upcomingSprints().filter { $0.ahead > 1 }.map { Self.upcomingGroupKey($0.ahead) }
-            keys += store.pastSprints().map(Self.pastSprintGroupKey)
-            return keys
         case .overview:
             return nil
         }
@@ -567,10 +566,32 @@ final class TasksViewModel: ObservableObject {
 
     static func scopeKey(_ scope: TaskScope) -> String { scope.key }
 
-    /// The current scope's filters, sort and grouping.
+    /// Where the grouping shared by every project is kept (its options hold only the grouping).
+    static let projectsKey = "projects"
+
+    /// A project on screen (not a saved view): its grouping is the one every project shares.
+    private var sharesProjectGrouping: Bool { activeViewId == nil && scope.projectId != nil }
+
+    /// The current scope's filters, sort and grouping. In a project the grouping is shared: changing
+    /// it in one project changes it in all of them (not in All projects or saved views).
     var options: TaskViewOptions {
-        get { optionsByScope[scopeKey] ?? .standard }
-        set { optionsByScope[scopeKey] = newValue == .standard ? nil : newValue }
+        get {
+            var options = optionsByScope[scopeKey] ?? .standard
+            if sharesProjectGrouping {
+                options.grouping = optionsByScope[Self.projectsKey]?.grouping ?? TaskViewOptions.standard.grouping
+            }
+            return options
+        }
+        set {
+            var newValue = newValue
+            if sharesProjectGrouping {
+                var shared = TaskViewOptions.standard
+                shared.grouping = newValue.grouping
+                optionsByScope[Self.projectsKey] = shared == .standard ? nil : shared
+                newValue.grouping = TaskViewOptions.standard.grouping
+            }
+            optionsByScope[scopeKey] = newValue == .standard ? nil : newValue
+        }
     }
 
     var filter: TaskFilter {
@@ -612,9 +633,12 @@ final class TasksViewModel: ObservableObject {
         return filter
     }
 
-    /// Resets search, chips, sort and grouping for this scope.
+    /// Resets search, chips, sort and grouping for this scope. A project keeps the grouping
+    /// every project shares.
     func clearOptions() {
-        options = .standard
+        var cleared = TaskViewOptions.standard
+        if sharesProjectGrouping { cleared.grouping = options.grouping }
+        options = cleared
     }
 
     // MARK: - What the views show
@@ -654,24 +678,39 @@ final class TasksViewModel: ObservableObject {
         return .noTasks
     }
 
-    /// Sprint view groups (manual order, no filters).
+    /// The sprint plan's tasks of one group, narrowed by the search and filter chips.
+    func sprintPlanTasks(_ tasks: [TaskItem], store: TaskStore) -> [TaskItem] {
+        let filter = appliedFilter
+        return filter.isEmpty ? tasks : store.filtered(tasks, by: filter)
+    }
+
+    /// The sprint plan's slot groups.
     static let sprintSlots: [SprintSlot] = [.active, .next, .backlog]
 
     static func sprintGroupKey(_ slot: SprintSlot) -> String { "slot-\(slot.rawValue)" }
     /// A sprint planned further ahead than the next one (ahead 2 or more)
     static func upcomingGroupKey(_ ahead: Int) -> String { "upcoming-\(ahead)" }
 
-    /// The Sprints view's groups top to bottom, open ones only: active, next, later sprints, backlog.
+    /// The sprint plan's groups top to bottom, open ones only: active, next, later sprints, backlog
+    /// (in a project the backlog comes first).
     func sprintGroupTasks(_ store: TaskStore, includingCollapsed: Bool = false) -> [[TaskItem]] {
-        var groups: [(key: String, tasks: [TaskItem])] = [
-            (Self.sprintGroupKey(.active), sortedForGroup(store.sprintTasks(slot: .active, in: scope), Self.sprintGroupKey(.active), store: store)),
-            (Self.sprintGroupKey(.next), sortedForGroup(store.sprintTasks(slot: .next, in: scope), Self.sprintGroupKey(.next), store: store)),
-        ]
-        for sprint in store.upcomingSprints() where sprint.ahead > 1 {
-            groups.append((Self.upcomingGroupKey(sprint.ahead), sortedForGroup(store.sprintTasks(ahead: sprint.ahead, in: scope), Self.upcomingGroupKey(sprint.ahead), store: store)))
+        sprintGroups(store, includingCollapsed: includingCollapsed).map(\.tasks)
+    }
+
+    /// The sprint plan's groups with their keys (see `sprintGroupTasks`).
+    func sprintGroups(_ store: TaskStore, includingCollapsed: Bool = false) -> [(key: String, tasks: [TaskItem])] {
+        func group(_ key: String, _ tasks: [TaskItem]) -> (key: String, tasks: [TaskItem]) {
+            (key, sortedForGroup(sprintPlanTasks(tasks, store: store), key, store: store))
         }
-        groups.append((Self.sprintGroupKey(.backlog), sortedForGroup(store.sprintTasks(slot: .backlog, in: scope), Self.sprintGroupKey(.backlog), store: store)))
-        return groups.filter { includingCollapsed || !isCollapsed($0.key) }.map(\.tasks)
+        let backlog = group(Self.sprintGroupKey(.backlog), store.sprintTasks(slot: .backlog, in: scope))
+        var groups = sprintPlanBacklogFirst ? [backlog] : []
+        groups.append(group(Self.sprintGroupKey(.active), store.sprintTasks(slot: .active, in: scope)))
+        groups.append(group(Self.sprintGroupKey(.next), store.sprintTasks(slot: .next, in: scope)))
+        for sprint in store.upcomingSprints() where sprint.ahead > 1 {
+            groups.append(group(Self.upcomingGroupKey(sprint.ahead), store.sprintTasks(ahead: sprint.ahead, in: scope)))
+        }
+        if !sprintPlanBacklogFirst { groups.append(backlog) }
+        return groups.filter { includingCollapsed || !isCollapsed($0.key) }
     }
 
     /// Every task the current view shows, top to bottom, skipping collapsed groups.
@@ -679,15 +718,15 @@ final class TasksViewModel: ObservableObject {
     /// `includingCollapsed`: the tasks of collapsed groups too (the ones still in the view).
     func visibleTasks(_ store: TaskStore, now: Date = Date(), includingCollapsed: Bool = false) -> [TaskItem] {
         if scope.isToday {
-            return Self.todaySections(store.todayPlan(now: now)).filter { includingCollapsed || !isCollapsed($0.key) }.flatMap(\.tasks)
+            return Self.todaySections(store.todayPlan(now: now), store: store).filter { includingCollapsed || !isCollapsed($0.key) }.flatMap(\.tasks)
         }
         switch effectiveTab {
+        case .list where showsSprintPlan:
+            return sprintGroupTasks(store, includingCollapsed: includingCollapsed).flatMap { $0 }
         case .list:
             // Grouped by label a task can be under several groups; ↑/↓ visit it once
             var seen = Set<UUID>()
             return listGroups(store, now: now).filter { includingCollapsed || !isCollapsed($0.id) }.flatMap(\.tasks).filter { seen.insert($0.id).inserted }
-        case .sprints:
-            return sprintGroupTasks(store, includingCollapsed: includingCollapsed).flatMap { $0 }
         case .overview:
             return []
         }
@@ -889,7 +928,7 @@ final class TasksViewModel: ObservableObject {
     /// Drops remembered tabs and filters of projects that no longer exist (once data has loaded).
     private func forgetDeletedScopes(_ store: TaskStore) {
         guard store.isLoaded else { return }
-        let alive = Set(store.allProjects.map(\.id.uuidString) + ["all", "today"]
+        let alive = Set(store.allProjects.map(\.id.uuidString) + ["all", "today", Self.projectsKey]
                         + store.savedViews.map { Self.viewKey($0.id) })
         let tabs = tabByScope.filter { alive.contains($0.key) }
         if tabs != tabByScope { tabByScope = tabs; saveWindowState() }
@@ -995,10 +1034,7 @@ final class TasksViewModel: ObservableObject {
     /// Reschedules every overdue task the view shows (the Overdue chip's Reschedule menu).
     func rescheduleOverdue(to date: Date?, store: TaskStore, now: Date = Date()) {
         let shown: [TaskItem]
-        switch effectiveTab {
-        case .list: shown = listGroups(store, now: now).flatMap(\.tasks)
-        default: shown = visibleTasks(store, now: now)
-        }
+        shown = effectiveTab == .list && !showsSprintPlan ? listGroups(store, now: now).flatMap(\.tasks) : visibleTasks(store, now: now)
         let ids = shown.filter { store.isOverdue($0, now: now) }.map(\.id)
         guard !ids.isEmpty else { return }
         store.setDueDate(ids, date)
@@ -1067,16 +1103,16 @@ final class TasksViewModel: ObservableObject {
 
     // MARK: - ⌘N: the composer at the top
 
-    /// The composer ⌘N opens: the first group of the List (or the active sprint in Sprints). Its group is opened if it was collapsed.
+    /// The composer ⌘N opens: the first group of the List (the active sprint in the sprint plan). Its group is opened if it was collapsed.
     func defaultComposerKey(_ store: TaskStore) -> String? {
         // Today: the composer of Today, whose tasks are pinned for today
         if scope.isToday { return Self.listComposerKey(Self.todayKey) }
         switch effectiveTab {
+        case .list where showsSprintPlan:
+            return Self.listComposerKey(Self.sprintGroupKey(sprintPlanBacklogFirst ? .backlog : .active))
         case .list:
             guard let group = listGroups(store).first(where: \.acceptsDrop) else { return nil }
             return Self.listComposerKey(group.id)
-        case .sprints:
-            return Self.listComposerKey(Self.sprintGroupKey(.active))
         case .overview:
             return nil
         }

@@ -95,10 +95,10 @@ extension TasksViewModel {
 
     // MARK: - Saving
 
-    /// "Save view…" is offered while the filters, sort or grouping differ from the defaults (and
-    /// no saved view is on screen: that one has Update instead).
+    /// "Save view…" is offered in All projects while the filters, sort or grouping differ from the
+    /// defaults (and no saved view is on screen: that one has Update instead). Not in a project.
     var canSaveView: Bool {
-        showsFilterBar && activeViewId == nil && options.isCustomized
+        showsFilterBar && activeViewId == nil && scope.projectId == nil && options.isCustomized
     }
 
     /// Saves what's on screen as a new view and shows it (selected in the sidebar). nil for a blank name.
@@ -135,7 +135,7 @@ extension TasksViewModel {
         if activeViewId == id {
             activeViewId = nil
             // The tab of the scope itself, as it was
-            tab = Self.tab(tabByScope[scope.key] ?? tab, in: scope, sprints: scopeUsesSprints)
+            tab = Self.tab(tabByScope[scope.key] ?? tab, in: scope)
         }
         optionsByScope[Self.viewKey(id)] = nil
         store.deleteSavedView(id)

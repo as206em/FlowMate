@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The part of the header row on List after the tabs: search (⌘F), filter chips, Group (List only),
-/// Sort, Save view… and Clear. Settings are kept per project (TasksViewModel.optionsByScope).
+/// The part of the header row after the tabs: search (⌘F), filter chips, Group, and in All projects
+/// Save view… and Clear. Filters are kept per project; the grouping is one for every project
+/// (TasksViewModel.options).
 /// On a saved view whose filters changed: "Modified · Update view · Revert".
 struct TaskFilterBar: View {
     @EnvironmentObject private var store: TaskStore
@@ -88,7 +89,7 @@ struct TaskFilterBar: View {
                         .buttonStyle(.focus(.ghost))
                         .help("Keep these filters, sort and grouping as a view in the sidebar")
                 }
-                if model.options.isCustomized {
+                if model.scope.projectId == nil, model.options.isCustomized {
                     Button("Clear") { model.clearOptions() }
                         .buttonStyle(.focus(.ghost))
                         .help("Reset search, filters, sort and grouping")

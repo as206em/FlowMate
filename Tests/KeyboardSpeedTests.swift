@@ -233,6 +233,7 @@ final class KeyboardSpeedTests: XCTestCase {
         let model = TasksViewModel()
         model.select(.project(pid))
         model.tab = .list
+        model.options.grouping = .status
         func order() -> [UUID] { model.listGroups(store).flatMap(\.tasks).map(\.id) }
         XCTAssertEqual(order(), [a, b, c, d])
 
@@ -296,9 +297,9 @@ final class KeyboardSpeedTests: XCTestCase {
 
         // ">" lists commands only
         model.tab = .list
-        model.paletteQuery = "> sprints"
+        model.paletteQuery = "> group by pri"
         let commands = model.paletteResults(store).items
-        XCTAssertEqual(commands.first, .command(.switchTab(.sprints)))
+        XCTAssertEqual(commands.first, .command(.groupBy(.priority)))
         XCTAssertTrue(commands.allSatisfy { if case .command = $0 { return true } else { return false } })
         model.paletteQuery = ">"
         XCTAssertTrue(model.paletteResults(store).items.contains(.command(.newTask)))
@@ -359,15 +360,12 @@ final class KeyboardSpeedTests: XCTestCase {
         let a = store.addTask(title: "A", projectId: pid, now: t0)!
         let model = TasksViewModel()
         model.select(.project(pid))
-        model.tab = .sprints
 
         model.run(.showOverdue, store: store)
         XCTAssertEqual(model.filter.due, [.overdue])
         model.run(.groupBy(.priority), store: store)
         XCTAssertEqual(model.effectiveTab, .list)
         XCTAssertEqual(model.grouping, .priority)
-        model.run(.switchTab(.sprints), store: store)
-        XCTAssertEqual(model.tab, .sprints)
         model.run(.completeSprint, store: store)
         XCTAssertTrue(model.completingSprint)
 

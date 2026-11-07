@@ -315,9 +315,11 @@ final class LabelsAndViewsTests: XCTestCase {
         model.tab = .list
         XCTAssertFalse(model.canSaveView, "nothing to save while the filters are the defaults")
         model.filter.priorities = [.high]
-        XCTAssertTrue(model.canSaveView)
+        XCTAssertFalse(model.canSaveView, "views are saved from All projects, not a project")
 
-        let id = model.saveCurrentView(name: "  Hot  ", icon: "flame", store: store)!
+        // A view of a project (made before, or by the MCP server) still applies
+        let id = store.addSavedView(name: "  Hot  ", icon: "flame", scope: .project(pid), layout: .list, options: model.options)!
+        model.applySavedView(id, store: store)
         let view = store.savedView(id)!
         XCTAssertEqual(view.name, "Hot")
         XCTAssertEqual(view.scope, .project(pid))

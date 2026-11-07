@@ -43,7 +43,7 @@ enum SprintSlot: String, CaseIterable, Identifiable, Sendable, TolerantStringEnu
     static var fallback: SprintSlot { .backlog }
     var id: String { rawValue }
 
-    /// Slots a user can pick in the task panel or drag between in the Sprints view
+    /// Slots a user can pick in the task panel or drag between in the Sprint plan
     static let plannable: [SprintSlot] = [.active, .next, .backlog]
 }
 

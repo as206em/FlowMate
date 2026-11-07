@@ -3,15 +3,18 @@ import SwiftUI
 
 /// The header, two lines on every screen so they all read the same:
 ///   1 (52pt)  the title (project, All projects, Today or a saved view); on Today, the time
-///             tracked today. Sprint numbers live on the Sprints tab's sprint card, once.
-///   2 (42pt)  the tabs (Overview · List · Sprints), underlined, with the tools of the
-///             tab after them: search and filters, Group and Sort on List
-/// Today has no tabs, so it has the first line only. The New task composer lives in the groups.
+///             tracked today. Grouped by Sprint, the sprint numbers live on the sprint card.
+///   2 (42pt)  in All projects the tabs (Overview · Tasks), underlined; then the tools: search
+///             and filters, Group, and in All projects the sprint chip (dates, goal, Plan
+///             sprints, Complete sprint) unless the sprint card already shows them
+/// Today has no tools line. The New task composer lives in the groups.
 struct TasksHeader: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
 
     private var hasTabs: Bool { !model.tabs.isEmpty }
+    /// Only All projects has two tabs; elsewhere the tools line starts with the tools
+    private var showsTabs: Bool { model.tabs.count > 1 }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,8 +63,10 @@ struct TasksHeader: View {
 
     private var toolLine: some View {
         HStack(spacing: 10) {
-            HeaderTabs()
-            Rectangle().fill(Focus.hairline).frame(width: 1, height: 16).padding(.horizontal, 4)
+            if showsTabs {
+                HeaderTabs()
+                Rectangle().fill(Focus.hairline).frame(width: 1, height: 16).padding(.horizontal, 4)
+            }
             tools
         }
         .padding(.horizontal, 28)
@@ -78,9 +83,9 @@ struct TasksHeader: View {
             } else {
                 Spacer(minLength: 12)
             }
-            if let keys { CollapseAllButton(keys: keys) }
-        case .sprints:
-            Spacer(minLength: 12)
+            if model.scope.projectId == nil, model.scopeUsesSprints, !model.showsSprintPlan, store.isLoaded, !store.projects.isEmpty {
+                SprintHeaderItems(scope: model.scope)
+            }
             if let keys { CollapseAllButton(keys: keys) }
         case .overview:
             Spacer(minLength: 12)
@@ -88,7 +93,7 @@ struct TasksHeader: View {
     }
 }
 
-/// List · Sprints as underlined tabs.
+/// Overview · Tasks as underlined tabs.
 private struct HeaderTabs: View {
     @EnvironmentObject private var model: TasksViewModel
 
@@ -184,58 +189,42 @@ private struct ProjectTitleButton: View {
     }
 }
 
-/// The active sprint in the header: a chip with its name and completion that opens the sprint menu
-/// (dates, goal, the plan against capacity, Plan sprints, Complete sprint). The Sprints tab also
-/// shows Plan sprints and Complete sprint as buttons. The sprint is the workspace's, so it reads the
-/// same in every project.
+/// The active sprint in the tools line: a chip with its name that opens the sprint menu (dates,
+/// goal, the plan against capacity, Plan sprints, Complete sprint). Shown in All projects unless
+/// the tasks are grouped by Sprint, where the sprint card has the same menu. The sprint is the workspace's, so
+/// it reads the same in every project.
 struct SprintHeaderItems: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
     let scope: TaskScope
-    var showsChip = true
-    /// The Sprints tab: its two actions sit in its tool line
-    var showsActions = false
 
     @State private var showingMenu = false
-    @State private var planning = false
 
     var body: some View {
         let sprint = store.sprint
-        HStack(spacing: 8) {
-          if showsChip {
-            Button { showingMenu = true } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(Focus.text3)
-                    Text(sprint.name).font(Focus.control).foregroundColor(Focus.text)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(Focus.text3)
-                }
-                .padding(.horizontal, 10)
-                .frame(height: Focus.controlHeight)
-                .overlay(RoundedRectangle(cornerRadius: Focus.radiusControl).strokeBorder(Focus.lineStrong, lineWidth: 1))
-                .contentShape(Rectangle())
+        Button { showingMenu = true } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Focus.text3)
+                Text(sprint.name).font(Focus.control).foregroundColor(Focus.text)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(Focus.text3)
             }
-            .buttonStyle(.plain)
-            .fixedSize()
-            .help("\(sprint.name) · \(sprint.dateRange)")
-            .popover(isPresented: $showingMenu, arrowEdge: .bottom) {
-                SprintMenu(scope: scope, close: { showingMenu = false })
-                    .environmentObject(store)
-                    .environmentObject(model)
-            }
-          }
-            if showsActions {
-                Button("Plan sprints") { planning = true }
-                    .buttonStyle(.focus(.ghost))
-                    .help("Create sprints ahead and set their goals")
-                    .popover(isPresented: $planning, arrowEdge: .bottom) { SprintPlanner() }
-                Button("Complete sprint") { model.completingSprint = true }
-                    .buttonStyle(.focus())
-                    .help("Close \(store.sprintName()) for every project and start \(store.sprint.nextName) today")
-            }
+            .padding(.horizontal, 10)
+            .frame(height: Focus.controlHeight)
+            .overlay(RoundedRectangle(cornerRadius: Focus.radiusControl).strokeBorder(Focus.lineStrong, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help("\(sprint.name) · \(sprint.dateRange) · Plan sprints, Complete sprint")
+        .accessibilityLabel("\(sprint.name), sprint menu")
+        .popover(isPresented: $showingMenu, arrowEdge: .bottom) {
+            SprintMenu(scope: scope, close: { showingMenu = false })
+                .environmentObject(store)
+                .environmentObject(model)
         }
     }
 }

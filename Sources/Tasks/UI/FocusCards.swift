@@ -204,7 +204,7 @@ struct StartNextCard: View {
 
 // MARK: - Sprint card
 
-/// The Sprints tab's one place for the sprint's numbers.
+/// The sprint plan's one place for the sprint's numbers.
 struct SprintCard: View {
     @EnvironmentObject private var store: TaskStore
     @EnvironmentObject private var model: TasksViewModel
@@ -384,12 +384,12 @@ enum SprintActions {
 
 /// What a notice's button does.
 enum NoticeAction: Equatable {
-    /// Switch to the Sprints tab
+    /// Group the tasks by sprint
     case planInSprints
 
     var title: String {
         switch self {
-        case .planInSprints: return "Plan in Sprints"
+        case .planInSprints: return "Group by sprint"
         }
     }
 }
@@ -411,7 +411,7 @@ struct NoticeCard: View {
             if let action {
                 Button(action.title) {
                     switch action {
-                    case .planInSprints: model.tab = .sprints
+                    case .planInSprints: model.options.grouping = .sprint
                     }
                 }
                 .buttonStyle(.focus())

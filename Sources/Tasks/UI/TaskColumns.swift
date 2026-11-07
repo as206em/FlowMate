@@ -80,14 +80,16 @@ struct TaskColumnLayout: Equatable, Sendable {
     /// The title keeps at least this much room; other columns drop out to make it.
     static let minTitleWidth: CGFloat = 200
     /// Dropped first when the table is narrow
-    /// (Score, where shown, is what the Sprints view plans by: it goes last)
-    static let dropOrder: [TaskColumn] = [.sprint, .labels, .project, .priority, .kind, .score]
+    /// (Score, where shown, is what the Sprint plan plans by: it goes last)
+    static let dropOrder: [TaskColumn] = [.sprint, .project, .priority, .kind, .score]
     /// Shown only where a table asks for them (`including`)
     static let optIn: Set<TaskColumn> = [.score]
 
     var columns: [TaskColumn]
 
-    static let standard = TaskColumnLayout(columns: TaskColumn.allCases)
+    /// Labels sit inside the title cell, aligned right, so they have no column of their own.
+    static let shown = TaskColumn.allCases.filter { $0 != .labels }
+    static let standard = TaskColumnLayout(columns: shown)
 
     func contains(_ column: TaskColumn) -> Bool { columns.contains(column) }
 
@@ -102,7 +104,7 @@ struct TaskColumnLayout: Equatable, Sendable {
     /// then narrow columns dropped (sprint, labels, project, priority) until the title fits.
     static func make(showProject: Bool, excluding: Set<TaskColumn> = [], including: Set<TaskColumn> = [],
                      width: CGFloat) -> TaskColumnLayout {
-        var layout = TaskColumnLayout(columns: TaskColumn.allCases.filter { column in
+        var layout = TaskColumnLayout(columns: shown.filter { column in
             if column == .project && !showProject { return false }
             if optIn.contains(column) && !including.contains(column) { return false }
             return !excluding.contains(column)
@@ -153,7 +155,7 @@ struct TaskTable: View {
     @EnvironmentObject private var model: TasksViewModel
     let showProject: Bool
     var excluding: Set<TaskColumn> = []
-    /// Opt-in columns to show (the Sprints view's Score)
+    /// Opt-in columns to show (the sprint plan's Score)
     var including: Set<TaskColumn> = []
     /// Optional line above the header, e.g. a hint.
     var caption: String = ""

@@ -240,7 +240,8 @@ enum ProjectIcon: Codable, Equatable, Hashable, Sendable {
     }
 }
 
-/// The view a project opens on when it has one set (Project.defaultView).
+/// The tab a project opened on before List and Sprints became one view (Project.defaultView).
+/// Kept so older files read and write unchanged; the window no longer uses it.
 enum ProjectView: String, CaseIterable, Identifiable, Sendable, TolerantStringEnum {
     case list, sprints
 
@@ -279,7 +280,7 @@ struct Project: Identifiable, Codable, Equatable, Sendable {
     /// The project takes part in the workspace's sprint (the default). Off: its tasks aren't in any
     /// sprint, Board shows every open task, and nothing mentions sprints (TaskStore+Capacity.swift).
     var usesSprints: Bool
-    /// The view the project opens on; nil opens on the one used last.
+    /// Not used any more: the tasks are one view (see ProjectView). Kept for older files.
     var defaultView: ProjectView?
     /// Expected time of a new task; nil uses TaskItem.defaultExpectedMinutes.
     var defaultExpectedMinutes: Int?

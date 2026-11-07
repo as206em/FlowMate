@@ -133,7 +133,7 @@ final class IntegrationSeamsTests: XCTestCase {
         let model = TasksViewModel(defaults: UserDefaults(suiteName: "seams-\(UUID())")!, stateKey: UUID().uuidString)
         model.syncProjects(store)
         model.select(.project(p))
-        XCTAssertFalse(model.tabs.contains(.sprints))
+        XCTAssertFalse(model.showsSprintPlan)
         XCTAssertFalse(model.availableGroupings.contains(.sprint))
         model.select(ids: [t])
         XCTAssertFalse(model.openQuickPicker(.sprint, store: store), "R does nothing without sprints")

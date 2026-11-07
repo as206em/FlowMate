@@ -4,8 +4,8 @@ import SwiftUI
 //
 //   This week     Make against Reach of the time tracked this week, with the Reach target; when
 //                 one side is behind it says so, and Start next leans that way (Next best's boost)
-//   Start next    the one task Next best ranks first (Skip shows the one after it)
-//   Today         one list: running, overdue, due today, pinned, then done today
+//   Today focus   running, overdue, due today, pinned, then done today
+//   Current sprint the active sprint's open tasks that aren't in Today focus
 //
 // Rows are the list's rows (status circle, project, title, type, due, expected, timer ring;
 // click opens the panel; ↑/↓ ↵ Space work). Hovering an overdue, due or pinned row shows
@@ -17,31 +17,29 @@ struct TodayView: View {
 
     var body: some View {
         let plan = store.todayPlan()
-        let sections = TasksViewModel.todaySections(plan)
+        let sections = TasksViewModel.todaySections(plan, store: store)
         var builder = TaskTableBuilder()
         builder.spacer("top", 4)
         builder.append(.weekMix)
         builder.spacer("after-mix", 12)
-        if StartNextCard.pick(store: store, model: model) != nil {
-            builder.append(.startNext)
-            builder.spacer("after-start", 16)
-        }
         for section in sections {
+            let isFocus = section.key == TasksViewModel.todayKey
+            if !isFocus { builder.spacer("before-\(section.key)", 24) }
             builder.group(
                 key: section.key,
                 title: section.title,
-                hint: hint(plan),
+                hint: isFocus ? hint(plan) : "· \(store.sprint.name)",
                 tasks: model.sortedForGroup(section.tasks, section.key, store: store),
                 emptyText: "Nothing for today. Press ⌘T on a selected task or right-click › Add to Today; it stays here until it's done. Or add one below with ⌘N.",
                 showProject: true,
-                drop: .focus,
-                composerIsDefault: true,
+                drop: isFocus ? .focus : nil,
+                composerIsDefault: isFocus,
                 composerOnTop: model.isComposerPinned(TasksViewModel.listComposerKey(section.key)),
                 open: !model.isCollapsed(section.key),
                 gap: 0,
-                actions: actions(hasOverdue: !plan.overdue.isEmpty, running: plan.running.count),
+                actions: isFocus ? actions(hasOverdue: !plan.overdue.isEmpty, running: plan.running.count) : [],
                 liveHint: nil,
-                risk: !plan.overdue.isEmpty,
+                risk: isFocus && !plan.overdue.isEmpty,
                 draggable: true,
                 sortable: true,
                 display: RowDisplay.maker(store: store, model: model, today: true)
@@ -50,7 +48,7 @@ struct TodayView: View {
         builder.spacer("bottom", 72)
         return TaskTable(
             showProject: true,
-            excluding: [.sprint, .priority, .labels],
+            excluding: [.sprint, .priority],
             rows: builder.rows,
             drops: builder.drops,
             draggable: builder.draggable

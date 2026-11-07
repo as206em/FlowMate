@@ -323,20 +323,19 @@ final class TaskMenuPolishBatch5Tests: XCTestCase {
 
         let model = TasksViewModel(defaults: defaults)
         model.select(.project(pid))
-        model.tab = .sprints
         model.filter.priorities = [.high]
         model.filter.query = "draft"
+        model.select(.all)
+        model.tab = .overview
         model.select(.project(beta))
-        XCTAssertEqual(model.tab, .sprints, "a project never opened keeps the current tab")
-        model.tab = .list
+        XCTAssertEqual(model.tab, .list, "a project has no Overview")
         model.sort = TaskSort(key: .due, ascending: true)
         model.select(.all)
-        XCTAssertEqual(model.tab, .list, "All projects has no Sprints tab")
-        model.tab = .overview
+        XCTAssertEqual(model.tab, .overview, "All projects keeps its tab")
 
         // #41: opening a project brings back its own tab and filters
         model.select(.project(pid))
-        XCTAssertEqual(model.tab, .sprints)
+        XCTAssertEqual(model.tab, .list)
         XCTAssertEqual(model.filter.priorities, [.high])
         model.select(.project(beta))
         XCTAssertEqual(model.tab, .list)
@@ -348,7 +347,7 @@ final class TaskMenuPolishBatch5Tests: XCTestCase {
         XCTAssertEqual(restored.tab, .list)
         XCTAssertEqual(restored.sort.key, .due)
         restored.select(.project(pid))
-        XCTAssertEqual(restored.tab, .sprints)
+        XCTAssertEqual(restored.tab, .list)
         XCTAssertEqual(restored.filter.priorities, [.high])
         XCTAssertEqual(restored.filter.query, "")
         restored.select(.all)
@@ -387,6 +386,6 @@ final class TaskMenuPolishBatch5Tests: XCTestCase {
         let model = TasksViewModel(defaults: defaults)
         XCTAssertEqual(model.scope, .project(pid))
         XCTAssertEqual(model.tab, .list)
-        XCTAssertEqual(model.grouping, .priority)
+        XCTAssertEqual(model.grouping, .sprint, "a project's own grouping from older state gives way to the shared one")
     }
 }

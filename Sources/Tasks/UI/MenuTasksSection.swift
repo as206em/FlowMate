@@ -12,8 +12,7 @@ enum MenuNavigation {
         TasksWindow.show(openTask: id)
     }
 
-    /// Opens the project on its default view (Project.defaultView), else its own last tab, with its
-    /// own filters (both kept per project).
+    /// Opens the project with its own filters and grouping (kept per project).
     static func openProject(_ id: UUID, focus: TasksViewModel.FocusRequest.Field? = nil) {
         MenuBarPanel.close()
         // The window may not have been open yet to keep these in step

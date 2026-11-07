@@ -256,10 +256,39 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         XCTAssertEqual(model.filter.query, "all")
         model.select(.project(pid))
         XCTAssertEqual(model.filter.priorities, [.high])
+        model.options.grouping = .priority
         model.clearOptions()
-        XCTAssertEqual(model.options, .standard)
-        XCTAssertFalse(model.options.isCustomized)
+        XCTAssertEqual(model.filter, TaskFilter())
+        XCTAssertEqual(model.grouping, .priority, "Clear keeps the grouping every project shares")
         _ = store
+    }
+
+    func testGroupingIsSharedByEveryProjectButNotAllProjects() async {
+        let (store, pid) = await makeStore()
+        let other = store.addProject(name: "Bolt", now: t0)!
+        let suite = "FlowMateTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = TasksViewModel(defaults: defaults)
+        model.syncProjects(store)
+        model.select(.project(pid))
+        XCTAssertEqual(model.grouping, .sprint)
+        model.options.grouping = .priority
+        model.filter.priorities = [.high]
+        model.select(.project(other))
+        XCTAssertEqual(model.grouping, .priority, "the other project follows")
+        XCTAssertEqual(model.filter.priorities, [], "filters stay per project")
+        model.select(.all)
+        XCTAssertEqual(model.grouping, .sprint, "All projects keeps its own")
+        model.options.grouping = .project
+        model.select(.project(other))
+        XCTAssertEqual(model.grouping, .priority)
+        XCTAssertFalse(model.canSaveView, "no Save view in a project")
+
+        let restored = TasksViewModel(defaults: defaults)
+        restored.select(.project(pid))
+        XCTAssertEqual(restored.grouping, .priority, "kept between launches")
+        XCTAssertEqual(restored.filter.priorities, [.high])
     }
 
     // MARK: - Grouping and moving between groups (#4, #5)
@@ -453,14 +482,11 @@ final class TaskFindEditBatch2Tests: XCTestCase {
         XCTAssertTrue(model.perform(.find, store: store))
         XCTAssertEqual(model.tab, .list, "List has the filter bar")
         XCTAssertEqual(model.focusRequest?.field, .search)
-        model.tab = .sprints
-        model.perform(.find, store: store)
-        XCTAssertEqual(model.tab, .list)
 
         model.select(.all)
         XCTAssertTrue(model.perform(.tab1, store: store))
         XCTAssertEqual(model.tab, .overview, "All projects opens Overview with ⌘1")
-        XCTAssertTrue(model.perform(.tab3, store: store))
-        XCTAssertEqual(model.tab, .sprints)
+        XCTAssertTrue(model.perform(.tab2, store: store))
+        XCTAssertEqual(model.tab, .list)
     }
 }
