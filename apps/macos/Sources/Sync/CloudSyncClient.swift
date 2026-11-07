@@ -188,6 +188,8 @@ enum CloudSyncError: LocalizedError, Equatable {
     case unauthorized
     case forbidden
     case notFound
+    /// A 404 that didn't come from the FlowMate API (wrong address, or the proxy has no route)
+    case notAPI
     case noSnapshot
     case tooLarge
     case conflict(CloudConflict)
@@ -203,6 +205,7 @@ enum CloudSyncError: LocalizedError, Equatable {
         case .unauthorized: return "The server didn't accept the token."
         case .forbidden: return "This token can't change that workspace."
         case .notFound: return "The server doesn't know that workspace."
+        case .notAPI: return "No FlowMate server answers at that address. Check the server address."
         case .noSnapshot: return "Nothing has been synced yet."
         case .tooLarge: return "Your data is too large for the server (25 MB at most)."
         case .conflict: return "The cloud copy changed on another device."
@@ -225,6 +228,7 @@ enum CloudSyncError: LocalizedError, Equatable {
         case (401, _): return .unauthorized
         case (403, _): return .forbidden
         case (404, "no_snapshot"): return .noSnapshot
+        case (404, _) where object == nil: return .notAPI
         case (404, _): return .notFound
         case (409, _):
             return .conflict(CloudConflict(

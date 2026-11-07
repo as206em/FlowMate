@@ -11,10 +11,9 @@ What the stack runs: `postgres` (16, data in the `postgres_data` volume), `api` 
    openssl rand -base64 32 | tr -d '\n' | docker secret create flowmate_postgres_password -
    ```
    `azure_storage_account` and `azure_storage_key` already exist on the cluster (liloxi uses them).
-2. **DNS:** point the API's domain (for example `api.flowmate.app`) at the cluster, like the liloxi hosts.
+2. **DNS:** point `todo.asem-mkl.com` at the cluster, like the liloxi hosts. The domain is written in the Traefik rule in `deploy/portainer.yaml`; change it there to move the API.
 3. **Portainer:** Stacks › Add stack › Repository.
    - Repository `https://github.com/as206em/FlowMate`, reference `refs/heads/main`, compose path `deploy/portainer.yaml`. Add credentials if the repository is private.
-   - Environment variable `FLOWMATE_API_HOST` = the domain from step 2.
    - Turn on **GitOps updates › Webhook** and copy the webhook URL.
    - The image is `ghcr.io/as206em/flowmate-api`. While the GHCR package is private, add a ghcr.io registry in Portainer (Registries) with a GitHub token that can read packages. Alternatively make the package public in its GitHub package settings.
 4. **GitHub secret** (Settings › Secrets and variables › Actions): `PORTAINER_WEBHOOK` = the webhook URL.
@@ -38,10 +37,10 @@ The API runs its database migrations on start. To roll back, revert the deploy c
 docker exec -it $(docker ps -qf name=flowmate_api) node dist/cli.js create-user --name "Asem" --email you@example.com --device "MacBook"
 ```
 
-It prints the token once. In FlowMate › Settings › Cloud sync, enter server `https://<FLOWMATE_API_HOST>` and the token, then turn sync on. For another Mac: `create-token --user you@example.com --device "iMac"`.
+It prints the token once. In FlowMate › Settings › Cloud sync, enter server `https://todo.asem-mkl.com` and the token, then turn sync on. For another Mac: `create-token --user you@example.com --device "iMac"`.
 
 ## Check it
 
 ```bash
-curl https://<FLOWMATE_API_HOST>/health/ready
+curl https://todo.asem-mkl.com/health/ready
 ```

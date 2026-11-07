@@ -475,6 +475,7 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertEqual(CloudSyncError.from(status: 401, body: Data()), .unauthorized)
         XCTAssertEqual(CloudSyncError.from(status: 404, body: Data(#"{"error":"no_snapshot"}"#.utf8)), .noSnapshot)
         XCTAssertEqual(CloudSyncError.from(status: 404, body: Data(#"{"error":"not_found"}"#.utf8)), .notFound)
+        XCTAssertEqual(CloudSyncError.from(status: 404, body: Data("404 page not found".utf8)), .notAPI)
         XCTAssertEqual(CloudSyncError.from(status: 413, body: Data()), .tooLarge)
         if case let .conflict(conflict) = CloudSyncError.from(status: 409, body: Data(#"{"error":"version_conflict","currentVersion":9,"updatedByDevice":"iPad"}"#.utf8)) {
             XCTAssertEqual(conflict.cloudVersion, 9)

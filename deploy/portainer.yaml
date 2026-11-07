@@ -6,8 +6,7 @@ version: '3.8'
 #
 # Before the first deploy (docs/DEPLOY.md):
 #   - Swarm secret flowmate_postgres_password
-#   - Portainer stack variable FLOWMATE_API_HOST (the API's domain, e.g. api.example.com), with DNS
-#     pointing at the cluster
+#   - DNS for todo.asem-mkl.com pointing at the cluster (the Traefik rule on the api service)
 #   - Registry credentials for ghcr.io in Portainer while the package is private
 
 networks:
@@ -76,7 +75,7 @@ services:
       labels:
         - traefik.enable=true
         - traefik.docker.network=traefik_public
-        - traefik.http.routers.flowmate-api.rule=Host(`${FLOWMATE_API_HOST}`)
+        - traefik.http.routers.flowmate-api.rule=Host(`todo.asem-mkl.com`)
         - traefik.http.routers.flowmate-api.entrypoints=web,websecure
         - traefik.http.routers.flowmate-api.tls.certresolver=letsencrypt
         - traefik.http.services.flowmate-api.loadbalancer.server.port=8080
