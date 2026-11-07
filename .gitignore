@@ -65,3 +65,12 @@ fastlane/test_output
 
 **/FlowMate.app
 **/FlowMate Dev.app
+
+# JS/TS workspaces
+node_modules/
+dist/
+.turbo/
+.env
+.env.*
+!.env.example
+.local-postgres/

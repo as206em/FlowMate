@@ -1,0 +1,19 @@
+{
+  "name": "@flowmate/api-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Request/response shapes of the FlowMate API, shared by the backend and the web apps.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

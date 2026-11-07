@@ -48,9 +48,10 @@ enum TaskScope: Hashable, Sendable {
 /// and change data only through the mutation methods, which save through the repository.
 @MainActor
 final class TaskStore: ObservableObject {
-    /// App-wide instance backed by the local JSON file. Created on first use.
+    /// App-wide instance backed by the local JSON file (and the cloud copy when sync is on,
+    /// see SyncingWorkspaceRepository). Created on first use.
     static let shared: TaskStore = {
-        let store = TaskStore(repository: LocalJSONWorkspaceRepository())
+        let store = TaskStore(repository: SyncingWorkspaceRepository.shared)
         Task { await store.load() }
         return store
     }()
@@ -158,6 +159,26 @@ final class TaskStore: ObservableObject {
                 fileURL: recovery?.movedAsideURL ?? repository.location
             )
         }
+        clearUndoHistory()
+        isLoaded = true
+    }
+
+    /// Drops a save that hasn't run yet and waits for one in progress, so data about to be replaced
+    /// (cloud sync's "Use cloud copy") isn't written back over the new copy.
+    func discardPendingSave() async {
+        pendingSave?.cancel()
+        pendingSave = nil
+        hasUnsavedChanges = false
+        await saveChain?.value
+    }
+
+    /// Shows a workspace the repository already saved (the cloud copy). Undo history is cleared:
+    /// it belongs to the data that was replaced.
+    func showSyncedWorkspace(_ stored: Workspace) async {
+        await discardPendingSave()
+        workspace = stored.migrated()
+        savesBlocked = false
+        persistenceIssue = nil
         clearUndoHistory()
         isLoaded = true
     }

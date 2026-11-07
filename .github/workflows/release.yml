@@ -1,31 +1,213 @@
 name: Release
 
-# Run it from the Actions tab ("Run workflow") or: gh workflow run release.yml
-# The version is 1.1.<run number> unless you type one in. The workflow creates the tag itself.
-#   builds a universal app, signs it with Developer ID, notarizes it, attaches FlowMate-1.2.0.zip
-#   to a GitHub Release and adds it to the Sparkle appcast (gh-pages branch), which installed
-#   copies of FlowMate read to offer the update.
+# Run it from the Actions tab ("Run workflow") and tick what to ship, or:
+#   gh workflow run release.yml -f macos=true -f api=true
 #
-# Secrets (Settings > Secrets and variables > Actions): see docs/RELEASING.md
+# macos  builds a universal app, signs it with Developer ID, notarizes it, attaches FlowMate-1.2.0.zip
+#        to a GitHub Release and adds it to the Sparkle appcast (gh-pages branch), which installed
+#        copies of FlowMate read to offer the update. The version is 1.1.<run number> unless you type
+#        one in; the workflow creates the tag itself.
+# api    tests the backend, pushes its image to ghcr.io, writes the new tag into deploy/portainer.yaml
+#        (committed to main) and calls the Portainer webhook so the cluster pulls it.
+#
+# Secrets (Settings > Secrets and variables > Actions): docs/RELEASING.md and docs/DEPLOY.md
 on:
   workflow_dispatch:
     inputs:
+      all:
+        description: Release everything
+        required: true
+        type: boolean
+        default: false
+      macos:
+        description: macOS app (GitHub Release + update feed)
+        required: true
+        type: boolean
+        default: false
+      api:
+        description: Backend API (deploy to the cluster)
+        required: true
+        type: boolean
+        default: false
       version:
-        description: "Version to publish (empty = 1.1.<run number>)"
+        description: "macOS version to publish (empty = 1.1.<run number>)"
         required: false
         default: ""
 
+env:
+  IMAGE_TAG: sha-${{ github.sha }}
+
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  release:
+  prepare:
+    if: ${{ inputs.all || inputs.macos || inputs.api }}
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.prepare.outputs.matrix }}
+      macos: ${{ steps.prepare.outputs.macos }}
+      backend: ${{ steps.prepare.outputs.backend }}
+    steps:
+      - name: Prepare image matrix
+        id: prepare
+        env:
+          ALL: ${{ inputs.all }}
+          MACOS: ${{ inputs.macos }}
+          API: ${{ inputs.api }}
+        run: |
+          set -euo pipefail
+
+          matrix='{"include":[]}'
+
+          add_image() {
+            matrix="$(
+              jq -c \
+                --arg image "$1" \
+                --arg dockerfile "$2" \
+                --arg context "$3" \
+                '.include += [{image: $image, dockerfile: $dockerfile, context: $context}]' \
+                <<< "$matrix"
+            )"
+          }
+
+          # Later: web and landing get a checkbox and a line here each
+          if [[ "$ALL" == "true" || "$API" == "true" ]]; then
+            add_image ghcr.io/as206em/flowmate-api ./services/api/Dockerfile .
+          fi
+
+          backend=false
+          [[ "$(jq '.include | length' <<< "$matrix")" -gt 0 ]] && backend=true
+          macos=false
+          [[ "$ALL" == "true" || "$MACOS" == "true" ]] && macos=true
+
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "backend=$backend" >> "$GITHUB_OUTPUT"
+          echo "macos=$macos" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------- backend
+
+  backend_test:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.backend == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck and test
+        run: pnpm typecheck && pnpm test
+
+  build_images:
+    needs:
+      - prepare
+      - backend_test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ${{ matrix.image }}:${{ env.IMAGE_TAG }}
+            ${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  deploy:
+    needs:
+      - prepare
+      - build_images
+    if: ${{ always() && needs.prepare.result == 'success' && needs.build_images.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update selected images
+        env:
+          IMAGE_MATRIX: ${{ needs.prepare.outputs.matrix }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch origin main
+          git reset --hard FETCH_HEAD
+
+          while IFS= read -r image; do
+            sed -i "s#image: ${image}:[^[:space:]]*#image: ${image}:${IMAGE_TAG}#" deploy/portainer.yaml
+          done < <(jq -r '.include[].image' <<< "$IMAGE_MATRIX")
+
+      - name: Commit selected image versions
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/portainer.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "deploy: update selected images to ${IMAGE_TAG}"
+            git push origin HEAD:main
+          fi
+
+      - name: Update Portainer stack
+        env:
+          PORTAINER_WEBHOOK: ${{ secrets.PORTAINER_WEBHOOK }}
+        run: |
+          [ -n "$PORTAINER_WEBHOOK" ] || { echo "::error::PORTAINER_WEBHOOK is not set"; exit 1; }
+          curl --fail-with-body --silent --show-error --request POST "$PORTAINER_WEBHOOK"
+
+  # ---------------------------------------------------------------- macOS
+
+  macos:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.macos == 'true' }}
     runs-on: macos-15
     timeout-minutes: 60
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: apps/macos
     steps:
       - uses: actions/checkout@v4
 

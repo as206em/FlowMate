@@ -1,0 +1,32 @@
+# Local backend: Postgres + the API on http://localhost:8080
+#   docker compose -f docker-compose.dev.yml up --build
+# Then make a user and a token:
+#   docker compose -f docker-compose.dev.yml exec api node dist/cli.js create-user --name Me
+# No Docker? services/api/README.md runs a real Postgres from npm instead.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: flowmate
+      POSTGRES_PASSWORD: flowmate
+      POSTGRES_DB: flowmate
+    ports: ["55432:5432"]
+    volumes: ["postgres_dev:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "flowmate"]
+      interval: 2s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      DATABASE_URL: postgres://flowmate:flowmate@postgres:5432/flowmate
+    ports: ["8080:8080"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_dev:

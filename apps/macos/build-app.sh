@@ -2,6 +2,8 @@
 
 # Build the FlowMate app with icon
 set -e
+# Always run from apps/macos (paths below are relative to it), wherever the script is called from
+cd "$(dirname "$0")"
 
 # Settings (environment variables; the defaults are what a local build uses):
 #   CHANNEL            "dev" (default) or "production". A dev build is "FlowMate Dev.app"

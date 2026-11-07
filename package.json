@@ -1,0 +1,17 @@
+{
+  "name": "flowmate",
+  "private": true,
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "dev:api": "pnpm --filter @flowmate/api dev"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.10"
+  }
+}

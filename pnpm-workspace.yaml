@@ -1,0 +1,14 @@
+# JS/TS workspaces. apps/macos is SwiftPM and isn't part of this.
+# apps/web, apps/landing (and later others) join automatically once they have a package.json.
+packages:
+  - "apps/*"
+  - "services/*"
+  - "packages/*"
+
+# Neither needs its install script (esbuild ships its binary as a package; Postgres binaries are
+# only for local tests)
+allowBuilds:
+  esbuild: false
+  "@embedded-postgres/darwin-arm64": false
+  "@embedded-postgres/linux-x64": false
+  "@embedded-postgres/linux-arm64": false

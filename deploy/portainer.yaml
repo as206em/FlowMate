@@ -1,0 +1,113 @@
+version: '3.8'
+
+# FlowMate backend on the Swarm cluster (Portainer stack "flowmate", deployed from this file in git).
+# The Release workflow (.github/workflows/release.yml, "api" checkbox) builds the image, writes its
+# tag below, commits to main and calls the stack's Portainer webhook.
+#
+# Before the first deploy (docs/DEPLOY.md):
+#   - Swarm secret flowmate_postgres_password
+#   - Portainer stack variable FLOWMATE_API_HOST (the API's domain, e.g. api.example.com), with DNS
+#     pointing at the cluster
+#   - Registry credentials for ghcr.io in Portainer while the package is private
+
+networks:
+  internal:
+    driver: overlay
+  traefik_public:
+    external: true
+
+volumes:
+  postgres_data:
+
+secrets:
+  azure_storage_key:
+    external: true
+  azure_storage_account:
+    external: true
+  flowmate_postgres_password:
+    external: true
+
+services:
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: flowmate
+      POSTGRES_PASSWORD_FILE: /run/secrets/flowmate_postgres_password
+      POSTGRES_DB: flowmate
+    secrets:
+      - flowmate_postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  # Runs the database migrations on start (one copy at a time, under a Postgres lock).
+  # Admin CLI: docker exec -it $(docker ps -qf name=flowmate_api) node dist/cli.js help
+  api:
+    image: ghcr.io/as206em/flowmate-api:latest
+    environment:
+      DATABASE_URL: postgres://flowmate@postgres:5432/flowmate
+      DATABASE_PASSWORD_FILE: /run/secrets/flowmate_postgres_password
+      PORT: "8080"
+    secrets:
+      - flowmate_postgres_password
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - internal
+      - traefik_public
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 20s
+        order: start-first
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=traefik_public
+        - traefik.http.routers.flowmate-api.rule=Host(`${FLOWMATE_API_HOST}`)
+        - traefik.http.routers.flowmate-api.entrypoints=web,websecure
+        - traefik.http.routers.flowmate-api.tls.certresolver=letsencrypt
+        - traefik.http.services.flowmate-api.loadbalancer.server.port=8080
+
+  backup:
+    image: ghcr.io/tashfier/swarm-maintenance:latest
+    entrypoint:
+      [
+        "sh",
+        "-c",
+        "export AZURE_STORAGE_ACCOUNT=\"$$(cat /run/secrets/azure_storage_account)\" && export AZURE_STORAGE_KEY=\"$$(cat /run/secrets/azure_storage_key)\" && export PGPASSWORD=\"$$(cat /run/secrets/flowmate_postgres_password)\" && exec /app/backup-postgres-to-azure.sh cron",
+      ]
+    environment:
+      ENABLE_POSTGRES: "true"
+      ENABLE_MONGO: "false"
+      ENABLE_VOLUMES: "false"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: flowmate
+      POSTGRES_USER: flowmate
+      POSTGRES_BACKUP_PREFIX: flowmate-db
+      AZURE_STORAGE_CONTAINER: backups
+      AZURE_BLOB_PREFIX: flowmate
+      BACKUP_CRON_SCHEDULE: "0 2,14 * * *"
+    networks:
+      - internal
+    secrets:
+      - azure_storage_key
+      - azure_storage_account
+      - flowmate_postgres_password
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure

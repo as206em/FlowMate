@@ -1,12 +1,15 @@
 name: Build
 
-# Every push (and pull request): run the tests, build the universal app, sign it and keep the
-# result as a downloadable artifact. Releases are a separate workflow (release.yml, on v* tags).
+# Every push (and pull request) that touches the macOS app: run the tests, build the universal app,
+# sign it and keep the result as a downloadable artifact. Releases are release.yml (run by hand).
+# The backend has its own workflow (api.yml).
 on:
   push:
     branches: ["**"]
     tags-ignore: ["v*"]
+    paths: ["apps/macos/**", ".github/workflows/ci.yml", ".github/actions/**"]
   pull_request:
+    paths: ["apps/macos/**", ".github/workflows/ci.yml", ".github/actions/**"]
   workflow_dispatch:
 
 concurrency:
@@ -17,14 +20,17 @@ jobs:
   build:
     runs-on: macos-15
     timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/macos
     steps:
       - uses: actions/checkout@v4
 
       - name: Cache SwiftPM
         uses: actions/cache@v4
         with:
-          path: .build
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          path: apps/macos/.build
+          key: spm-${{ runner.os }}-${{ hashFiles('apps/macos/Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-
 
       - name: Test
@@ -62,6 +68,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: FlowMate-${{ github.sha }}
-          path: ${{ env.ARTIFACT }}
+          path: apps/macos/${{ env.ARTIFACT }}
           retention-days: 14
           if-no-files-found: error
