@@ -206,6 +206,12 @@ final class TaskMenuPolishBatch5Tests: XCTestCase {
         store.pauseTimer(running, now: t0.addingTimeInterval(60))
         XCTAssertTrue(store.menuInProgressTasks.running.isEmpty)
         XCTAssertEqual(Set(store.menuInProgressTasks.paused.map(\.id)), [paused, running], "a paused timer stays listed")
+
+        // The rest of Today focus too, timer or not: a pinned To do task and an overdue one
+        store.addToToday([todo])
+        let late = store.addTask(title: "Late", projectId: pid, now: t0)!
+        store.setDueDate(late, Calendar.current.date(byAdding: .day, value: -2, to: Date())!)
+        XCTAssertEqual(Set(store.menuInProgressTasks.paused.map(\.id)), [paused, running, todo, late])
     }
 
     func testMenuBrowseRowsAndHighlight() async {

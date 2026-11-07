@@ -377,7 +377,7 @@ struct MenuInProgressSection: View {
 
     var body: some View {
         let listed = store.menuInProgressTasks
-        // The "Up next" list was removed from the dropdown; only tasks in progress are listed
+        // The "Up next" list was removed from the dropdown; Today focus is listed instead
         let upNext: [TaskItem] = []
         VStack(alignment: .leading, spacing: 4) {
             if !store.projects.isEmpty {
@@ -398,7 +398,7 @@ struct MenuInProgressSection: View {
     @ViewBuilder
     private func inProgress(_ listed: (running: [TaskItem], paused: [TaskItem]), hasUpNext: Bool) -> some View {
         HStack(spacing: 6) {
-            FocusCaption(text: "In progress")
+            FocusCaption(text: "Today focus")
             if !listed.running.isEmpty {
                 Text("· \(listed.running.count) running".uppercased())
                     .font(Focus.caption)
@@ -505,7 +505,7 @@ struct MenuInProgressSection: View {
                 Button("Create a project") { MenuNavigation.openApp() }
                     .buttonStyle(.focus())
             } else {
-                Text("Nothing in progress or planned. Pin tasks to Today in FlowMate (⌘T), or start a timer on any task.")
+                Text("Nothing in Today focus. Pin tasks to Today in FlowMate (⌘T), or start a timer on any task.")
             }
         }
         .font(Focus.meta)

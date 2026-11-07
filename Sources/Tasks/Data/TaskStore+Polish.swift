@@ -76,18 +76,16 @@ struct MenuBrowseModel: Equatable {
 }
 
 extension TaskStore {
-    /// The menu's task list: every running task (earliest started first), then the other started
-    /// tasks (any Started status) of all active projects, most recently changed first.
+    /// The menu's task list: every running task (earliest started first), then the rest of Today
+    /// focus whether or not a timer ever ran: in progress, overdue, due today, then pinned, in the
+    /// Today page's order (done tasks left out).
     var menuInProgressTasks: (running: [TaskItem], paused: [TaskItem]) {
-        let running = runningTasks
-        let activeProjects = Set(projects.map(\.id))
-        let paused = workspace.tasks
-            .filter { $0.statusCategory == .started && !isRunning($0.id) && activeProjects.contains($0.projectId) }
-            .sorted { $0.updatedAt == $1.updatedAt ? $0.sortIndex < $1.sortIndex : $0.updatedAt > $1.updatedAt }
-        return (running, paused)
+        let plan = todayPlan()
+        let rest = (plan.inProgress + plan.overdue + plan.dueToday + plan.focus).filter { !isRunning($0.id) }
+        return (runningTasks, rest)
     }
 
-    /// Menu rows top to bottom, as ↑/↓ walk them: running timers, then the paused In progress tasks.
+    /// Menu rows top to bottom, as ↑/↓ walk them: running timers, then the rest of Today focus.
     func menuBrowseItems(now: Date = Date()) -> MenuBrowseModel {
         let listed = menuInProgressTasks
         return MenuBrowseModel(items: listed.running.map { .running($0.id) } + listed.paused.map { .task($0.id) })

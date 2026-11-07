@@ -9,9 +9,12 @@ import Foundation
 // instead, which hides it until then.
 
 /// Everything the Today page shows, each task in one section only: a running task shows under
-/// Running; a pinned one under My focus (even when it's due or overdue); the rest by due date.
+/// Running; a pinned one under My focus (even when it's due or overdue); one in an in-progress
+/// status under In progress; the rest by due date.
 struct TodayPlan: Equatable {
     var running: [TaskItem] = []
+    /// In an in-progress status (paused or never timed), not running and not pinned; your order
+    var inProgress: [TaskItem] = []
     var overdue: [TaskItem] = []
     var dueToday: [TaskItem] = []
     /// Pinned for today or carried over from an earlier day, not running, in your order
@@ -36,9 +39,9 @@ struct TodayPlan: Equatable {
     }
 
     /// Every task on the page, top to bottom (↑/↓ walk this order)
-    var allTasks: [TaskItem] { running + overdue + dueToday + focus + doneToday }
+    var allTasks: [TaskItem] { running + inProgress + overdue + dueToday + focus + doneToday }
 
-    var isEmpty: Bool { running.isEmpty && overdue.isEmpty && dueToday.isEmpty && focus.isEmpty && doneToday.isEmpty }
+    var isEmpty: Bool { running.isEmpty && inProgress.isEmpty && overdue.isEmpty && dueToday.isEmpty && focus.isEmpty && doneToday.isEmpty }
 }
 
 /// What the "→ Tomorrow" button on a Today row (and the bulk actions) can move.
@@ -87,7 +90,9 @@ extension TaskStore {
         let running = Set(plan.running.map(\.id))
         let pinned = open.filter { isInFocus($0, now: now, calendar: calendar) }
         let pinnedIds = Set(pinned.map(\.id))
-        let rest = open.filter { !running.contains($0.id) && !pinnedIds.contains($0.id) }
+        let unpinned = open.filter { !running.contains($0.id) && !pinnedIds.contains($0.id) }
+        plan.inProgress = unpinned.filter { $0.statusCategory == .started }.sorted(by: Self.byPriority)
+        let rest = unpinned.filter { $0.statusCategory != .started }
 
         plan.overdue = rest.filter { isOverdue($0, now: now) }.sorted { a, b in
             if a.dueDate != b.dueDate { return (a.dueDate ?? .distantFuture) < (b.dueDate ?? .distantFuture) }
@@ -112,9 +117,11 @@ extension TaskStore {
         return plan
     }
 
-    /// The sidebar's Today badge: open tasks that are overdue, due today or pinned for today.
+    /// The sidebar's Today badge: open tasks that are in progress, overdue, due today or pinned for today.
     func todayCount(now: Date = Date(), calendar: Calendar = .current) -> Int {
-        openActiveTasks().filter { isOverdue($0, now: now) || isDueToday($0, now: now) || isInFocus($0, now: now, calendar: calendar) }.count
+        openActiveTasks().filter {
+            $0.statusCategory == .started || isOverdue($0, now: now) || isDueToday($0, now: now) || isInFocus($0, now: now, calendar: calendar)
+        }.count
     }
 
     /// Open tasks due today and overdue (the menu header and the morning summary).
@@ -125,15 +132,14 @@ extension TaskStore {
 
     /// The menu bar's Up next: overdue, due today and pinned tasks, then the top not started tasks
     /// of each project's active sprint (every open task without sprints; high priority first), leaving out what the menu already
-    /// lists as in progress. At most `limit`.
+    /// lists as in progress (running or in a Started status). At most `limit`.
     func upNext(limit: Int = 6, now: Date = Date(), calendar: Calendar = .current) -> [TaskItem] {
-        let listed = menuInProgressTasks
-        var seen = Set((listed.running + listed.paused).map(\.id))
+        let open = openActiveTasks()
+        var seen = Set(runningTasks.map(\.id) + open.filter { $0.statusCategory == .started }.map(\.id))
         var result: [TaskItem] = []
         func add(_ tasks: [TaskItem]) {
             for task in tasks where result.count < limit && seen.insert(task.id).inserted { result.append(task) }
         }
-        let open = openActiveTasks()
         add(open.filter { isOverdue($0, now: now) }.sorted { ($0.dueDate ?? .distantFuture, -$0.priority.rank) < ($1.dueDate ?? .distantFuture, -$1.priority.rank) })
         add(open.filter { isDueToday($0, now: now) }.sorted(by: Self.byPriority))
         add(open.filter { isInFocus($0, now: now, calendar: calendar) }.sorted(by: Self.byFocusOrder))

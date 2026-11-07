@@ -45,8 +45,9 @@ final class IntegrationSeamsTests: XCTestCase {
         let (store, dev, _, review, canceled, done, backlog) = await devFixture()
         for id in [review, canceled, done, backlog] { store.setDueDate(id, day(-1)) }
         let plan = store.todayPlan(now: now)
-        // Overdue lists open tasks only: Review (started) and Backlog (not started)
-        XCTAssertEqual(Set(plan.overdue.map(\.id)), [review, backlog])
+        // Open tasks only: Review (started) shows under In progress, Backlog (not started) under Overdue
+        XCTAssertEqual(plan.inProgress.map(\.id), [review])
+        XCTAssertEqual(plan.overdue.map(\.id), [backlog])
         XCTAssertEqual(plan.doneToday.map(\.id), [done], "Done today counts done, not canceled")
         XCTAssertEqual(store.todayCount(now: now), 2)
         XCTAssertFalse(store.upNext(now: now).contains { $0.id == canceled || $0.id == done })

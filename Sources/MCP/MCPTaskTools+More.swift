@@ -185,6 +185,7 @@ extension MCPTaskTools {
         }
         var out: [String: Any] = [
             "running": plan.running.map(summary),
+            "inProgress": plan.inProgress.map(summary),
             "overdue": plan.overdue.map(summary),
             "dueToday": plan.dueToday.map(summary),
             "pinned": plan.focus.map(summary),

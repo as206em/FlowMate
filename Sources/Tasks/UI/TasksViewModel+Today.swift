@@ -14,7 +14,7 @@ extension TasksViewModel {
     static let todayKey = "today"
     static let todaySprintKey = "today-sprint"
 
-    /// Today focus (running, overdue, due today, pinned, then done today), always shown with an empty
+    /// Today focus (running, in progress, overdue, due today, pinned, then done today), always shown with an empty
     /// state that says how to pin tasks; then the current sprint's open tasks that aren't in it.
     static func todaySections(_ plan: TodayPlan, store: TaskStore) -> [TodaySection] {
         let focus = TodaySection(key: todayKey, title: "Today focus", tasks: plan.allTasks)

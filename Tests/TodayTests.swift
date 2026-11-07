@@ -60,6 +60,30 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(store.dueCounts(now: now).overdue, 1)
     }
 
+    func testInProgressTasksShowInTodayFocus() async {
+        let (store, a, b) = await makeStore()
+        let doing = store.addTask(title: "Doing, no date", projectId: a, now: now)!
+        store.setCategory(doing, .started, now: now)
+        let doingHigh = store.addTask(title: "Doing high", projectId: b, now: now)!
+        store.setCategory(doingHigh, .started, now: now)
+        store.setPriority(doingHigh, .high)
+        let doingOverdue = store.addTask(title: "Doing, overdue", projectId: a, now: now)!
+        store.setDueDate(doingOverdue, day(-1))
+        store.setCategory(doingOverdue, .started, now: now)
+        let doingPinned = store.addTask(title: "Doing, pinned", projectId: a, now: now)!
+        store.setCategory(doingPinned, .started, now: now)
+        store.addToToday([doingPinned], now: now)
+        let idle = store.addTask(title: "Not started", projectId: a, now: now)!
+
+        let plan = store.todayPlan(now: now)
+        XCTAssertEqual(plan.inProgress.first?.id, doingHigh, "high priority first")
+        XCTAssertEqual(Set(plan.inProgress.map(\.id)), [doing, doingHigh, doingOverdue])
+        XCTAssertTrue(plan.overdue.isEmpty, "an in-progress task shows once, under In progress")
+        XCTAssertEqual(plan.focus.map(\.id), [doingPinned], "a pinned one stays in your order")
+        XCTAssertFalse(plan.allTasks.contains { $0.id == idle })
+        XCTAssertEqual(store.todayCount(now: now), 4)
+    }
+
     func testPlannedIsExpectedMinusTrackedOfPinnedTasks() async {
         let (store, a, _) = await makeStore()
         let x = store.addTask(title: "X", projectId: a, now: now)!
