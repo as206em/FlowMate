@@ -25,6 +25,15 @@ enum AppChannel: Equatable {
     /// The app's name in its own windows and menus.
     var displayName: String { self == .production ? "FlowMate" : "FlowMate Dev" }
 
+    /// Dev builds: the session/branch the build came from (Info.plist BuildLabel, set by
+    /// build-app.sh), so it's clear which copy is running. Nil for the release.
+    static let buildLabel: String? = {
+        guard current == .development,
+              let label = Bundle.main.object(forInfoDictionaryKey: "BuildLabel") as? String,
+              !label.isEmpty else { return nil }
+        return label
+    }()
+
     /// The folder in Application Support that holds the workspace, settings and logs.
     var dataFolderName: String { displayName }
 

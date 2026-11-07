@@ -17,7 +17,17 @@ struct TasksSidebar: View {
 
             HStack(spacing: 9) {
                 FocusAppTile()
-                Text(AppChannel.current.displayName).font(.system(size: 14, weight: .semibold)).foregroundColor(Focus.text)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(AppChannel.current.displayName).font(.system(size: 14, weight: .semibold)).foregroundColor(Focus.text)
+                    if let label = AppChannel.buildLabel {
+                        Text(label)
+                            .font(Focus.meta)
+                            .foregroundColor(Focus.text3)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help("Built from \(label)")
+                    }
+                }
                 Spacer(minLength: 0)
                 FocusIconButton(systemName: "questionmark", label: "Keyboard shortcuts (⌘/)", size: 24) {
                     model.showingShortcuts.toggle()
@@ -114,7 +124,8 @@ struct TasksSidebar: View {
         .padding(.bottom, 12)
         .frame(width: Focus.sidebarWidth)
         .frame(maxHeight: .infinity)
-        .background(Focus.sidebar)
+        // A click on the sidebar's empty space closes the side panel (items close it when they select)
+        .background(Focus.sidebar.contentShape(Rectangle()).onTapGesture { model.closePanel() })
         .overlay(alignment: .trailing) { Rectangle().fill(Focus.hairline).frame(width: 1) }
         .projectDeleteAlert($pendingDelete)
     }

@@ -16,6 +16,7 @@ set -e
 #   SPARKLE_PUBLIC_KEY Sparkle EdDSA public key (default: Resources/SparklePublicKey.txt)
 #   UNIVERSAL=1        build for arm64 and x86_64
 #   NO_LAUNCH=1        don't quit or open the app (CI)
+#   BUILD_LABEL        dev builds: the name shown under "FlowMate Dev" (default: the git branch)
 # Signing identity: the Developer ID in the keychain when there is one (stable across builds, so
 # macOS keeps the Accessibility permission), else the local dev certificate.
 if [ -z "$SIGN_IDENTITY" ]; then
@@ -55,6 +56,19 @@ VERSION="${VERSION:-1.1.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(date +"%Y%m%d%H%M")}"
 GIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+# Dev builds show which session/branch they came from under the app name (BUILD_LABEL overrides):
+# "claude/priority-column-lists-bc4525" -> "priority-column-lists"
+BUILD_LABEL_PLIST=""
+if [ "$CHANNEL" = dev ]; then
+    if [ -z "$BUILD_LABEL" ]; then
+        BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+        BUILD_LABEL=$(echo "$BRANCH" | sed -E 's#^claude/##; s#-[0-9a-f]{6}$##')
+    fi
+    if [ -n "$BUILD_LABEL" ] && [ "$BUILD_LABEL" != HEAD ]; then
+        BUILD_LABEL_PLIST="    <key>BuildLabel</key>
+    <string>$BUILD_LABEL</string>"
+    fi
+fi
 
 echo "Building $APP_NAME v$VERSION (Build $BUILD_NUMBER, $BUNDLE_ID)"
 echo "Git: $GIT_HASH | Date: $BUILD_DATE"
@@ -127,6 +141,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
     <key>CFBundleIconFile</key>
     <string>AppIcon.icns</string>
 $SPARKLE_PLIST
+$BUILD_LABEL_PLIST
     <key>GitCommitHash</key>
     <string>$GIT_HASH</string>
     <key>BuildDate</key>

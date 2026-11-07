@@ -142,6 +142,11 @@ final class TaskAuditRound2Tests: XCTestCase {
         XCTAssertEqual(model.scope, .project(pid))
         XCTAssertNil(model.openDetail, "with the panel open, a click closes it again")
 
+        model.openTask(UUID())
+        model.clickSidebarProject(pid)
+        XCTAssertNil(model.openTaskId, "a click on the current project closes the task panel")
+        XCTAssertNil(model.openDetail, "without opening the project panel in its place")
+
         let other = store.addProject(name: "Beta", now: t0)!
         model.openProject(pid)
         model.clickSidebarProject(other)

@@ -266,8 +266,9 @@ final class TasksViewModel: ObservableObject {
 
     /// A click on a sidebar project: shows it, or, when it's already on screen, opens its panel
     /// (name, color, description, sprint, archive). The first click never hides the view.
+    /// With any panel open (a task's too), the click just closes it.
     func clickSidebarProject(_ id: UUID) {
-        if scope == .project(id), openDetail != .project(id) {
+        if scope == .project(id), !isPanelOpen {
             openProject(id)
         } else {
             select(.project(id))
