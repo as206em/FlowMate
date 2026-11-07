@@ -29,6 +29,7 @@ struct TaskComposer: View {
     @State private var dismissedFor: String?
     @State private var picking: Picker?
     @State private var added: Added?
+    @State private var dictating = false
     @FocusState private var focused: Bool
 
     enum Picker: Hashable { case project, status, sprint, priority, due, time, labels }
@@ -93,7 +94,7 @@ struct TaskComposer: View {
     /// Back to the ＋ button. What was typed stays for next time. Not while a picker or the
     /// suggestion menu is up (the menu hangs outside the composer, so its clicks look "outside").
     private func close() {
-        guard isActive, picking == nil, suggestions.isEmpty else { return }
+        guard isActive, picking == nil, suggestions.isEmpty, !dictating else { return }
         focused = false
         withAnimation(Focus.hoverAnimation) { model.activeComposer = nil }
     }
@@ -134,15 +135,37 @@ struct TaskComposer: View {
                 .font(.system(size: 14))
                 .foregroundColor(Focus.text)
                 .focused($focused)
-                .disabled(target == nil)
+                .disabled(target == nil || dictating)
                 .onSubmit(submit)
                 .accessibilityLabel("New task title")
                 .accessibilityHint("Type 2h, #next, !high, *status, %label, +project or due:fri to set them. Return adds.")
+            if target != nil {
+                DictationMicButton(targetId: dictationId, size: 26) { dictationTarget() }
+            }
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 12)
+        .padding(.trailing, 8)
         .frame(height: Self.fieldHeight)
         .contentShape(Rectangle())
         .onTapGesture { if target != nil { focused = true } }
+    }
+
+    // MARK: - Dictation
+
+    private var dictationId: String { "composer-\(key)" }
+
+    /// Dictation goes at the end of the title; recognised words (#next, !high…) still work
+    private func dictationTarget() -> DictationController.Target {
+        let splice = DictationSplice(appendingTo: title)
+        let show: (String) -> Void = { text in
+            title = text.isEmpty ? splice.base : splice.apply(DictationController.clean(text, for: .title))
+        }
+        dictating = true
+        return DictationController.Target(id: dictationId, field: .title, update: show, finish: show, proofread: show,
+                                          end: {
+                                              dictating = false
+                                              DispatchQueue.main.async { if isActive { focused = true } }
+                                          })
     }
 
     // MARK: - Property row
@@ -356,6 +379,16 @@ struct TaskComposer: View {
     }
 
     private func handleKey(_ key: ComposerKey) -> Bool {
+        // While dictating: Esc takes it back out, ↵ stops (↵ again adds the task)
+        let dictation = DictationController.shared
+        if dictation.isActive(dictationId) {
+            switch key {
+            case .escape: dictation.cancel()
+            case .returnKey: dictation.stop()
+            default: break
+            }
+            return true
+        }
         let rows = suggestions
         guard !rows.isEmpty else {
             if key == .escape {

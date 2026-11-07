@@ -29,6 +29,9 @@ enum QuickAddPanel {
     }
 
     static func close() {
+        // Closing mid-dictation keeps what was said so far in the box
+        let dictation = DictationController.shared
+        if dictation.isActive(QuickAddBox.dictationId), dictation.phase == .listening { dictation.stop() }
         panel?.orderOut(nil)
     }
 
@@ -81,6 +84,8 @@ final class QuickAddWindow: NSPanel {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isVisible, !self.isKeyWindow else { return }
             if let key = NSApp.keyWindow, key.className.contains("Popover") { return }
+            // The microphone permission prompt takes key while you dictate; that doesn't count either
+            if DictationController.shared.isActive(QuickAddBox.dictationId) { return }
             self.orderOut(nil)
         }
     }
@@ -123,6 +128,9 @@ struct QuickAddBox: View {
     @EnvironmentObject private var model: QuickAddBoxModel
     @FocusState private var focused: Bool
     @State private var pickingProject = false
+    @State private var dictating = false
+
+    static let dictationId = "quickadd"
 
     var body: some View {
         let target = model.projectId.flatMap { store.project($0) }
@@ -168,6 +176,46 @@ struct QuickAddBox: View {
 
     @ViewBuilder
     private func field(_ target: Project) -> some View {
+        HStack(spacing: 8) {
+            titleField(target)
+            DictationMicButton(targetId: Self.dictationId, size: 30) { dictationTarget() }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 10)
+        .frame(height: 52)
+        // While dictating: Esc takes it back out, ↵ stops (↵ again adds the task)
+        .background(KeyDownMonitor(isActive: dictating) { event in
+            let dictation = DictationController.shared
+            guard dictation.isActive(Self.dictationId) else { return false }
+            switch event.keyCode {
+            case 53: dictation.cancel()
+            case 36, 76: dictation.stop()
+            default: return false
+            }
+            return true
+        })
+        DictationStatusLine(targetId: Self.dictationId)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 8)
+        FocusDivider()
+        footer(target)
+    }
+
+    /// Dictation goes at the end of the text; !high, +project and the other words still work
+    private func dictationTarget() -> DictationController.Target {
+        let splice = DictationSplice(appendingTo: model.text)
+        let show: (String) -> Void = { text in
+            model.text = text.isEmpty ? splice.base : splice.apply(DictationController.clean(text, for: .title))
+        }
+        dictating = true
+        return DictationController.Target(id: Self.dictationId, field: .title, update: show, finish: show, proofread: show,
+                                          end: {
+                                              dictating = false
+                                              DispatchQueue.main.async { focused = true }
+                                          })
+    }
+
+    private func titleField(_ target: Project) -> some View {
         TextField("What needs doing?  !high  +project  due:fri  ~1h", text: $model.text)
             .textFieldStyle(.plain)
             .font(.system(size: 17))
@@ -181,11 +229,8 @@ struct QuickAddBox: View {
                 if let completed = store.completeQuickAdd(model.text, projectId: target.id) { model.text = completed }
                 return true
             })
-            .padding(.horizontal, 14)
-            .frame(height: 52)
+            .disabled(dictating)
             .accessibilityLabel("New task title")
-        FocusDivider()
-        footer(target)
     }
 
     /// The preview of what ↵ does, or the "Added" note, plus the keys

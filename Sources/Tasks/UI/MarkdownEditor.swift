@@ -23,6 +23,82 @@ final class MarkdownEditorProxy {
         guard let textView else { return }
         textView.window?.makeFirstResponder(textView)
     }
+
+    var isAttached: Bool { textView != nil }
+
+    // MARK: Dictation
+    // Live text replaces the dictated range without undo steps and the editor is read-only
+    // meanwhile. When it's final the raw words go in as one undo step and the proofread
+    // version as another, so ⌘Z first brings back what you said, then removes it.
+
+    private var splice: DictationSplice?
+    /// Where the dictated text is in the editor now
+    private var dictatedRange = NSRange(location: 0, length: 0)
+
+    /// Starts dictation at the cursor (replacing the selection). - Returns: nil without an editor
+    func beginDictation() -> DictationSplice? {
+        guard let textView else { return nil }
+        let splice = DictationSplice(base: textView.string, range: textView.selectedRange())
+        self.splice = splice
+        dictatedRange = splice.range
+        textView.isEditable = false
+        return splice
+    }
+
+    /// Shows the transcript so far. - Returns: false when the editor is gone
+    @discardableResult
+    func showDictation(_ text: String) -> Bool {
+        guard let textView, let splice, textView.string.utf16.count >= NSMaxRange(dictatedRange) else { return false }
+        let insertion = text.isEmpty ? (splice.base as NSString).substring(with: splice.range) : splice.insertion(text)
+        replace(insertion, undoable: false, in: textView)
+        return true
+    }
+
+    /// The final words, as one undo step. - Returns: false when the editor is gone
+    @discardableResult
+    func finishDictation(_ text: String) -> Bool {
+        guard let textView, let splice, textView.string.utf16.count >= NSMaxRange(dictatedRange) else { return false }
+        // Back to the text before dictation, then the words as one undoable edit
+        replace((splice.base as NSString).substring(with: splice.range), undoable: false, in: textView)
+        dictatedRange = splice.range
+        replace(splice.insertion(text), undoable: true, in: textView)
+        return true
+    }
+
+    /// The proofread words, as another undo step
+    @discardableResult
+    func proofreadDictation(_ text: String) -> Bool {
+        guard let textView, let splice, textView.string.utf16.count >= NSMaxRange(dictatedRange) else { return false }
+        replace(splice.insertion(text), undoable: true, in: textView)
+        return true
+    }
+
+    func endDictation() {
+        splice = nil
+        textView?.isEditable = true
+    }
+
+    private func replace(_ string: String, undoable: Bool, in textView: NSTextView) {
+        let range = dictatedRange
+        if undoable {
+            let wasEditable = textView.isEditable
+            textView.isEditable = true
+            textView.breakUndoCoalescing()
+            if textView.shouldChangeText(in: range, replacementString: string) {
+                textView.textStorage?.replaceCharacters(in: range, with: string)
+                textView.didChangeText()
+            }
+            textView.breakUndoCoalescing()
+            textView.isEditable = wasEditable
+        } else {
+            let attributed = NSAttributedString(string: string, attributes: textView.typingAttributes)
+            textView.textStorage?.replaceCharacters(in: range, with: attributed)
+            textView.didChangeText()
+        }
+        dictatedRange = NSRange(location: range.location, length: (string as NSString).length)
+        textView.setSelectedRange(NSRange(location: NSMaxRange(dictatedRange), length: 0))
+        textView.scrollRangeToVisible(textView.selectedRange())
+    }
 }
 
 /// Monospaced Markdown editor (NSTextView) that grows with its text; the panel's scroll view does the scrolling.

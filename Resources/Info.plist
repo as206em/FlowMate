@@ -12,6 +12,8 @@
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>FlowMate uses the microphone when you click a mic button to dictate a task's title or description.</string>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2025 asem-mkl. All rights reserved.</string>
 </dict>

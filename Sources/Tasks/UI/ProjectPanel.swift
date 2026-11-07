@@ -20,11 +20,13 @@ struct ProjectPanel: View {
                 }
                 HStack(spacing: 0) {
                     SidePanelBody {
-                        SidePanelTitleEditor(placeholder: "Project name", value: project.name) {
+                        SidePanelTitleEditor(placeholder: "Project name", value: project.name,
+                                             dictationId: "project-name-\(project.id)") {
                             store.setProjectName(project.id, $0)
                         }
                         MarkdownDescriptionSection(
                             text: project.notes,
+                            dictationId: "project-notes-\(project.id)",
                             placeholder: "What this project is for: the goal, links and notes. Markdown works.",
                             onChange: { store.setProjectNotes(project.id, $0) },
                             onToggleLine: { line in

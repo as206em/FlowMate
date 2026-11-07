@@ -15,13 +15,16 @@ struct AppSettings: Codable {
     var timerShortcut: String
     /// Global shortcut that opens the menu bar panel with its search focused ("" = off)
     var menuSearchShortcut: String
+    /// Settings › Dictation: the mic buttons on titles and descriptions
+    var dictation: DictationSettings
 
     static let defaultQuickAddShortcut = "control+option+n"
 
     init(theme: String = "system", maxHistoryItems: Int = 50, customSettings: [String: String] = [:],
          quickAddShortcut: String = AppSettings.defaultQuickAddShortcut,
          notifications: NotificationSettings = NotificationSettings(),
-         timerShortcut: String = "", menuSearchShortcut: String = "") {
+         timerShortcut: String = "", menuSearchShortcut: String = "",
+         dictation: DictationSettings = DictationSettings()) {
         self.theme = theme
         self.maxHistoryItems = maxHistoryItems
         self.customSettings = customSettings
@@ -29,5 +32,6 @@ struct AppSettings: Codable {
         self.notifications = notifications
         self.timerShortcut = timerShortcut
         self.menuSearchShortcut = menuSearchShortcut
+        self.dictation = dictation
     }
 }

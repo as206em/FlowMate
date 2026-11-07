@@ -21,6 +21,7 @@ struct SettingsView: View {
                 case .general: GeneralSettingsView()
                 case .notifications: NotificationsSettingsView()
                 case .proofreading: ProofreadingSettingsView()
+                case .dictation: DictationSettingsView()
                 case .aiProviders: AIProvidersSettingsView()
                 case .updates: UpdatesSettingsView()
                 case .maintenance: MaintenanceSettingsView()

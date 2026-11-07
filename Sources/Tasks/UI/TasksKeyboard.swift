@@ -377,6 +377,11 @@ final class TasksKeyMonitor {
 
     /// True when the key ran a shortcut and should go no further.
     private func consumes(_ event: NSEvent) -> Bool {
+        // Esc while dictating takes the dictated text back out (instead of closing the panel)
+        if event.keyCode == 53, event.window === window, DictationController.shared.canCancel {
+            DictationController.shared.cancel()
+            return true
+        }
         guard let window, event.window === window, window.isKeyWindow, window.attachedSheet == nil,
               let shortcut = TasksShortcut.match(
                   keyCode: event.keyCode,

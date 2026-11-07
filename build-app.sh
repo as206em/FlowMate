@@ -140,6 +140,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
     <string>NSApplication</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon.icns</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>FlowMate uses the microphone when you click a mic button to dictate a task's title or description.</string>
 $SPARKLE_PLIST
 $BUILD_LABEL_PLIST
     <key>GitCommitHash</key>
@@ -162,6 +164,8 @@ cat > entitlements.plist << 'ENT_EOF'
     <key>com.apple.security.automation.apple-events</key>
     <true/>
     <key>com.apple.security.device.input-monitoring</key>
+    <true/>
+    <key>com.apple.security.device.audio-input</key>
     <true/>
 </dict>
 </plist>

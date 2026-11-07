@@ -180,9 +180,12 @@ private struct TaskDetailBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
-            SidePanelTitleEditor(placeholder: "Task title", value: task.title) { store.setTitle(task.id, $0) }
+            SidePanelTitleEditor(placeholder: "Task title", value: task.title, dictationId: "title-\(task.id)") {
+                store.setTitle(task.id, $0)
+            }
             MarkdownDescriptionSection(
                 text: task.notes,
+                dictationId: "notes-\(task.id)",
                 placeholder: Self.placeholder,
                 onChange: { store.setNotes(task.id, $0) },
                 onToggleLine: { store.toggleNotesChecklist(task.id, line: $0) },
@@ -203,12 +206,40 @@ private struct TaskDetailBody: View {
 struct SidePanelTitleEditor: View {
     let placeholder: String
     let value: String
+    /// Shows a mic button (Settings › Dictation) when set
+    var dictationId: String? = nil
     let set: (String) -> Void
 
     @State private var draft = ""
+    @State private var dictating = false
     @FocusState private var focused: Bool
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 8) {
+                field
+                if let dictationId {
+                    DictationMicButton(targetId: dictationId, size: 30) { dictationTarget(id: dictationId) }
+                        .padding(.top, 2)
+                }
+            }
+            if let dictationId { DictationStatusLine(targetId: dictationId) }
+        }
+    }
+
+    /// Dictation goes at the end of the title, on one line
+    private func dictationTarget(id: String) -> DictationController.Target {
+        focused = false
+        let splice = DictationSplice(appendingTo: value)
+        let show: (String) -> Void = { text in
+            draft = text.isEmpty ? splice.base : splice.apply(DictationController.clean(text, for: .title))
+        }
+        dictating = true
+        return DictationController.Target(id: id, field: .title, update: show, finish: show, proofread: show,
+                                          end: { dictating = false })
+    }
+
+    private var field: some View {
         TextField(placeholder, text: $draft, axis: .vertical)
             .textFieldStyle(.plain)
             .font(Focus.taskTitle)
@@ -234,6 +265,7 @@ struct SidePanelTitleEditor: View {
                 if !isFocused { draft = value }
             }
             .onSubmit { focused = false }
+            .disabled(dictating)
             .accessibilityLabel(placeholder)
     }
 }
@@ -241,6 +273,8 @@ struct SidePanelTitleEditor: View {
 /// Description with Write / Preview tabs and the Markdown toolbar (task and project panels).
 struct MarkdownDescriptionSection: View {
     let text: String
+    /// Shows a mic button (Settings › Dictation) when set
+    var dictationId: String? = nil
     let placeholder: String
     let onChange: (String) -> Void
     let onToggleLine: (Int) -> Void
@@ -302,6 +336,7 @@ struct MarkdownDescriptionSection: View {
                 RoundedRectangle(cornerRadius: Focus.radiusPanel)
                     .strokeBorder(writing && editorFocused ? Focus.lineStrong : Focus.hairline, lineWidth: 1)
             )
+            if let dictationId { DictationStatusLine(targetId: dictationId) }
         }
         .onAppear {
             // The editor focuses itself when it appears
@@ -330,11 +365,27 @@ struct MarkdownDescriptionSection: View {
                 MarkdownToolButton(label: "Quote", systemImage: "text.quote") { proxy.apply(.quote) }
             }
             Spacer(minLength: 0)
+            if let dictationId {
+                DictationMicButton(targetId: dictationId) { dictationTarget(id: dictationId) }
+            }
         }
         .padding(.leading, 4)
         .padding(.trailing, 6)
         .frame(height: 38)
         .background(Focus.canvas)
+    }
+
+    /// Dictation goes in at the cursor; it switches to Write so you see it arrive
+    private func dictationTarget(id: String) -> DictationController.Target {
+        writing = true
+        let session = DescriptionDictation(proxy: proxy, text: text, onChange: onChange)
+        return DictationController.Target(
+            id: id, field: .description,
+            update: { session.show($0) },
+            finish: { session.finish($0) },
+            proofread: { session.proofread($0) },
+            end: { session.end() }
+        )
     }
 
     private var toolbarSeparator: some View {
@@ -617,5 +668,55 @@ private struct SubtaskRow: View {
         guard renaming else { return }
         store.renameSubtask(task.id, subtask.id, to: draft)
         renaming = false
+    }
+}
+
+
+/// One dictation into a description: through the editor when it's open (at the cursor, with
+/// undo steps), otherwise straight into the text at its end.
+@MainActor
+private final class DescriptionDictation {
+    private let proxy: MarkdownEditorProxy
+    private let text: String
+    private let onChange: (String) -> Void
+    private var splice: DictationSplice?
+    private var inEditor = false
+
+    init(proxy: MarkdownEditorProxy, text: String, onChange: @escaping (String) -> Void) {
+        self.proxy = proxy
+        self.text = text
+        self.onChange = onChange
+    }
+
+    /// The editor may only appear after Write is switched on, so this starts on first use
+    private func begin() -> DictationSplice {
+        if let splice { return splice }
+        let started = proxy.beginDictation()
+        inEditor = started != nil
+        let splice = started ?? DictationSplice(appendingTo: text)
+        self.splice = splice
+        return splice
+    }
+
+    func show(_ dictated: String) {
+        let splice = begin()
+        if inEditor, proxy.showDictation(dictated) { return }
+        onChange(dictated.isEmpty ? splice.base : splice.apply(dictated))
+    }
+
+    func finish(_ dictated: String) {
+        let splice = begin()
+        if inEditor, proxy.finishDictation(dictated) { return }
+        onChange(splice.apply(dictated))
+    }
+
+    func proofread(_ dictated: String) {
+        let splice = begin()
+        if inEditor, proxy.proofreadDictation(dictated) { return }
+        onChange(splice.apply(dictated))
+    }
+
+    func end() {
+        if inEditor { proxy.endDictation() }
     }
 }

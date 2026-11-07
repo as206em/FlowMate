@@ -164,6 +164,7 @@ final class AppState: ObservableObject {
         setupQuickAddShortcut()
         setupTimerShortcut()
         setupMenuSearchShortcut()
+        setupDictation()
         TasksViewModel.openSettings = { [weak self] in self?.showSettings(nil) }
         checkConnection()
         refreshLaunchAtLogin()
@@ -771,6 +772,41 @@ final class AppState: ObservableObject {
                 Logger.shared.error("AppState: Proofreading failed - \(error.localizedDescription)")
             }
         }
+    }
+
+    // MARK: - Dictation
+
+    /// Settings › Dictation
+    var dictationSettings: DictationSettings { DictationController.shared.settings }
+
+    func updateDictationSettings(_ settings: DictationSettings) {
+        guard settings != DictationController.shared.settings else { return }
+        DictationController.shared.settings = settings
+        configurationManager.updateAppSettings { $0.dictation = settings }
+    }
+
+    /// Gives the mic buttons the settings, the OpenAI key and the proofreading model
+    private func setupDictation() {
+        let dictation = DictationController.shared
+        dictation.settings = configurationManager.config.app.dictation
+        dictation.openAIKey = { [weak self] in self?.openAIAPIKey ?? "" }
+        dictation.openAIBaseURL = { [weak self] in self?.openAIURL ?? AIProvider.openai.defaultURL }
+        dictation.proofreadText = { [weak self] text, field in
+            guard let self else { return .failure(error: CancellationError()) }
+            return await self.proofreadDictation(text, field: field)
+        }
+    }
+
+    /// Proofreads dictated text with the proofreading provider and model
+    func proofreadDictation(_ text: String, field: DictationSettings.Field) async -> ProofreadingResult {
+        await proofreadingService.proofread(
+            text: text,
+            model: proofreadingModel,
+            prompt: dictationSettings.proofreadingPrompt(for: field),
+            aiService: aiService,
+            promptBuilder: promptBuilder,
+            maxRetries: 1
+        )
     }
 
     private func runProofreading(_ text: String) async -> ProofreadingResult {
