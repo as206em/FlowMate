@@ -419,11 +419,24 @@ enum MenuBarPanel {
     @MainActor
     static func fitToContent() {
         guard let window, let content = window.contentView else { return }
+        content.layoutSubtreeIfNeeded()
         let size = content.fittingSize
         guard size.height > 0, abs(size.height - window.frame.height) > 0.5 else { return }
         var frame = window.frame
         frame.origin.y = frame.maxY - size.height
         frame.size.height = size.height
-        window.setFrame(frame, display: true)
+        window.setFrame(frame, display: true, animate: false)
+        // The panel is a transparent, rounded window: without this its old outline and shadow
+        // stay on screen after it shrinks, as a see-through band around the content
+        content.frame = NSRect(origin: .zero, size: frame.size)
+        content.needsDisplay = true
+        window.invalidateShadow()
+        window.display()
+        // SwiftUI may size the window again on the same pass; redraw once that has settled
+        DispatchQueue.main.async {
+            guard window.isVisible else { return }
+            window.invalidateShadow()
+            window.contentView?.needsDisplay = true
+        }
     }
 }

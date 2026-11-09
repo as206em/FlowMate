@@ -42,13 +42,14 @@ struct TodayView: View {
                 risk: isFocus && !plan.overdue.isEmpty,
                 draggable: true,
                 sortable: true,
-                display: RowDisplay.maker(store: store, model: model, today: true)
+                display: RowDisplay.maker(store: store, model: model, today: true, scores: true)
             )
         }
         builder.spacer("bottom", 72)
         return TaskTable(
             showProject: true,
             excluding: [.sprint],
+            including: [.score],
             rows: builder.rows,
             drops: builder.drops,
             draggable: builder.draggable
