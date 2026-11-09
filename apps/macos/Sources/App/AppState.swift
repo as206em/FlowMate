@@ -171,7 +171,7 @@ final class AppState: ObservableObject {
         applyAppearance()
         startBackgroundMonitoring()
 
-        Logger.shared.info("AppState: Initialized - Provider: \(proofreadingProvider.rawValue), Model: \(proofreadingModel)")
+        Logger.shared.info("AppState: Initialized - Provider: \(proofreadingProvider.rawValue), Model: \(proofreadingModel), Accessibility: \(hasAccessibilityPermission ? "granted" : "missing")")
     }
 
     deinit {
@@ -645,6 +645,15 @@ final class AppState: ObservableObject {
     func handleProofreadingShortcut() {
         guard !isProcessing else {
             Logger.shared.info("AppState: Ignoring shortcut - proofreading already in progress")
+            return
+        }
+
+        // Copying the selection (a simulated ⌘C) needs Accessibility access. Without it macOS
+        // drops the key press silently, so ask for access instead of failing quietly.
+        guard AXIsProcessTrusted() else {
+            Logger.shared.warning("AppState: Proofreading shortcut pressed, but Accessibility access is missing")
+            statusManager.updateStatus(state: .failure, priority: .proofreading, timeout: 3.0)
+            requestAccessibilityPermission()
             return
         }
 

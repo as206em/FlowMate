@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Carbon.HIToolbox
 
 /// Protocol for keyboard shortcut handling to enable mocking in tests
 protocol KeyboardShortcutManagerProtocol {
@@ -13,6 +14,8 @@ protocol KeyboardShortcutManagerProtocol {
 final class KeyboardShortcutManager: KeyboardShortcutManagerProtocol {
     private var eventMonitor: Any?
     private var localMonitor: Any?
+    private var systemHotKey: SystemHotKey?
+    private var activationObservers: [NSObjectProtocol] = []
     /// Also fire while FlowMate itself is active (a global monitor only sees other apps' keys).
     private let alsoWhenActive: Bool
     /// While true, the in-app monitor lets the key through (e.g. while recording a new shortcut).
@@ -46,10 +49,32 @@ final class KeyboardShortcutManager: KeyboardShortcutManagerProtocol {
 
         removeShortcut()
 
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-            let pressed = event.modifierFlags.intersection(Self.relevantModifiers)
-            if event.keyCode == keyCode && pressed == modifiers {
-                handler()
+        // While other apps are in front: a system hotkey. Unlike a global key monitor it needs no
+        // Accessibility access, so the shortcut fires even when that access is missing or was
+        // lost with an update. It's off while FlowMate is in front, where the local monitor below
+        // decides (text fields, the shortcut recorder).
+        let hotKey = SystemHotKey(keyCode: keyCode, modifiers: modifiers, handler: handler)
+        if hotKey.isRegistered {
+            systemHotKey = hotKey
+            if NSApp?.isActive == true { hotKey.pause() }
+            activationObservers = [
+                NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+                    hotKey.pause()
+                },
+                NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
+                    hotKey.resume()
+                }
+            ]
+        } else {
+            // Another app holds these keys as a hotkey; listen the old way (needs Accessibility)
+            Task { @MainActor in
+                Logger.shared.warning("KeyboardShortcutManager: '\(shortcut)' is taken by another app's hotkey; using a key monitor")
+            }
+            eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+                let pressed = event.modifierFlags.intersection(Self.relevantModifiers)
+                if event.keyCode == keyCode && pressed == modifiers {
+                    handler()
+                }
             }
         }
         if alsoWhenActive {
@@ -75,6 +100,15 @@ final class KeyboardShortcutManager: KeyboardShortcutManagerProtocol {
 
     /// Removes the current keyboard shortcut monitor
     func removeShortcut() {
+        activationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        activationObservers = []
+        if let systemHotKey {
+            systemHotKey.unregister()
+            self.systemHotKey = nil
+            Task { @MainActor in
+                Logger.shared.debug("KeyboardShortcutManager: Removed shortcut")
+            }
+        }
         if let localMonitor {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
@@ -291,5 +325,81 @@ final class KeyboardShortcutManager: KeyboardShortcutManagerProtocol {
         }
 
         return (keyCode, modifiers)
+    }
+}
+
+/// One shortcut registered with the system (Carbon's RegisterEventHotKey). The system hands the
+/// key press to FlowMate whichever app is in front, without Accessibility access.
+final class SystemHotKey {
+    private var ref: EventHotKeyRef?
+    private let id: UInt32
+    private let keyCode: UInt32
+    private let carbonModifiers: UInt32
+    private let handler: () -> Void
+
+    private static var handlers: [UInt32: () -> Void] = [:]
+    private static var nextId: UInt32 = 1
+    private static var eventHandlerInstalled = false
+    /// "FlMt"
+    private static let signature: OSType = 0x466C_4D74
+
+    init(keyCode: UInt16, modifiers: NSEvent.ModifierFlags, handler: @escaping () -> Void) {
+        Self.installEventHandler()
+        id = Self.nextId
+        Self.nextId += 1
+        self.keyCode = UInt32(keyCode)
+        var carbon: UInt32 = 0
+        if modifiers.contains(.command) { carbon |= UInt32(cmdKey) }
+        if modifiers.contains(.shift) { carbon |= UInt32(shiftKey) }
+        if modifiers.contains(.option) { carbon |= UInt32(optionKey) }
+        if modifiers.contains(.control) { carbon |= UInt32(controlKey) }
+        carbonModifiers = carbon
+        self.handler = handler
+        register()
+    }
+
+    deinit { unregister() }
+
+    var isRegistered: Bool { ref != nil }
+
+    /// Lets the keys through to the app in front (FlowMate, while it's active)
+    func pause() {
+        guard let ref else { return }
+        UnregisterEventHotKey(ref)
+        self.ref = nil
+    }
+
+    func resume() {
+        guard ref == nil else { return }
+        register()
+    }
+
+    func unregister() {
+        pause()
+        Self.handlers[id] = nil
+    }
+
+    private func register() {
+        var hotKeyRef: EventHotKeyRef?
+        let hotKeyId = EventHotKeyID(signature: Self.signature, id: id)
+        let status = RegisterEventHotKey(keyCode, carbonModifiers, hotKeyId, GetApplicationEventTarget(), 0, &hotKeyRef)
+        guard status == noErr, let hotKeyRef else { return }
+        ref = hotKeyRef
+        Self.handlers[id] = handler
+    }
+
+    private static func installEventHandler() {
+        guard !eventHandlerInstalled else { return }
+        eventHandlerInstalled = true
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ -> OSStatus in
+            var hotKeyId = EventHotKeyID()
+            let status = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                                           nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKeyId)
+            guard status == noErr, hotKeyId.signature == SystemHotKey.signature,
+                  let handler = SystemHotKey.handlers[hotKeyId.id] else { return OSStatus(eventNotHandledErr) }
+            DispatchQueue.main.async { handler() }
+            return noErr
+        }, 1, &eventType, nil, nil)
     }
 }
