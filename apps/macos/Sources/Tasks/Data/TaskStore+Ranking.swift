@@ -10,11 +10,15 @@ import Foundation
 // target ("Make 14h · Reach 3h, target 50% Reach"). A bucket more than 10 points behind its share
 // is "behind": the header turns amber and Next best gives that bucket's tasks +5.
 //
-// Score, 0–100: impact × 10 × effort factor, + 5 when the task's bucket is behind, + its nudge.
+// Score, 0–100: impact × 10 × effort factor, + its priority's points, + 5 when the task's bucket is
+// behind, + its nudge.
 //   impact  the task's own, else its project's (5 when none), averaged with
 //           its type's impact when it has a type
 //   effort  of the time left (expected − tracked): 1.0 up to 30m, 0.9 up to 1h, 0.8 up to 2h,
 //           0.7 up to 4h, 0.6 beyond
+//   priority High +10, Medium 0, Low −10: how urgent you said it is, on top of how valuable it is
+//           (impact). One priority step weighs about one impact step, so a High task of impact 6
+//           ties a Medium task of impact 7 and beats a Low one of impact 8.
 //   nudge   Send up / Send down: the nth press in a row moves 5, 10, then 15 points; the other
 //           direction takes back the last step. Send to top pins the task above every score for
 //           the day. Back to normal clears both. Closing the task or the sprint clears them too.
@@ -38,6 +42,15 @@ enum ImpactRules {
     /// A Keep warm task should be small: this many minutes left or fewer when the project has one
     static let keepWarmMinutes = 30
 
+    /// Points a priority adds to the score: High +10, Medium 0, Low −10.
+    static func priorityPoints(_ priority: TaskPriority) -> Int {
+        switch priority {
+        case .high: return 10
+        case .medium: return 0
+        case .low: return -10
+        }
+    }
+
     /// The effort factor for `minutes` of work left.
     static func effortFactor(minutesLeft minutes: Int) -> Double {
         switch minutes {
@@ -60,7 +73,9 @@ enum ImpactRules {
         Int((Double(ImpactScale.clamped(impact) * 10) * effortFactor(minutesLeft: minutesLeft)).rounded())
     }
 
-    static func score(base: Int, boost: Int, nudge: Int) -> Int { min(100, max(0, base + boost + nudge)) }
+    static func score(base: Int, priority: Int = 0, boost: Int, nudge: Int) -> Int {
+        min(100, max(0, base + priority + boost + nudge))
+    }
 
     /// The size of the nth press in a row (1-based): 5, 10, then 15 for every press after.
     static func step(_ press: Int) -> Int { nudgeSteps[min(max(press, 1), nudgeSteps.count) - 1] }
@@ -138,15 +153,19 @@ struct NextBestScore: Equatable, Sendable {
     let typeName: String?
     let minutesLeft: Int
     let base: Int
+    /// The task's priority and the points it adds (High +10, Medium 0, Low −10)
+    var priority: TaskPriority = .medium
+    var priorityPoints: Int = 0
     /// Points for the bucket being behind the mix target
     let boost: Int
     let nudge: Int
     let score: Int
     let pinnedTop: Bool
 
-    /// "Impact 8 (project + Sales) · 30m left · Reach is behind +5 · sent up +15"
+    /// "Impact 8 (project + Sales) · 30m left · high priority +10 · behind on mix +5 · sent up +15"
     var reason: String {
         var parts = ["Impact \(impact) (\(impactSource))", "\(Focus.durationString(minutes: minutesLeft)) left"]
+        if priorityPoints != 0 { parts.append("\(priority.title.lowercased()) priority \(priorityPoints > 0 ? "+" : "")\(priorityPoints)") }
         if boost > 0 { parts.append("behind on mix +\(boost)") }
         if nudge != 0 { parts.append(nudge > 0 ? "sent up +\(nudge)" : "sent down \(nudge)") }
         if pinnedTop { parts.insert("Sent to top", at: 0) }
@@ -346,15 +365,18 @@ extension TaskStore {
         let left = max(0, task.expectedMinutes - Int(elapsed(task, now: now) / 60))
         let base = ImpactRules.base(impact: impact, minutesLeft: left)
         let boost = type != nil && type?.bucket == behind ? ImpactRules.behindBoost : 0
+        let priority = ImpactRules.priorityPoints(task.priority)
         return NextBestScore(
             impact: impact,
             impactSource: type.map { "\(own.source) + \($0.name)" } ?? own.source,
             typeName: type?.name,
             minutesLeft: left,
             base: base,
+            priority: task.priority,
+            priorityPoints: priority,
             boost: boost,
             nudge: task.nudge,
-            score: ImpactRules.score(base: base, boost: boost, nudge: task.nudge),
+            score: ImpactRules.score(base: base, priority: priority, boost: boost, nudge: task.nudge),
             pinnedTop: isPinnedTop(task, now: now, calendar: calendar)
         )
     }

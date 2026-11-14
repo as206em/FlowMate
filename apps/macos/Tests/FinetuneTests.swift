@@ -82,4 +82,32 @@ final class FinetuneTests: XCTestCase {
         let sorted = store.sorted([store.task(inherited)!, store.task(own)!], by: TaskSort(key: .impact))
         XCTAssertEqual(sorted.map(\.id), [own, inherited])
     }
+
+    // MARK: - Priority in the score
+
+    func testPriorityPoints() {
+        XCTAssertEqual(ImpactRules.priorityPoints(.high), 10)
+        XCTAssertEqual(ImpactRules.priorityPoints(.medium), 0)
+        XCTAssertEqual(ImpactRules.priorityPoints(.low), -10)
+        XCTAssertEqual(ImpactRules.score(base: 95, priority: 10, boost: 0, nudge: 0), 100, "capped at 100")
+        XCTAssertEqual(ImpactRules.score(base: 5, priority: -10, boost: 0, nudge: 0), 0, "floored at 0")
+    }
+
+    func testPriorityMovesTheScore() async {
+        let (store, pid) = await makeStore()
+        let id = store.addTask(title: "A", projectId: pid, now: t0)!
+        store.setExpectedMinutes(id, 30)
+        let medium = store.nextBestScore(store.task(id)!, now: t0)
+        XCTAssertEqual(medium.score, 50, "impact 5 × 10, small task, medium priority adds nothing")
+        XCTAssertFalse(medium.reason.contains("priority"))
+
+        store.setPriority(id, .high)
+        let high = store.nextBestScore(store.task(id)!, now: t0)
+        XCTAssertEqual(high.score, 60)
+        XCTAssertEqual(high.priorityPoints, 10)
+        XCTAssertTrue(high.reason.contains("high priority +10"))
+
+        store.setPriority(id, .low)
+        XCTAssertEqual(store.nextBestScore(store.task(id)!, now: t0).score, 40)
+    }
 }

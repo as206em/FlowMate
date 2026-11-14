@@ -406,7 +406,7 @@ struct NextBestPanel: View {
                 .foregroundColor(Focus.text2)
             Text("Next best").font(Focus.groupTitle).foregroundColor(Focus.text)
             Text("\(list.ranked.count)").font(Focus.row.monospacedDigit()).foregroundColor(Focus.text3)
-            Text("Across every project: impact ÷ effort, 0–100")
+            Text("Across every project: impact ÷ effort, ± priority, 0–100")
                 .font(Focus.meta)
                 .foregroundColor(Focus.text3)
                 .lineLimit(1)
@@ -549,6 +549,7 @@ struct TaskScoreEditor: View {
             VStack(alignment: .leading, spacing: 3) {
                 line("Impact", "\(score.impact) (\(score.impactSource))")
                 line("Effort", "\(Focus.durationString(minutes: score.minutesLeft)) left → base \(score.base)")
+                line("Priority", "\(score.priority.title) → \(score.priorityPoints > 0 ? "+" : "")\(score.priorityPoints)")
                 if score.boost > 0 { line("Mix", "+\(score.boost), its bucket is behind the target") }
                 if score.nudge != 0 { line("Nudge", score.nudge > 0 ? "+\(score.nudge)" : "\(score.nudge)") }
                 if score.pinnedTop { line("Pinned", "First in Next best today") }
