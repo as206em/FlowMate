@@ -33,4 +33,25 @@ final class FinetuneTests: XCTestCase {
         store.startTimer(a, now: t0)
         XCTAssertEqual(MenuBarClockText.title(store: store, now: t0.addingTimeInterval(3725)), "1:02")
     }
+
+    // MARK: - Old sprints in one group
+
+    func testOldSprintsMergeIntoOneGroup() async {
+        let (store, pid) = await makeStore()
+        let start = store.sprint.startDate
+        let done1 = store.addTask(title: "done in 1", projectId: pid, now: t0)!
+        store.setStatus(done1, .done, now: t0)
+        let carried = store.addTask(title: "carried", projectId: pid, now: t0)!
+        store.completeSprint(unfinished: .moveToNextSprint, now: start.addingTimeInterval(14 * 86_400))
+        store.setStatus(carried, .done, now: t0)
+        store.completeSprint(now: start.addingTimeInterval(28 * 86_400))
+
+        let entries = store.pastSprintTasks(in: .project(pid))
+        XCTAssertEqual(entries.map(\.task.id), [carried, done1], "newest sprint first, each task once")
+        XCTAssertEqual(entries.map(\.sprint.number), [2, 1], "a carried-over task sits under its latest sprint")
+
+        let model = TasksViewModel()
+        XCTAssertTrue(model.isCollapsed(TasksViewModel.pastSprintsGroupKey), "starts collapsed")
+        XCTAssertTrue(SprintPlanView.pastSprintsHint(store.pastSprints()).hasPrefix("2 sprints · 2 done · "))
+    }
 }
