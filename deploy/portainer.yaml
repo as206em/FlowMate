@@ -48,7 +48,7 @@ services:
   # Runs the database migrations on start (one copy at a time, under a Postgres lock).
   # Admin CLI: docker exec -it $(docker ps -qf name=flowmate_api) node dist/cli.js help
   api:
-    image: ghcr.io/as206em/flowmate-api:sha-4773b3ce94c3db1202bcd149971ecb84669ce075
+    image: ghcr.io/as206em/flowmate-api:sha-d8f1bafa8899c7fdd4822491efa40460beb81a7a
     environment:
       DATABASE_URL: postgres://flowmate@postgres:5432/flowmate
       DATABASE_PASSWORD_FILE: /run/secrets/flowmate_postgres_password
