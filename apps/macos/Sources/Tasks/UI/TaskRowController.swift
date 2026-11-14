@@ -36,6 +36,12 @@ final class TaskRowController: NSObject {
         }
     }
 
+    /// The copy button before the title (and the menu's Copy task ID): the id on the clipboard and a toast.
+    func copyId(_ id: UUID) {
+        TaskIdentifierCopy.copy(id)
+        model?.show(TasksViewModel.Toast(message: TaskIdentifierCopy.toastMessage))
+    }
+
     /// The hover button at the end of the title.
     func perform(_ action: RowQuickAction, task id: UUID) {
         guard let store, let model else { return }
@@ -148,6 +154,9 @@ final class TaskRowController: NSObject {
                     })
                 }
             }
+        }
+        if !selection {
+            menu.addItem(item("Copy task ID") { [weak self] in self?.copyId(id) })
         }
         if !selection, !task.isClosed {
             // Next best: the same nudges as the Score popover and Today's rows

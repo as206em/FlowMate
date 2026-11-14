@@ -70,7 +70,8 @@ struct MCPTaskTools {
                 "include_closed": boolean("Include done and canceled tasks"),
                 "limit": integer("Maximum tasks (default 50)"),
             ]),
-            tool("get_task", "One task with its description, subtasks, labels and time.", ["id": string("Task id")], required: ["id"]),
+            tool("get_task", "One task by id: its description, subtasks, labels, impact, score and time. Pass the id the app's Copy task ID button puts on the clipboard (or a unique prefix of 6+ characters) to pick up that task.",
+                 ["id": string("Task id, as copied from the app")], required: ["id"]),
             tool("create_task", "Create a task. The project is required.", create, required: ["title", "project"]),
             tool("update_task", "Change any of a task's fields. Only the fields you pass change.", update, required: ["id"]),
             tool("complete_task", "Mark tasks done (or, with undo: true, back to the first Not started status).", [
@@ -297,7 +298,9 @@ struct MCPTaskTools {
     }
 
     func task(_ args: [String: Any]) throws -> TaskItem {
-        guard let text = (args["id"] as? String)?.trimmingCharacters(in: .whitespaces).lowercased(), !text.isEmpty else {
+        // A pasted id may come with a newline, quotes or backticks around it
+        guard let text = (args["id"] as? String)?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(["\"", "'", "`"])).lowercased(),
+              !text.isEmpty else {
             throw MCPToolError("Pass a task id.")
         }
         if let id = UUID(uuidString: text), let task = store.task(id) { return task }
@@ -388,6 +391,10 @@ struct MCPTaskTools {
         var out = summary(task)
         out["notes"] = task.notes
         out["subtasks"] = task.subtasks.map { ["id": $0.id.uuidString, "title": $0.title, "done": $0.isDone] as [String: Any] }
+        let impact = store.ownOrInheritedImpact(task)
+        out["impact"] = impact.value
+        out["impactSource"] = impact.source
+        if !task.isClosed { out["score"] = store.nextBestScore(task, behind: store.sprintMix().behind).score }
         out["spentMinutes"] = Int(task.spentSeconds / 60)
         out["running"] = store.isRunning(task.id)
         return out

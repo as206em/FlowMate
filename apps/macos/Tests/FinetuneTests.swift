@@ -110,4 +110,35 @@ final class FinetuneTests: XCTestCase {
         store.setPriority(id, .low)
         XCTAssertEqual(store.nextBestScore(store.task(id)!, now: t0).score, 40)
     }
+
+    // MARK: - Copy task ID for agents
+
+    func testCopyTaskIdPutsTheIdOnThePasteboard() {
+        let id = UUID()
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("FinetuneTests-\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        TaskIdentifierCopy.copy(id, to: pasteboard)
+        XCTAssertEqual(pasteboard.string(forType: .string), id.uuidString)
+    }
+
+    func testGetTaskByCopiedIdReturnsDetailsAndSubtasks() async throws {
+        let (store, pid) = await makeStore()
+        let id = store.addTask(title: "Finetune", projectId: pid, now: t0)!
+        store.setNotes(id, "Make it nicer")
+        store.addSubtask(id, title: "Hide seconds")
+        store.addSubtask(id, title: "Impact column")
+        let tools = MCPTaskTools(store: store)
+        let copied = TaskIdentifierCopy.text(for: id)
+
+        for pasted in [copied, " \(copied)\n", "`\(copied)`", String(copied.prefix(8)).lowercased()] {
+            let json = try tools.call("get_task", ["id": pasted])
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+            XCTAssertEqual(object["id"] as? String, id.uuidString, pasted)
+            XCTAssertEqual(object["title"] as? String, "Finetune")
+            XCTAssertEqual(object["notes"] as? String, "Make it nicer")
+            XCTAssertEqual((object["subtasks"] as? [[String: Any]])?.compactMap { $0["title"] as? String }, ["Hide seconds", "Impact column"])
+            XCTAssertEqual(object["impact"] as? Int, ImpactScale.neutral)
+            XCTAssertNotNil(object["score"])
+        }
+    }
 }

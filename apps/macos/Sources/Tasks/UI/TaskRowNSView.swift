@@ -433,8 +433,47 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
                  in: NSRect(x: textX, y: cell.minY, width: max(0, cell.maxX - textX), height: cell.height))
     }
 
+    // MARK: Copy id
+
+    /// The copy-id button's size and the gap after it, at the leading edge of the title cell
+    private static let copySize: CGFloat = 16, copyGap: CGFloat = 6
+    /// The task whose id was just copied, and until when its button shows a checkmark
+    private static var copied: (id: UUID, until: Date)?
+
+    /// The copy-id button at the leading edge of the title cell; nil while renaming or when the cell is tiny.
+    private func copyRect(in titleCell: NSRect) -> NSRect? {
+        guard !isRenaming, titleCell.width > 80 else { return nil }
+        return NSRect(x: titleCell.minX, y: titleCell.midY - Self.copySize / 2, width: Self.copySize, height: Self.copySize)
+    }
+
+    /// Faint until the row is hovered; a checkmark for a moment after copying.
+    private func drawCopyButton(_ task: TaskItem, in rect: NSRect) {
+        let justCopied = Self.copied.map { $0.id == task.id && $0.until > Date() } ?? false
+        let color = justCopied ? Style.done : hovered ? Style.text2 : Style.text3.withAlphaComponent(0.45)
+        let symbol = justCopied ? "checkmark" : "doc.on.doc"
+        guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Copy task ID")?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .regular).applying(.init(paletteColors: [color]))) else { return }
+        let s = image.size
+        image.draw(in: NSRect(x: rect.midX - s.width / 2, y: rect.midY - s.height / 2, width: s.width, height: s.height),
+                   from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+    }
+
+    private func copyId(_ id: UUID) {
+        controller?.copyId(id)
+        let until = Date().addingTimeInterval(1.2)
+        Self.copied = (id, until)
+        needsDisplay = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.25) { [weak self] in self?.needsDisplay = true }
+    }
+
     private func drawTitle(_ task: TaskItem, _ display: RowDisplay, in cell: NSRect) {
         var cell = cell
+        if let copy = copyRect(in: cell) {
+            drawCopyButton(task, in: copy)
+            let shift = Self.copySize + Self.copyGap
+            cell.origin.x += shift
+            cell.size.width = max(0, cell.width - shift)
+        }
         if let button = quickActionRect(in: cell), let action = display.quickAction {
             drawQuickAction(action, in: button)
             cell.size.width = max(0, button.minX - 8 - cell.minX)
@@ -696,6 +735,10 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         let point = convert(event.locationInWindow, from: nil)
         guard isInsidePanel(point) else { return }
         let hit = column(at: point)
+        if hit?.column == .title, let copy = copyRect(in: hit!.rect), copy.insetBy(dx: -3, dy: -4).contains(point) {
+            copyId(info.task.id)
+            return
+        }
         if hit?.column == .title, let action = info.display.quickAction,
            let button = quickActionRect(in: hit!.rect), button.contains(point) {
             controller?.perform(action, task: info.task.id)
@@ -729,6 +772,9 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         switch hit.column {
         case .status: return "\(info.display.status.name). Click for \(info.display.nextStatusName), right-click for all"
         case .title:
+            if let copy = copyRect(in: hit.rect), copy.insetBy(dx: -3, dy: -4).contains(point) {
+                return "Copy task ID, for an agent with FlowMate's MCP tools to pick this task up"
+            }
             if let action = info.display.quickAction, let button = quickActionRect(in: hit.rect), button.contains(point) {
                 return action.help
             }
@@ -772,7 +818,8 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         field.layer?.cornerRadius = Focus.radiusTag
         field.layer?.borderWidth = 1
         field.layer?.borderColor = NSColor(Focus.lineStrong).cgColor
-        field.frame = NSRect(x: rect.minX - 8, y: rect.midY - 14, width: rect.width + 8, height: 28)
+        let inset = Self.copySize + Self.copyGap
+        field.frame = NSRect(x: rect.minX + inset - 8, y: rect.midY - 14, width: max(0, rect.width - inset) + 8, height: 28)
         field.delegate = self
         addSubview(field)
         renameField = field
