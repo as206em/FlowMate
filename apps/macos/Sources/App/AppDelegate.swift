@@ -17,8 +17,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             TaskNotifications.shared.start(store: TaskStore.shared)
             // Temporary local MCP server so an agent can manage tasks until there is a backend
             MCPServer.shared.start(store: TaskStore.shared)
-            // Keep a reference to the menu bar icon for the "Menu bar search" hotkey
-            MenuBarStatusItem.resolve()
             // Sparkle: automatic update checks (packaged app only)
             UpdateService.shared.start()
         }

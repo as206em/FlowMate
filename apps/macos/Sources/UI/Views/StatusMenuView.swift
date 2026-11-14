@@ -58,9 +58,6 @@ struct StatusMenuView: View {
                 .frame(height: min(max(scrollHeight, 1), maxScrollHeight))
                 .onPreferenceChange(ContentHeightKey.self) { height in
                     scrollHeight = height
-                    // The menu bar window doesn't shrink on its own when rows go away (a timer
-                    // paused), which left blank space above and below the content
-                    DispatchQueue.main.async { MenuBarPanel.fitToContent() }
                 }
                 .onChange(of: menu.highlight) { item in
                     guard let item else { return }
@@ -353,90 +350,23 @@ private struct ContentHeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
-/// FlowMate's menu bar icon: the status item button the MenuBarExtra puts in the menu bar.
-/// SwiftUI doesn't hand out its NSStatusItem, so the button is found once by its type (an
-/// NSStatusBarButton in one of this app's status bar windows; FlowMate has exactly one status
-/// item) and kept. AppDelegate resolves it at launch; a lookup that finds the kept button gone
-/// (the item was rebuilt) looks again.
+/// Helpers for the menu bar panel (see MenuBarController)
 @MainActor
-enum MenuBarStatusItem {
-    private static weak var cached: NSStatusBarButton?
-
-    /// The button, from the cache while it's still in a window, else looked up in `windows`.
-    static func button(in windows: [NSWindow]? = nil) -> NSStatusBarButton? {
-        if let cached, cached.window != nil { return cached }
-        let found = (windows ?? NSApp.windows).lazy.compactMap { window in
-            window.contentView.flatMap(statusButton(in:))
-        }.first
-        cached = found
-        return found
-    }
-
-    /// Looks the button up now (at launch, once the menu bar item exists).
-    static func resolve() {
-        cached = nil
-        _ = button()
-    }
-
-    static func reset() { cached = nil }
-
-    private static func statusButton(in view: NSView) -> NSStatusBarButton? {
-        if let button = view as? NSStatusBarButton { return button }
-        for sub in view.subviews {
-            if let found = statusButton(in: sub) { return found }
-        }
-        return nil
-    }
-}
-
-/// Helpers for the menu bar panel window
 enum MenuBarPanel {
     /// Closes the panel, e.g. before opening another window
     static func close() {
-        (window ?? NSApp.keyWindow)?.close()
-    }
-
-    private static var window: NSWindow? {
-        NSApp.windows.first { $0.className.contains("MenuBarExtra") && $0.isVisible }
+        MenuBarController.shared.close()
     }
 
     /// The "Menu bar search" hotkey: opens the panel (as a click on the menu bar icon would) with
     /// the search field focused; when it's open already, focuses the field.
-    @MainActor
     static func openWithSearch() {
-        if let window {
-            NSApp.activate(ignoringOtherApps: true)
+        let controller = MenuBarController.shared
+        if let window = controller.openPanel {
             window.makeKey()
-        } else if let button = MenuBarStatusItem.button() {
-            button.performClick(nil)
         } else {
-            Logger.shared.warning("Menu bar search: FlowMate's menu bar icon wasn't found")
+            controller.open()
         }
         DispatchQueue.main.async { MenuState.shared.focusSearch = UUID() }
-    }
-
-    /// Sizes the open panel to its content, keeping its top edge under the menu bar.
-    @MainActor
-    static func fitToContent() {
-        guard let window, let content = window.contentView else { return }
-        content.layoutSubtreeIfNeeded()
-        let size = content.fittingSize
-        guard size.height > 0, abs(size.height - window.frame.height) > 0.5 else { return }
-        var frame = window.frame
-        frame.origin.y = frame.maxY - size.height
-        frame.size.height = size.height
-        window.setFrame(frame, display: true, animate: false)
-        // The panel is a transparent, rounded window: without this its old outline and shadow
-        // stay on screen after it shrinks, as a see-through band around the content
-        content.frame = NSRect(origin: .zero, size: frame.size)
-        content.needsDisplay = true
-        window.invalidateShadow()
-        window.display()
-        // SwiftUI may size the window again on the same pass; redraw once that has settled
-        DispatchQueue.main.async {
-            guard window.isVisible else { return }
-            window.invalidateShadow()
-            window.contentView?.needsDisplay = true
-        }
     }
 }
