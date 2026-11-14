@@ -749,7 +749,7 @@ private struct MenuLongRunLine: View {
 }
 
 /// The menu bar title while timers run, when "Show the timer in the menu bar" is on:
-/// the most recently started timer's clock, plus how many others run ("1:12:05 +1").
+/// the most recently started timer's clock, plus how many others run ("1:12 +1").
 struct MenuBarClockText: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var ticker: TimerTicker
