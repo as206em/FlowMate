@@ -16,9 +16,9 @@ import Foundation
 //           its type's impact when it has a type
 //   effort  of the time left (expected − tracked): 1.0 up to 30m, 0.9 up to 1h, 0.8 up to 2h,
 //           0.7 up to 4h, 0.6 beyond
-//   priority High +10, Medium 0, Low −10: how urgent you said it is, on top of how valuable it is
-//           (impact). One priority step weighs about one impact step, so a High task of impact 6
-//           ties a Medium task of impact 7 and beats a Low one of impact 8.
+//   priority High +20, Medium 0, Low −20: how urgent you said it is, on top of how valuable it is
+//           (impact). One priority step weighs about two impact steps, so a High task of impact 5
+//           ties a Medium task of impact 7, and a Medium one of impact 5 beats a Low one of impact 6.
 //   nudge   Send up / Send down: the nth press in a row moves 5, 10, then 15 points; the other
 //           direction takes back the last step. Send to top pins the task above every score for
 //           the day. Back to normal clears both. Closing the task or the sprint clears them too.
@@ -42,12 +42,12 @@ enum ImpactRules {
     /// A Keep warm task should be small: this many minutes left or fewer when the project has one
     static let keepWarmMinutes = 30
 
-    /// Points a priority adds to the score: High +10, Medium 0, Low −10.
+    /// Points a priority adds to the score: High +20, Medium 0, Low −20.
     static func priorityPoints(_ priority: TaskPriority) -> Int {
         switch priority {
-        case .high: return 10
+        case .high: return 20
         case .medium: return 0
-        case .low: return -10
+        case .low: return -20
         }
     }
 
@@ -153,7 +153,7 @@ struct NextBestScore: Equatable, Sendable {
     let typeName: String?
     let minutesLeft: Int
     let base: Int
-    /// The task's priority and the points it adds (High +10, Medium 0, Low −10)
+    /// The task's priority and the points it adds (High +20, Medium 0, Low −20)
     var priority: TaskPriority = .medium
     var priorityPoints: Int = 0
     /// Points for the bucket being behind the mix target
@@ -162,7 +162,7 @@ struct NextBestScore: Equatable, Sendable {
     let score: Int
     let pinnedTop: Bool
 
-    /// "Impact 8 (project + Sales) · 30m left · high priority +10 · behind on mix +5 · sent up +15"
+    /// "Impact 8 (project + Sales) · 30m left · high priority +20 · behind on mix +5 · sent up +15"
     var reason: String {
         var parts = ["Impact \(impact) (\(impactSource))", "\(Focus.durationString(minutes: minutesLeft)) left"]
         if priorityPoints != 0 { parts.append("\(priority.title.lowercased()) priority \(priorityPoints > 0 ? "+" : "")\(priorityPoints)") }
