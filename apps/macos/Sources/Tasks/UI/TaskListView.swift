@@ -326,6 +326,8 @@ extension RowDisplay {
                                 uniquingKeysWith: { first, _ in first })
         let types = Dictionary(store.taskTypes.map { ($0.id, RowType(name: $0.name, colorHex: $0.colorHex, bucket: $0.bucket)) },
                                uniquingKeysWith: { first, _ in first })
+        let projectImpact = Dictionary(store.allProjects.compactMap { p in p.impact.map { (p.id, $0) } },
+                                       uniquingKeysWith: { first, _ in first })
         let running = store.workspace.runningTimers
         let selected = model.selectedTaskIds
         let flashing = model.flashTaskId
@@ -353,7 +355,9 @@ extension RowDisplay {
                     && (store.isOverdue(task, now: now) || store.isDueToday(task, now: now) || store.isInFocus(task, now: now))
                     ? .tomorrow : nil,
                 score: scores && !task.isClosed ? store.nextBestScore(task, behind: behind, now: now) : nil,
-                type: task.typeId.flatMap { types[$0] }
+                type: task.typeId.flatMap { types[$0] },
+                impact: RowImpact(value: task.impact ?? projectImpact[task.projectId] ?? ImpactScale.neutral,
+                                  source: task.impact != nil ? "task" : projectImpact[task.projectId] != nil ? "project" : "default")
             )
         }
     }

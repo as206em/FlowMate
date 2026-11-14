@@ -11,7 +11,7 @@ import SwiftUI
 
 /// One column of the task list, left to right.
 enum TaskColumn: String, CaseIterable, Identifiable, Sendable {
-    case status, project, title, kind, labels, sprint, due, priority, score, time, timer
+    case status, project, title, kind, labels, sprint, due, priority, impact, score, time, timer
 
     var id: String { rawValue }
 
@@ -26,6 +26,7 @@ enum TaskColumn: String, CaseIterable, Identifiable, Sendable {
         case .sprint: return "Sprint"
         case .due: return "Due"
         case .priority: return "Priority"
+        case .impact: return "Impact"
         case .score: return "Score"
         case .time: return "Expected"
         }
@@ -42,6 +43,7 @@ enum TaskColumn: String, CaseIterable, Identifiable, Sendable {
         case .sprint: return 92
         case .due: return 88
         case .priority: return 76
+        case .impact: return 52
         case .score: return 48
         case .time: return 76
         case .timer: return 32
@@ -51,7 +53,7 @@ enum TaskColumn: String, CaseIterable, Identifiable, Sendable {
     var alignment: Alignment {
         switch self {
         case .time: return .trailing
-        case .status, .timer, .score: return .center
+        case .status, .timer, .score, .impact: return .center
         default: return .leading
         }
     }
@@ -66,6 +68,7 @@ enum TaskColumn: String, CaseIterable, Identifiable, Sendable {
         case .sprint: return .sprint
         case .due: return .due
         case .priority: return .priority
+        case .impact: return .impact
         case .time: return .expected
         }
     }
@@ -80,8 +83,8 @@ struct TaskColumnLayout: Equatable, Sendable {
     /// The title keeps at least this much room; other columns drop out to make it.
     static let minTitleWidth: CGFloat = 200
     /// Dropped first when the table is narrow
-    /// (Priority and Score, where shown, go last: they're what tasks get planned by)
-    static let dropOrder: [TaskColumn] = [.sprint, .project, .kind, .priority, .score]
+    /// (Impact drops before Priority; Priority and Score, where shown, go last: they're what tasks get planned by)
+    static let dropOrder: [TaskColumn] = [.sprint, .project, .kind, .impact, .priority, .score]
     /// Shown only where a table asks for them (`including`)
     static let optIn: Set<TaskColumn> = [.score]
 

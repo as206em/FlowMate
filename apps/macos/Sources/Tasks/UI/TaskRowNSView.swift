@@ -40,6 +40,16 @@ struct RowDisplay: Equatable {
     var score: NextBestScore? = nil
     /// The task's type (the Type column): its name, color and Make / Reach bucket
     var type: RowType? = nil
+    /// The Impact column: the task's own 1–10 impact, or the one it inherits (its project's, else 5)
+    var impact: RowImpact = RowImpact(value: ImpactScale.neutral, source: "default")
+}
+
+/// A task's impact as a row draws it: its own value, or an inherited one drawn lighter.
+struct RowImpact: Equatable {
+    let value: Int
+    /// "task", "project" or "default"
+    let source: String
+    var isOwn: Bool { source == "task" }
 }
 
 /// A task type as a row draws it.
@@ -224,6 +234,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             case .sprint: drawMeta(display.sprintLabel, in: cell)
             case .due: drawDue(task, display, in: cell)
             case .priority: drawPriority(task.priority, in: cell)
+            case .impact: drawImpact(display.impact, in: cell)
             case .score: drawScore(display.score, in: cell)
             case .time: drawTime(task, display, in: cell)
             case .timer: drawTimer(task, display, in: cell)
@@ -532,6 +543,12 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
     }
 
     /// The 0–100 score as a small badge, filled from 70; a dot when Send up/down or to top moved it.
+    /// "8", centered; an inherited impact is drawn lighter so a task's own value stands out.
+    private func drawImpact(_ impact: RowImpact, in cell: NSRect) {
+        drawText("\(impact.value)", font: Style.meta, color: impact.isOwn ? Style.text : Style.text3.withAlphaComponent(0.6),
+                 in: cell, align: .center)
+    }
+
     private func drawScore(_ score: NextBestScore?, in cell: NSRect) {
         guard let score else { return drawEmpty(in: cell) }
         let strong = score.score >= 70
@@ -725,6 +742,10 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         case .sprint: return task.sprintSlot == .closed ? info.display.sprintLabel : "Change sprint"
         case .due: return "Change due date"
         case .priority: return "Change priority"
+        case .impact:
+            let impact = info.display.impact
+            return impact.isOwn ? "Impact \(impact.value). Click to change"
+                : "Impact \(impact.value), inherited from the \(impact.source == "project" ? "project" : "default"). Click to set this task's own"
         case .score: return info.display.score.map { "Score \($0.score): \($0.reason). Click to send it up or down" } ?? ""
         case .time: return "Change time spent or expected time"
         case .timer: return task.isClosed ? "" : (info.display.runningSince != nil ? "Pause timer" : "Start timer")

@@ -54,4 +54,32 @@ final class FinetuneTests: XCTestCase {
         XCTAssertTrue(model.isCollapsed(TasksViewModel.pastSprintsGroupKey), "starts collapsed")
         XCTAssertTrue(SprintPlanView.pastSprintsHint(store.pastSprints()).hasPrefix("2 sprints · 2 done · "))
     }
+
+    // MARK: - Impact column
+
+    func testImpactColumnInEveryTable() {
+        let wide = TaskColumnLayout.make(showProject: true, width: 1200)
+        XCTAssertTrue(wide.contains(.impact))
+        let columns = wide.columns
+        XCTAssertEqual(columns.firstIndex(of: .impact), columns.firstIndex(of: .priority)! + 1, "right after Priority")
+        XCTAssertEqual(TaskColumn.impact.sortKey, .impact)
+        XCTAssertFalse(TaskSortKey.impact.defaultAscending, "highest impact first")
+    }
+
+    func testImpactRowValueAndSort() async {
+        let (store, pid) = await makeStore()
+        let model = TasksViewModel()
+        let inherited = store.addTask(title: "inherited", projectId: pid, now: t0)!
+        let own = store.addTask(title: "own", projectId: pid, now: t0)!
+        store.setTaskImpact([own], 9)
+        let display = RowDisplay.maker(store: store, model: model)
+        XCTAssertEqual(display(store.task(inherited)!).impact, RowImpact(value: ImpactScale.neutral, source: "default"))
+        XCTAssertEqual(display(store.task(own)!).impact, RowImpact(value: 9, source: "task"))
+        store.setProjectImpact(pid, 7)
+        let after = RowDisplay.maker(store: store, model: model)
+        XCTAssertEqual(after(store.task(inherited)!).impact, RowImpact(value: 7, source: "project"))
+
+        let sorted = store.sorted([store.task(inherited)!, store.task(own)!], by: TaskSort(key: .impact))
+        XCTAssertEqual(sorted.map(\.id), [own, inherited])
+    }
 }

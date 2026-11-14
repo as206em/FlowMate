@@ -23,7 +23,7 @@ final class TaskRowController: NSObject {
             if modifiers.contains(.option) { store.startTimerExclusively(id) } else { store.toggleTimer(id) }
         case .score? where !task.isClosed:
             showEditor(.score, taskId: id, rect: rect, in: view)
-        case .due?, .priority?, .time?, .labels?:
+        case .due?, .priority?, .impact?, .time?, .labels?:
             showEditor(column!, taskId: id, rect: rect, in: view)
         case .kind?:
             showTypeMenu(taskId: id, rect: rect, in: view)
@@ -58,6 +58,7 @@ final class TaskRowController: NSObject {
             case .sprint: AnyView(TaskSprintEditor(task: task, close: close))
             case .due: AnyView(TaskDueEditor(task: task, close: close))
             case .priority: AnyView(TaskPriorityEditor(task: task, close: close))
+            case .impact: AnyView(TaskImpactEditor(task: task, close: close))
             case .labels: AnyView(TaskLabelsEditor(taskIds: [task.id], close: close))
             case .score: AnyView(TaskScoreEditor(task: task, close: close))
             default: AnyView(TaskTimeEditor(task: task, close: close))
