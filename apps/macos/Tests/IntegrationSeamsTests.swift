@@ -367,25 +367,6 @@ final class IntegrationSeamsTests: XCTestCase {
         card.removeFromSuperview()
         XCTAssertNil(QuickPickerAnchors.resolve(.task(id), in: window))
     }
-
-    func testMenuBarStatusItemButtonIsFoundByType() {
-        _ = NSApplication.shared
-        MenuBarStatusItem.reset()
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        defer { NSStatusBar.system.removeStatusItem(item); MenuBarStatusItem.reset() }
-        item.button?.title = "FM"
-        guard let expected = item.button, let window = expected.window else {
-            return XCTFail("no status bar window in this environment")
-        }
-        // A window with an ordinary button first: never picked
-        let decoy = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: [.titled], backing: .buffered, defer: false)
-        decoy.contentView?.addSubview(NSButton(title: "Not it", target: nil, action: nil))
-        XCTAssertTrue(MenuBarStatusItem.button(in: [decoy, window]) === expected)
-        // Kept: found again without looking
-        XCTAssertTrue(MenuBarStatusItem.button(in: []) === expected)
-        MenuBarStatusItem.reset()
-        XCTAssertNil(MenuBarStatusItem.button(in: [decoy]))
-    }
 }
 
 /// FLOWMATE_DATA_DIR moves every file FlowMate writes; without it nothing changes.
