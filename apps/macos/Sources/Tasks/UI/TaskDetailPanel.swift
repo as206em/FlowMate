@@ -180,8 +180,16 @@ private struct TaskDetailBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
-            SidePanelTitleEditor(placeholder: "Task title", value: task.title, dictationId: "title-\(task.id)") {
-                store.setTitle(task.id, $0)
+            HStack(alignment: .top, spacing: 4) {
+                // The task's id, for an agent with FlowMate's MCP tools (get_task) to pick it up
+                FocusIconButton(systemName: "doc.on.doc", label: "Copy task ID", size: 26) {
+                    TaskIdentifierCopy.copy(task.id)
+                    model.show(TasksViewModel.Toast(message: TaskIdentifierCopy.toastMessage))
+                }
+                .padding(.top, 4)
+                SidePanelTitleEditor(placeholder: "Task title", value: task.title, dictationId: "title-\(task.id)") {
+                    store.setTitle(task.id, $0)
+                }
             }
             MarkdownDescriptionSection(
                 text: task.notes,

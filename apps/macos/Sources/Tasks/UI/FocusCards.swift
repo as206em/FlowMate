@@ -196,6 +196,7 @@ struct StartNextCard: View {
         var parts: [String] = []
         if score.pinnedTop { parts.append("sent to top") }
         parts.append("impact \(score.impact)")
+        if score.priority != .medium { parts.append("\(score.priority.title.lowercased()) priority") }
         parts.append("\(Focus.durationString(minutes: score.minutesLeft)) left")
         if score.boost > 0, let type = score.typeName { parts.append("\(type) closes the gap") }
         return parts.joined(separator: " · ")

@@ -102,6 +102,20 @@ extension TaskStore {
             .sorted { $0.sortIndex < $1.sortIndex }
     }
 
+    /// Every task of the completed sprints, each once with the newest past sprint it was in
+    /// (a task carried over appears under its latest sprint): the Old sprints group, newest sprint
+    /// first and in manual order inside each sprint. Only those in `scope` when given.
+    func pastSprintTasks(in scope: TaskScope = .all) -> [(task: TaskItem, sprint: PastSprint)] {
+        var seen = Set<UUID>()
+        var result: [(task: TaskItem, sprint: PastSprint)] = []
+        for sprint in pastSprints() {
+            for task in tasks(of: sprint, in: scope) where seen.insert(task.id).inserted {
+                result.append((task, sprint))
+            }
+        }
+        return result
+    }
+
     func sprintLabel(_ slot: SprintSlot) -> String {
         let sprint = workspace.sprint
         switch slot {

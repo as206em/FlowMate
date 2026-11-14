@@ -195,6 +195,33 @@ struct TaskPriorityEditor: View {
     }
 }
 
+/// The Impact column's popover: Inherit (the project's, else 5) and 10 down to 1.
+struct TaskImpactEditor: View {
+    @EnvironmentObject private var store: TaskStore
+    let task: TaskItem
+    let close: () -> Void
+
+    var body: some View {
+        let inherited = store.inheritedImpact(task)
+        FocusPopoverMenu(width: 200) {
+            FocusMenuItem(isSelected: task.impact == nil) {
+                store.setTaskImpact([task.id], nil)
+                close()
+            } label: {
+                Text("Inherit · \(inherited.value) (\(inherited.source))").font(Focus.control).foregroundColor(Focus.text)
+            }
+            ForEach(ImpactScale.choices, id: \.self) { value in
+                FocusMenuItem(isSelected: task.impact == value) {
+                    store.setTaskImpact([task.id], value)
+                    close()
+                } label: {
+                    Text(ImpactScale.title(value)).font(Focus.control).foregroundColor(Focus.text)
+                }
+            }
+        }
+    }
+}
+
 /// Expected time: presets (15m – 8h) and a custom entry ("1h 15m").
 struct TaskExpectedEditor: View {
     let task: TaskItem

@@ -124,8 +124,8 @@ struct TaskListView: View {
 
 /// The tasks grouped by Sprint: one sprint card with every number (dates, plan against capacity, Make / Reach,
 /// per-project capacity, Fill sprint and the ⋯ menu), then the active sprint's tasks, Next, later
-/// sprints and the Backlog (in a project the Backlog comes first). In a project, past sprints close
-/// the page, folded; the velocity chart shows once there are three to compare.
+/// sprints and the Backlog (in a project the Backlog comes first). In a project, the old sprints close
+/// the page in one folded group with a Sprint column; the velocity chart shows once there are three to compare.
 /// The search and filter chips narrow every group.
 struct SprintPlanView: View {
     @EnvironmentObject private var store: TaskStore
@@ -174,32 +174,49 @@ struct SprintPlanView: View {
         return columns
     }
 
-    /// Completed sprints, newest first, collapsed until opened, spaced like the other groups:
-    /// "Sprint 3 · old  10  8 done · 18h planned · 21h tracked · Oct 12 – Oct 25". The velocity
-    /// chart closes the page once there are three to compare.
+    /// Every completed sprint in one group, collapsed until opened: "Old sprints  24  5 sprints ·
+    /// 19 done · 64h planned · 70h tracked". Its tasks come newest sprint first, each once, and the
+    /// Sprint column names the old sprint a task was last in. The velocity chart closes the page once
+    /// there are three sprints to compare.
     private func pastSprints(_ builder: inout TaskTableBuilder) {
         let past = store.pastSprints()
         guard !past.isEmpty else { return }
-        for sprint in past {
-            let key = TasksViewModel.pastSprintGroupKey(sprint)
-            builder.group(
-                key: key,
-                title: "\(sprint.name) · old",
-                hint: [sprint.headerHint, sprint.goal.isEmpty ? nil : sprint.goal].compactMap { $0 }.joined(separator: " · "),
-                tasks: model.sortedForGroup(model.sprintPlanTasks(store.tasks(of: sprint, in: scope), store: store), key, store: store),
-                emptyText: "No tasks were in this sprint.",
-                showProject: scope.projectId == nil,
-                drop: nil,
-                open: !model.isCollapsed(key),
-                gap: 24,
-                sortable: true,
-                display: RowDisplay.maker(store: store, model: model, scores: true)
-            )
-        }
+        let key = TasksViewModel.pastSprintsGroupKey
+        let entries = store.pastSprintTasks(in: scope)
+        let sprintOf = Dictionary(entries.map { ($0.task.id, $0.sprint) }, uniquingKeysWith: { first, _ in first })
+        let tasks = model.sortedForGroup(model.sprintPlanTasks(entries.map(\.task), store: store), key, store: store)
+        let display = RowDisplay.maker(store: store, model: model, scores: true)
+        builder.group(
+            key: key,
+            title: "Old sprints",
+            hint: Self.pastSprintsHint(past),
+            tasks: tasks,
+            emptyText: "No tasks were in the old sprints.",
+            showProject: scope.projectId == nil,
+            drop: nil,
+            open: !model.isCollapsed(key),
+            gap: 24,
+            sortable: true,
+            display: { task in
+                var row = display(task)
+                if let sprint = sprintOf[task.id] { row.sprintLabel = sprint.name }
+                return row
+            }
+        )
         if past.count >= 3 {
             builder.spacer("before-velocity", 24)
             builder.velocity()
         }
+    }
+
+    /// "5 sprints · 19 done · 64h planned · 70h tracked", after the header's own task count.
+    static func pastSprintsHint(_ past: [PastSprint]) -> String {
+        let planned = past.reduce(0) { $0 + $1.plannedMinutes }
+        let tracked = Int((past.reduce(0) { $0 + $1.trackedSeconds } / 60).rounded())
+        let done = past.reduce(0) { $0 + $1.doneTaskIds.count }
+        return [past.count == 1 ? "1 sprint" : "\(past.count) sprints", "\(done) done",
+                "\(Focus.durationString(minutes: planned)) planned", "\(Focus.durationString(minutes: tracked)) tracked"]
+            .joined(separator: " · ")
     }
 
     /// A sprint planned further ahead: tasks go in by dragging or the sprint picker (no inline composer).
@@ -309,6 +326,8 @@ extension RowDisplay {
                                 uniquingKeysWith: { first, _ in first })
         let types = Dictionary(store.taskTypes.map { ($0.id, RowType(name: $0.name, colorHex: $0.colorHex, bucket: $0.bucket)) },
                                uniquingKeysWith: { first, _ in first })
+        let projectImpact = Dictionary(store.allProjects.compactMap { p in p.impact.map { (p.id, $0) } },
+                                       uniquingKeysWith: { first, _ in first })
         let running = store.workspace.runningTimers
         let selected = model.selectedTaskIds
         let flashing = model.flashTaskId
@@ -336,7 +355,9 @@ extension RowDisplay {
                     && (store.isOverdue(task, now: now) || store.isDueToday(task, now: now) || store.isInFocus(task, now: now))
                     ? .tomorrow : nil,
                 score: scores && !task.isClosed ? store.nextBestScore(task, behind: behind, now: now) : nil,
-                type: task.typeId.flatMap { types[$0] }
+                type: task.typeId.flatMap { types[$0] },
+                impact: RowImpact(value: task.impact ?? projectImpact[task.projectId] ?? ImpactScale.neutral,
+                                  source: task.impact != nil ? "task" : projectImpact[task.projectId] != nil ? "project" : "default")
             )
         }
     }

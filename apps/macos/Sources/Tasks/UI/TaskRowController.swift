@@ -23,7 +23,7 @@ final class TaskRowController: NSObject {
             if modifiers.contains(.option) { store.startTimerExclusively(id) } else { store.toggleTimer(id) }
         case .score? where !task.isClosed:
             showEditor(.score, taskId: id, rect: rect, in: view)
-        case .due?, .priority?, .time?, .labels?:
+        case .due?, .priority?, .impact?, .time?, .labels?:
             showEditor(column!, taskId: id, rect: rect, in: view)
         case .kind?:
             showTypeMenu(taskId: id, rect: rect, in: view)
@@ -34,6 +34,12 @@ final class TaskRowController: NSObject {
         default:
             model.clickTitle(id, store: store, modifiers: modifiers)
         }
+    }
+
+    /// The copy button before the title (and the menu's Copy task ID): the id on the clipboard and a toast.
+    func copyId(_ id: UUID) {
+        TaskIdentifierCopy.copy(id)
+        model?.show(TasksViewModel.Toast(message: TaskIdentifierCopy.toastMessage))
     }
 
     /// The hover button at the end of the title.
@@ -58,6 +64,7 @@ final class TaskRowController: NSObject {
             case .sprint: AnyView(TaskSprintEditor(task: task, close: close))
             case .due: AnyView(TaskDueEditor(task: task, close: close))
             case .priority: AnyView(TaskPriorityEditor(task: task, close: close))
+            case .impact: AnyView(TaskImpactEditor(task: task, close: close))
             case .labels: AnyView(TaskLabelsEditor(taskIds: [task.id], close: close))
             case .score: AnyView(TaskScoreEditor(task: task, close: close))
             default: AnyView(TaskTimeEditor(task: task, close: close))
@@ -178,7 +185,14 @@ final class TaskRowController: NSObject {
             }
         })
         // A single ticket's menu stays short; property pickers remain on their keys and in the panel
-        guard selection else { return menu }
+        guard selection else {
+            menu.addItem(.separator())
+            menu.addItem(item("Copy task ID") { [weak self] in self?.copyId(id) })
+            menu.addItem(item("Delete task", key: "\u{8}", modifiers: .command) { [weak model, weak store] in
+                if let model, let store { model.deleteTask(id, store: store) }
+            })
+            return menu
+        }
         menu.addItem(.separator())
 
         for action in TaskQuickAction.allCases {

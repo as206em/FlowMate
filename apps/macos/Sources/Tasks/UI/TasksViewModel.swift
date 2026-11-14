@@ -508,6 +508,8 @@ final class TasksViewModel: ObservableObject {
     }
 
     static func pastSprintGroupKey(_ sprint: PastSprint) -> String { "past-\(sprint.id.uuidString)" }
+    /// The one group that holds every completed sprint's tasks (starts collapsed, like each past sprint did)
+    static let pastSprintsGroupKey = "past-sprints"
 
     /// The keys of the groups the current view can collapse (List, Sprints, Today); nil on the other tabs.
     func collapsibleGroupKeys(_ store: TaskStore) -> [String]? {
@@ -519,7 +521,7 @@ final class TasksViewModel: ObservableObject {
         case .list where showsSprintPlan:
             let upcoming = store.upcomingSprints().filter { $0.ahead > 1 }.map { Self.upcomingGroupKey($0.ahead) }
             if sprintPlanBacklogFirst {
-                let past = store.pastSprints().map(Self.pastSprintGroupKey)
+                let past = store.pastSprints().isEmpty ? [] : [Self.pastSprintsGroupKey]
                 return [Self.sprintGroupKey(.backlog), Self.sprintGroupKey(.active),
                         Self.sprintGroupKey(.next)] + upcoming + past
             }

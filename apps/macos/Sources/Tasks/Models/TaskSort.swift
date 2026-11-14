@@ -3,7 +3,7 @@ import Foundation
 /// What a task list is sorted by. `manual` is the drag order (`sortIndex`).
 /// The list column headers set it; the filter bar's Sort menu can reuse it.
 enum TaskSortKey: String, CaseIterable, Identifiable, Sendable, TolerantStringEnum {
-    case manual, status, title, project, sprint, due, priority, expected, score, created, updated
+    case manual, status, title, project, sprint, due, priority, impact, expected, score, created, updated
 
     static var fallback: TaskSortKey { .manual }
     var id: String { rawValue }
@@ -17,6 +17,7 @@ enum TaskSortKey: String, CaseIterable, Identifiable, Sendable, TolerantStringEn
         case .sprint: return "Sprint"
         case .due: return "Due"
         case .priority: return "Priority"
+        case .impact: return "Impact"
         case .expected: return "Expected"
         case .score: return "Score"
         case .created: return "Created"
@@ -28,7 +29,7 @@ enum TaskSortKey: String, CaseIterable, Identifiable, Sendable, TolerantStringEn
     /// (high priority, soonest due, newest change, A to Z).
     var defaultAscending: Bool {
         switch self {
-        case .priority, .score, .created, .updated: return false
+        case .priority, .impact, .score, .created, .updated: return false
         default: return true
         }
     }

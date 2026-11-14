@@ -56,6 +56,8 @@ extension TaskStore {
             return { $0.dueDate.map { .number($0.timeIntervalSinceReferenceDate) } }
         case .priority:
             return { .number(Double($0.priority.rank)) }
+        case .impact:
+            return { .number(Double(self.ownOrInheritedImpact($0).value)) }
         case .expected:
             return { .number(Double($0.expectedMinutes)) }
         case .score:

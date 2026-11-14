@@ -127,10 +127,10 @@ enum Focus {
         }
     }
 
-    /// Formats seconds as a clock: 1:38:08
+    /// Formats seconds as an hours-and-minutes clock: 1:38 (seconds are dropped, never rounded up)
     static func clockString(_ seconds: TimeInterval) -> String {
-        let s = max(0, Int(seconds))
-        return String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
+        let minutes = max(0, Int(seconds)) / 60
+        return String(format: "%d:%02d", minutes / 60, minutes % 60)
     }
 
     /// Formats minutes as an estimate: 45m, 2h, 2h 30m

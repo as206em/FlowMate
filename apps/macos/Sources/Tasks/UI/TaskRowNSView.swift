@@ -40,6 +40,16 @@ struct RowDisplay: Equatable {
     var score: NextBestScore? = nil
     /// The task's type (the Type column): its name, color and Make / Reach bucket
     var type: RowType? = nil
+    /// The Impact column: the task's own 1–10 impact, or the one it inherits (its project's, else 5)
+    var impact: RowImpact = RowImpact(value: ImpactScale.neutral, source: "default")
+}
+
+/// A task's impact as a row draws it: its own value, or an inherited one drawn lighter.
+struct RowImpact: Equatable {
+    let value: Int
+    /// "task", "project" or "default"
+    let source: String
+    var isOwn: Bool { source == "task" }
 }
 
 /// A task type as a row draws it.
@@ -224,6 +234,7 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
             case .sprint: drawMeta(display.sprintLabel, in: cell)
             case .due: drawDue(task, display, in: cell)
             case .priority: drawPriority(task.priority, in: cell)
+            case .impact: drawImpact(display.impact, in: cell)
             case .score: drawScore(display.score, in: cell)
             case .time: drawTime(task, display, in: cell)
             case .timer: drawTimer(task, display, in: cell)
@@ -422,8 +433,47 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
                  in: NSRect(x: textX, y: cell.minY, width: max(0, cell.maxX - textX), height: cell.height))
     }
 
+    // MARK: Copy id
+
+    /// The copy-id button's size and the gap after it, at the leading edge of the title cell
+    private static let copySize: CGFloat = 16, copyGap: CGFloat = 6
+    /// The task whose id was just copied, and until when its button shows a checkmark
+    private static var copied: (id: UUID, until: Date)?
+
+    /// The copy-id button at the leading edge of the title cell; nil while renaming or when the cell is tiny.
+    private func copyRect(in titleCell: NSRect) -> NSRect? {
+        guard !isRenaming, titleCell.width > 80 else { return nil }
+        return NSRect(x: titleCell.minX, y: titleCell.midY - Self.copySize / 2, width: Self.copySize, height: Self.copySize)
+    }
+
+    /// Faint until the row is hovered; a checkmark for a moment after copying.
+    private func drawCopyButton(_ task: TaskItem, in rect: NSRect) {
+        let justCopied = Self.copied.map { $0.id == task.id && $0.until > Date() } ?? false
+        let color = justCopied ? Style.done : hovered ? Style.text2 : Style.text3.withAlphaComponent(0.45)
+        let symbol = justCopied ? "checkmark" : "doc.on.doc"
+        guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Copy task ID")?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .regular).applying(.init(paletteColors: [color]))) else { return }
+        let s = image.size
+        image.draw(in: NSRect(x: rect.midX - s.width / 2, y: rect.midY - s.height / 2, width: s.width, height: s.height),
+                   from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+    }
+
+    private func copyId(_ id: UUID) {
+        controller?.copyId(id)
+        let until = Date().addingTimeInterval(1.2)
+        Self.copied = (id, until)
+        needsDisplay = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.25) { [weak self] in self?.needsDisplay = true }
+    }
+
     private func drawTitle(_ task: TaskItem, _ display: RowDisplay, in cell: NSRect) {
         var cell = cell
+        if let copy = copyRect(in: cell) {
+            drawCopyButton(task, in: copy)
+            let shift = Self.copySize + Self.copyGap
+            cell.origin.x += shift
+            cell.size.width = max(0, cell.width - shift)
+        }
         if let button = quickActionRect(in: cell), let action = display.quickAction {
             drawQuickAction(action, in: button)
             cell.size.width = max(0, button.minX - 8 - cell.minX)
@@ -532,6 +582,12 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
     }
 
     /// The 0–100 score as a small badge, filled from 70; a dot when Send up/down or to top moved it.
+    /// "8", centered; an inherited impact is drawn lighter so a task's own value stands out.
+    private func drawImpact(_ impact: RowImpact, in cell: NSRect) {
+        drawText("\(impact.value)", font: Style.meta, color: impact.isOwn ? Style.text : Style.text3.withAlphaComponent(0.6),
+                 in: cell, align: .center)
+    }
+
     private func drawScore(_ score: NextBestScore?, in cell: NSRect) {
         guard let score else { return drawEmpty(in: cell) }
         let strong = score.score >= 70
@@ -679,6 +735,10 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         let point = convert(event.locationInWindow, from: nil)
         guard isInsidePanel(point) else { return }
         let hit = column(at: point)
+        if hit?.column == .title, let copy = copyRect(in: hit!.rect), copy.insetBy(dx: -3, dy: -4).contains(point) {
+            copyId(info.task.id)
+            return
+        }
         if hit?.column == .title, let action = info.display.quickAction,
            let button = quickActionRect(in: hit!.rect), button.contains(point) {
             controller?.perform(action, task: info.task.id)
@@ -712,6 +772,9 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         switch hit.column {
         case .status: return "\(info.display.status.name). Click for \(info.display.nextStatusName), right-click for all"
         case .title:
+            if let copy = copyRect(in: hit.rect), copy.insetBy(dx: -3, dy: -4).contains(point) {
+                return "Copy task ID, for an agent with FlowMate's MCP tools to pick this task up"
+            }
             if let action = info.display.quickAction, let button = quickActionRect(in: hit.rect), button.contains(point) {
                 return action.help
             }
@@ -725,6 +788,10 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         case .sprint: return task.sprintSlot == .closed ? info.display.sprintLabel : "Change sprint"
         case .due: return "Change due date"
         case .priority: return "Change priority"
+        case .impact:
+            let impact = info.display.impact
+            return impact.isOwn ? "Impact \(impact.value). Click to change"
+                : "Impact \(impact.value), inherited from the \(impact.source == "project" ? "project" : "default"). Click to set this task's own"
         case .score: return info.display.score.map { "Score \($0.score): \($0.reason). Click to send it up or down" } ?? ""
         case .time: return "Change time spent or expected time"
         case .timer: return task.isClosed ? "" : (info.display.runningSince != nil ? "Pause timer" : "Start timer")
@@ -751,7 +818,8 @@ final class TaskRowNSView: NSView, NSViewToolTipOwner, NSTextFieldDelegate {
         field.layer?.cornerRadius = Focus.radiusTag
         field.layer?.borderWidth = 1
         field.layer?.borderColor = NSColor(Focus.lineStrong).cgColor
-        field.frame = NSRect(x: rect.minX - 8, y: rect.midY - 14, width: rect.width + 8, height: 28)
+        let inset = Self.copySize + Self.copyGap
+        field.frame = NSRect(x: rect.minX + inset - 8, y: rect.midY - 14, width: max(0, rect.width - inset) + 8, height: 28)
         field.delegate = self
         addSubview(field)
         renameField = field
