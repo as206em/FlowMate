@@ -141,4 +141,22 @@ final class FinetuneTests: XCTestCase {
             XCTAssertNotNil(object["score"])
         }
     }
+
+    // MARK: - Delete from the right-click menu
+
+    func testRowMenuDeletesTheTask() async throws {
+        let (store, pid) = await makeStore()
+        let model = TasksViewModel()
+        let id = store.addTask(title: "Doomed", projectId: pid, now: t0)!
+        let controller = TaskRowController()
+        controller.store = store
+        controller.model = model
+        let menu = try XCTUnwrap(controller.makeMenu(task: id, rename: {}))
+        let delete = try XCTUnwrap(menu.items.first { $0.title == "Delete task" } as? ClosureMenuItem)
+        XCTAssertNotNil(menu.items.first { $0.title == "Copy task ID" })
+        _ = delete.target?.perform(delete.action)
+        XCTAssertNil(store.task(id))
+        store.undo()
+        XCTAssertNotNil(store.task(id), "⌘Z brings it back")
+    }
 }

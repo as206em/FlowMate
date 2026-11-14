@@ -666,13 +666,14 @@ final class KeyboardSpeedTests: XCTestCase {
         controller.model = model
         let menu = controller.makeMenu(task: a, rename: {})!
         func item(_ title: String) -> NSMenuItem? { menu.items.first { $0.title == title } }
-        // A single ticket's menu is short: timer, Today and done only
+        // A single ticket's menu is short: timer, Today, done, Copy task ID and Delete
         XCTAssertEqual(item("Mark done")?.keyEquivalent, "x")
+        XCTAssertEqual(item("Delete task")?.keyEquivalentModifierMask, .command)
         XCTAssertEqual(item("Add to Today")?.keyEquivalentModifierMask, .command)
         XCTAssertEqual(item("Start timer")?.keyEquivalent, " ")
         XCTAssertEqual(item("Start, pausing all others")?.keyEquivalentModifierMask, .option)
         for removed in ["Open", "Rename", "Status…", "Priority…", "Due date…", "Expected time…", "Adjust time…",
-                        "Labels…", "Duplicate", "Delete task"] {
+                        "Labels…", "Duplicate"] {
             XCTAssertNil(item(removed), "\(removed) is not in the single-ticket menu")
         }
     }

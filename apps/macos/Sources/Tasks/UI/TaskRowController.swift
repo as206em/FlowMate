@@ -155,9 +155,6 @@ final class TaskRowController: NSObject {
                 }
             }
         }
-        if !selection {
-            menu.addItem(item("Copy task ID") { [weak self] in self?.copyId(id) })
-        }
         if !selection, !task.isClosed {
             // Next best: the same nudges as the Score popover and Today's rows
             let next = NSMenu()
@@ -188,7 +185,14 @@ final class TaskRowController: NSObject {
             }
         })
         // A single ticket's menu stays short; property pickers remain on their keys and in the panel
-        guard selection else { return menu }
+        guard selection else {
+            menu.addItem(.separator())
+            menu.addItem(item("Copy task ID") { [weak self] in self?.copyId(id) })
+            menu.addItem(item("Delete task", key: "\u{8}", modifiers: .command) { [weak model, weak store] in
+                if let model, let store { model.deleteTask(id, store: store) }
+            })
+            return menu
+        }
         menu.addItem(.separator())
 
         for action in TaskQuickAction.allCases {

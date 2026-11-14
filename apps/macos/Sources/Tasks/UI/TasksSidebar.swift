@@ -425,6 +425,11 @@ private struct RunningTimersPanel: View {
                         .padding(.trailing, 4)
                     }
                     .padding(.vertical, 2)
+                    .contextMenu {
+                        Button("Open") { model.openTask(task.id) }
+                        Divider()
+                        Button("Delete task", role: .destructive) { model.deleteTask(task.id, store: store) }
+                    }
                 }
             }
             .padding(.top, 8)

@@ -487,6 +487,8 @@ private struct NextBestRow: View {
             if task.isNudged { Button("Back to normal") { store.resetNextBest(task.id) } }
             Divider()
             Button("Open") { model.openTask(task.id) }
+            Divider()
+            Button("Delete task", role: .destructive) { model.deleteTask(task.id, store: store) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(rank.map { "\($0). " } ?? "")\(task.title), score \(item.score.score). \(item.keepWarm ?? item.score.reason)")

@@ -493,6 +493,7 @@ struct MenuInProgressSection: View {
         }
         .modifier(MenuHover(highlighted: menu.highlight == .upNext(task.id)))
         .id(MenuRowItem.upNext(task.id))
+        .contextMenu { MenuTaskContextMenu(task: task) }
     }
 
     @ViewBuilder
@@ -550,6 +551,7 @@ struct MenuInProgressSection: View {
         )
         .modifier(HoldToFinish(task: task))
         .id(MenuRowItem.running(task.id))
+        .contextMenu { MenuTaskContextMenu(task: task) }
         .accessibilityAddTraits(highlighted ? .isSelected : [])
     }
 
@@ -582,6 +584,19 @@ struct MenuInProgressSection: View {
         .modifier(MenuHover(highlighted: menu.highlight == .task(task.id)))
         .modifier(HoldToFinish(task: task))
         .id(MenuRowItem.task(task.id))
+        .contextMenu { MenuTaskContextMenu(task: task) }
+    }
+}
+
+/// A menu bar row's right-click menu: open it in FlowMate, or delete it (⌘Z in FlowMate brings it back).
+private struct MenuTaskContextMenu: View {
+    @EnvironmentObject private var store: TaskStore
+    let task: TaskItem
+
+    var body: some View {
+        Button("Open in FlowMate") { MenuNavigation.openTask(task.id) }
+        Divider()
+        Button("Delete task", role: .destructive) { store.deleteTask(task.id) }
     }
 }
 
