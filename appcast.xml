@@ -6,6 +6,15 @@
     <description>FlowMate updates</description>
     <language>en</language>
     <item>
+      <title>Version 1.1.16</title>
+      <pubDate>Sun, 15 Nov 2026 07:20:46 +0000</pubDate>
+      <sparkle:version>202611150713</sparkle:version>
+      <sparkle:shortVersionString>1.1.16</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[## What's Changed<br>* Menu bar right-click opens the app; lists refresh when the day changes by @as206em in https://github.com/as206em/FlowMate/pull/15<br><br><br>**Full Changelog**: https://github.com/as206em/FlowMate/compare/v1.1.15...v1.1.16]]></description>
+      <enclosure url="https://github.com/as206em/FlowMate/releases/download/v1.1.16/FlowMate-1.1.16.zip" length="11672504" type="application/octet-stream" sparkle:edSignature="KvxCJepFfr4OFRl3Bf9zu0EtKnZqyxiR0bny0RKD/wYruz8lXXtjqinBojxNm7rRXCPJ/XNlbx745+tZT5WpCA=="/>
+    </item>
+    <item>
       <title>Version 1.1.15</title>
       <pubDate>Sat, 14 Nov 2026 06:52:03 +0000</pubDate>
       <sparkle:version>202611140643</sparkle:version>
