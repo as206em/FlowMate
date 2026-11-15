@@ -72,6 +72,11 @@ final class TaskStore: ObservableObject {
     /// Ticks once a second while any timer runs. Observe it only in views that show live clocks.
     let ticker = TimerTicker()
 
+    /// The calendar day the views were last built for. Changing it republishes the store, so
+    /// everything that depends on "today" (done today, overdue, due today, carried over, time
+    /// totals, badges) rebuilds even when no task changed. Set it only through refreshDay (DayClock).
+    @Published var currentDay: Date = Calendar.current.startOfDay(for: Date())
+
     private let repository: WorkspaceRepository
     private let saveDelay: TimeInterval
     private var pendingSave: Task<Void, Never>?
