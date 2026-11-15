@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import FlowMate
 
@@ -18,6 +19,25 @@ final class TodayTests: XCTestCase {
         let b = store.addProject(name: "BotX", now: now)!
         store.clearUndoHistory()
         return (store, a, b)
+    }
+
+    // MARK: - Day change
+
+    /// A new day republishes the store, so lists built yesterday (done today, overdue) rebuild
+    /// without any task changing; the same day doesn't, unless forced (clock or time zone change).
+    func testRefreshDayRepublishesOnlyWhenTheDayMoves() async {
+        let (store, _, _) = await makeStore()
+        store.refreshDay(now: now)
+        var published = 0
+        let sub = store.objectWillChange.sink { published += 1 }
+        XCTAssertFalse(store.refreshDay(now: now.addingTimeInterval(3600)))
+        XCTAssertEqual(published, 0)
+        XCTAssertTrue(store.refreshDay(now: day(1).addingTimeInterval(60)))
+        XCTAssertEqual(store.currentDay, day(1))
+        XCTAssertEqual(published, 1)
+        store.refreshDay(now: day(1).addingTimeInterval(120), force: true)
+        XCTAssertEqual(published, 2)
+        sub.cancel()
     }
 
     // MARK: - Today query

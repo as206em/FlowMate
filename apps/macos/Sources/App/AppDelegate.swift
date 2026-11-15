@@ -12,6 +12,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             if AppDataLocation.override == nil { AppState.promptForAccessibilityAccess() }
             // Timers that run through sleep or a locked screen ask whether that time counts
             SystemAwayMonitor.shared.start(store: TaskStore.shared)
+            // Rebuilds date-based lists when the day changes (midnight, wake, app in front)
+            DayClock.shared.start(store: TaskStore.shared)
             // The morning summary, reminders and timer prompts in Notification Center
             if UserNotificationClient.isAvailable { UNUserNotificationCenter.current().delegate = self }
             TaskNotifications.shared.start(store: TaskStore.shared)

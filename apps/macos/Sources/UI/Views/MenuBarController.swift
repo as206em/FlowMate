@@ -81,13 +81,23 @@ final class MenuBarController: NSObject {
 
     // MARK: - Panel
 
+    /// Left-click toggles the dropdown; right-click (or Control-click) opens the app window.
     @objc private func togglePanel() {
+        let event = NSApp.currentEvent
+        let isRightClick = event?.type == .rightMouseDown
+            || (event?.type == .leftMouseDown && event?.modifierFlags.contains(.control) == true)
+        if isRightClick {
+            MenuNavigation.openApp()
+            return
+        }
         if isOpen { close() } else { open() }
     }
 
     /// Opens the panel under the menu bar icon, ready for typing.
     func open() {
         guard !isOpen, let makeContent, let button = statusItem?.button, let buttonWindow = button.window else { return }
+        // The menu opens without bringing FlowMate to the front, so check the day here too
+        DayClock.shared.check()
         let panel = panel ?? MenuBarPanelWindow()
         self.panel = panel
 
